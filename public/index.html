@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Proxy - 免费AI中转服务</title>
+    <title>AI API - 免费AI服务</title>
+    <link rel="icon" type="image/webp" href="/logo.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@400;700&display=swap"
@@ -283,7 +284,7 @@
 
 <body>
     <header>
-        <div class="logo">AI Proxy</div>
+        <div class="logo">AI Free API</div>
         <div class="status">
             <span style="color: #10b981;">●</span> 系统正常
         </div>
@@ -292,7 +293,7 @@
     <main>
         <div class="intro">
             <h1>无限可能<br><span style="color: var(--primary);">极简 · 高效 · 免费</span></h1>
-            <p>极简 AI 中转服务。标准的 API 接口，无需 Key，无需登录注册，即开即用。</p>
+            <p>极简 AI 服务。标准的 API 接口，无需 Key，无需登录注册，即开即用。</p>
 
             <div class="api-docs">
                 <div class="feature-item" style="max-width: 550px;">
@@ -335,10 +336,10 @@
     </main>
 
     <footer>
-        <div>© 2026 AI Proxy · 极简 · 高效 · 免费</div>
+        <div>© 2026 AI Free API · 极简 · 高效 · 免费</div>
         <div style="display: flex; gap: 1rem; font-size: 0.8rem;">
             <span>API Base: <code id="api-base-footer"></code></span>
-            <a href="https://github.com/LoosePrince" target="_blank" rel="noopener noreferrer">GitHub</a>
+            由<a href="https://github.com/LoosePrince" target="_blank" rel="noopener noreferrer">树梢(LoosePrince)</a>提供支持
         </div>
     </footer>
 
@@ -361,7 +362,7 @@
             var curlEl = document.getElementById('curl-example');
             if (curlEl) {
                 curlEl.textContent =
-`curl ${base}/chat/completions \
+                    `curl ${base}/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
