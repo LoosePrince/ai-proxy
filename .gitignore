@@ -5,6 +5,7 @@ yarn-error.log*
 
 .env
 .env.*
+!.env.template
 
 dist/
 build/
