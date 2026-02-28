@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@400;700&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/marked/15.0.7/marked.min.js"></script>
     <style>
         :root {
             --primary: #6366f1;
@@ -60,8 +61,7 @@
             background-color: var(--bg);
             color: var(--text);
             line-height: 1.6;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
@@ -268,6 +268,122 @@
             font-style: italic;
         }
 
+        /* Markdown 样式 */
+        .message.ai {
+            line-height: 1.7;
+        }
+
+        .message.ai p {
+            margin: 0.5rem 0;
+        }
+
+        .message.ai p:first-child {
+            margin-top: 0;
+        }
+
+        .message.ai p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message.ai code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.3rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message.ai pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+
+        .message.ai pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .message.ai ul, .message.ai ol {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .message.ai li {
+            margin: 0.2rem 0;
+        }
+
+        .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4 {
+            margin: 1rem 0 0.5rem 0;
+        }
+
+        .message.ai blockquote {
+            border-left: 3px solid var(--primary);
+            padding-left: 1rem;
+            margin: 0.5rem 0;
+            color: var(--text-muted);
+        }
+
+        .message.ai table {
+            border-collapse: collapse;
+            margin: 0.5rem 0;
+            width: 100%;
+        }
+
+        .message.ai th, .message.ai td {
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        .message.ai th {
+            background: rgba(99, 102, 241, 0.2);
+        }
+
+        /* API 指南样式 */
+        .api-docs {
+            margin-top: 1rem;
+        }
+
+        .api-docs .feature-item {
+            padding: 1rem;
+        }
+
+        .api-docs .feature-item h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .api-docs .feature-item > div > div {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .api-docs pre {
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            margin: 0;
+        }
+
+        /* 流式输出光标 */
+        .streaming-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1.2em;
+            background: var(--primary);
+            animation: blink 1s infinite;
+            vertical-align: middle;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
         /* Responsive */
         @media (max-width: 1024px) {
             main {
@@ -298,7 +414,7 @@
             <div class="api-docs">
                 <div class="feature-item" style="max-width: 550px;">
                     <h3>API 接入指南</h3>
-                    <div style="margin-top: 1rem;">
+                    <div>
                         <div
                             style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; background: var(--bg); padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.9rem;">
                             <span style="color: var(--text-muted);">API Base</span>
@@ -370,6 +486,7 @@
     ]
   }'`;
             }
+
         })();
     </script>
 </body>
