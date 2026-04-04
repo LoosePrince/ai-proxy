@@ -10,6 +10,9 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const SILICONFLOW_API_KEY = process.env.SILICONFLOW_API_KEY;
 const SILICONFLOW_BASE_URL = process.env.SILICONFLOW_BASE_URL || 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'openrouter/free';
+const KILO_API_KEY = process.env.KILO_API_KEY;
+const KILO_URL = process.env.KILO_URL || 'https://api.kilo.ai/api/gateway/v1/chat/completions';
+const KILO_MODEL = process.env.KILO_MODEL || 'kilo-auto/free';
 const OPENROUTER_DAILY_LIMIT = 50;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -77,14 +80,29 @@ async function callProvider({
         throw new Error(`${providerName} API key is not configured`);
     }
 
+    const headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+    };
+    if (title) {
+        headers['X-Title'] = title;
+    }
+
     return axios.post(url, payload, {
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'X-Title': title
-        },
+        headers,
         responseType: stream ? 'stream' : 'json'
     });
+}
+
+function sendProviderResponse(res, axiosResponse, stream) {
+    if (stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        axiosResponse.data.pipe(res);
+    } else {
+        res.json(axiosResponse.data);
+    }
 }
 
 app.use(cors());
@@ -97,6 +115,26 @@ app.post('/v1/chat/completions', async (req, res) => {
     const basePayload = { ...req.body };
 
     try {
+        if (KILO_API_KEY) {
+            try {
+                const kiloPayload = buildPayload(basePayload, KILO_MODEL, stream);
+                const kiloResponse = await callProvider({
+                    url: KILO_URL,
+                    apiKey: KILO_API_KEY,
+                    title: null,
+                    payload: kiloPayload,
+                    stream,
+                    providerName: 'Kilo'
+                });
+                sendProviderResponse(res, kiloResponse, stream);
+                return;
+            } catch (kiloError) {
+                const status = kiloError.response ? kiloError.response.status : 'NO_STATUS';
+                const details = kiloError.response ? kiloError.response.data : kiloError.message;
+                console.warn(`[Kilo] failed, trying next provider. status=${status}`, details);
+            }
+        }
+
         if (canUseOpenRouter()) {
             increaseOpenRouterCount();
             try {
@@ -109,16 +147,7 @@ app.post('/v1/chat/completions', async (req, res) => {
                     stream,
                     providerName: 'OpenRouter'
                 });
-
-                if (stream) {
-                    res.setHeader('Content-Type', 'text/event-stream');
-                    res.setHeader('Cache-Control', 'no-cache');
-                    res.setHeader('Connection', 'keep-alive');
-                    response.data.pipe(res);
-                    return;
-                }
-
-                res.json(response.data);
+                sendProviderResponse(res, response, stream);
                 return;
             } catch (openRouterError) {
                 const status = openRouterError.response ? openRouterError.response.status : 'NO_STATUS';
@@ -141,21 +170,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         });
 
         console.log(`[SiliconFlow] fallback model selected: ${fallbackModel}`);
-
-        if (stream) {
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            siliconResponse.data.pipe(res);
-        } else {
-            res.json(siliconResponse.data);
-        }
+        sendProviderResponse(res, siliconResponse, stream);
     } catch (error) {
         const details = error.response ? error.response.data : error.message;
-        console.error('[SiliconFlow] fallback failed:', details);
+        console.error('[Proxy] all providers failed:', details);
         res.status(error.response ? error.response.status : 500).json({
             error: {
-                message: 'OpenRouter and SiliconFlow both failed',
+                message: 'All configured AI providers failed',
                 details
             }
         });
@@ -169,6 +190,9 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    if (!KILO_API_KEY) {
+        console.warn('[Kilo] KILO_API_KEY is not configured, primary Kilo path is disabled');
+    }
     if (!SILICONFLOW_API_KEY) {
         console.warn('[SiliconFlow] SILICONFLOW_API_KEY is not configured, fallback path will fail');
     }
