@@ -1,19 +1,28 @@
 {
   "name": "ai-api",
-  "version": "1.1.1",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "AI Proxy with OpenAI SDK, database management, and admin panel",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "db:migrate": "npx prisma migrate deploy",
+    "db:generate": "npx prisma generate",
+    "db:studio": "npx prisma studio",
+    "postinstall": "npx prisma generate"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "axios": "^1.13.5",
+    "@prisma/client": "^6.8.2",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "express-session": "^1.18.1",
+    "openai": "^4.100.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.8.2"
   }
 }

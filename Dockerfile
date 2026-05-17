@@ -3,13 +3,16 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
+COPY prisma ./prisma/
 
-RUN npm install --only=production
+RUN npm install
 
 COPY . .
+
+RUN npx prisma generate
 
 ENV PORT=3000
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]

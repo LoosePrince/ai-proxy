@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Proxy - 管理后台</title>
+<link rel="icon" type="image/webp" href="/logo.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --bg: #0f172a;
+  --card-bg: #1e293b;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: #334155;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+* { margin:0; padding:0; box-sizing:border-box; scrollbar-width:thin; scrollbar-color:#475569 transparent; }
+body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+h1,h2 { font-family:'Outfit',sans-serif; }
+
+/* Header */
+header { padding:0.75rem 2rem; background:rgba(15,23,42,0.9); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; backdrop-filter:blur(8px); position:sticky; top:0; z-index:10; }
+.logo { font-size:1.3rem; font-weight:700; background:linear-gradient(135deg,#818cf8,#c084fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-decoration:none; }
+nav { display:flex; gap:0.5rem; }
+nav button { background:transparent; border:1px solid var(--border); color:var(--text-muted); padding:0.4rem 1rem; border-radius:0.5rem; cursor:pointer; font-size:0.85rem; transition:all 0.2s; }
+nav button:hover, nav button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+
+/* Main */
+main { max-width:1200px; margin:0 auto; padding:1.5rem 2rem; }
+.card { background:var(--card-bg); border:1px solid var(--border); border-radius:1rem; padding:1.5rem; margin-bottom:1.5rem; }
+.card h2 { font-size:1.1rem; margin-bottom:1rem; color:var(--primary); }
+
+/* Login */
+.login-wrap { display:flex; justify-content:center; align-items:center; min-height:80vh; }
+.login-box { width:320px; }
+.login-box h1 { text-align:center; margin-bottom:1.5rem; }
+.login-box input { width:100%; background:var(--bg); border:1px solid var(--border); padding:0.7rem 1rem; border-radius:0.5rem; color:var(--text); margin-bottom:0.75rem; outline:none; font-size:0.9rem; }
+.login-box input:focus { border-color:var(--primary); }
+.login-box button { width:100%; background:var(--primary); color:#fff; border:none; padding:0.7rem; border-radius:0.5rem; font-weight:600; cursor:pointer; font-size:0.95rem; }
+.login-box button:hover { background:var(--primary-hover); }
+.login-error { color:var(--danger); font-size:0.85rem; margin-bottom:0.5rem; text-align:center; }
+
+/* Stats grid */
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:1rem; }
+.stat-item { background:var(--bg); padding:1rem; border-radius:0.75rem; text-align:center; }
+.stat-item .value { font-size:1.8rem; font-weight:700; color:var(--primary); }
+.stat-item .label { font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem; }
+
+/* Table */
+table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+th,td { padding:0.65rem 0.75rem; text-align:left; border-bottom:1px solid var(--border); }
+th { color:var(--text-muted); font-weight:600; font-size:0.8rem; text-transform:uppercase; }
+tr:hover td { background:rgba(99,102,241,0.05); }
+.tag { display:inline-block; padding:0.15rem 0.5rem; border-radius:999px; font-size:0.75rem; font-weight:600; }
+.tag-env { background:rgba(245,158,11,0.15); color:var(--warning); }
+.tag-enabled { background:rgba(16,185,129,0.15); color:var(--success); }
+.tag-disabled { background:rgba(239,68,68,0.15); color:var(--danger); }
+.tag-rule { background:rgba(99,102,241,0.15); color:var(--primary); }
+
+/* Buttons */
+.btn { display:inline-block; padding:0.35rem 0.75rem; border-radius:0.4rem; font-size:0.8rem; border:none; cursor:pointer; font-weight:600; transition:all 0.2s; }
+.btn-sm { padding:0.25rem 0.6rem; font-size:0.75rem; }
+.btn-primary { background:var(--primary); color:#fff; }
+.btn-primary:hover { background:var(--primary-hover); }
+.btn-danger { background:var(--danger); color:#fff; }
+.btn-danger:hover { opacity:0.85; }
+.btn-success { background:var(--success); color:#fff; }
+.btn-success:hover { opacity:0.85; }
+.btn-outline { background:transparent; border:1px solid var(--border); color:var(--text-muted); }
+.btn-outline:hover { border-color:var(--primary); color:var(--primary); }
+
+/* Modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; z-index:100; }
+.modal { background:var(--card-bg); border:1px solid var(--border); border-radius:1rem; padding:1.5rem; width:90%; max-width:500px; }
+.modal h2 { margin-bottom:1rem; }
+.form-group { margin-bottom:0.75rem; }
+.form-group label { display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.3rem; }
+.form-group input, .form-group select { width:100%; background:var(--bg); border:1px solid var(--border); padding:0.55rem 0.75rem; border-radius:0.4rem; color:var(--text); font-size:0.85rem; outline:none; }
+.form-group input:focus, .form-group select:focus { border-color:var(--primary); }
+.form-group .hint { font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem; }
+.modal-actions { display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; }
+
+/* Log list */
+.log-list { max-height:500px; overflow-y:auto; }
+.log-entry { padding:0.5rem 0.75rem; border-bottom:1px solid var(--border); font-size:0.8rem; font-family:monospace; }
+.log-entry .time { color:var(--text-muted); margin-right:0.5rem; }
+.log-entry .ok { color:var(--success); }
+.log-entry .fail { color:var(--danger); }
+.log-entry .model { color:var(--primary); }
+
+/* IP & Model stats */
+.stats-table td:nth-child(n+2) { text-align:right; }
+
+/* Responsive */
+@media(max-width:768px) {
+  main { padding:1rem; }
+  .stats-grid { grid-template-columns:repeat(2,1fr); }
+  table { font-size:0.75rem; }
+  th,td { padding:0.4rem 0.5rem; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">AI Proxy Admin</a>
+  <nav id="main-nav">
+    <button class="active" data-page="dashboard">仪表盘</button>
+    <button data-page="providers">Provider</button>
+    <button data-page="models">模型</button>
+    <button data-page="ips">IP</button>
+    <button data-page="logs">日志</button>
+    <button id="logout-btn" style="display:none">登出</button>
+  </nav>
+</header>
+
+<main id="app-content">
+  <div class="login-wrap" id="login-page">
+    <div class="login-box">
+      <h1>管理后台</h1>
+      <div id="login-error" class="login-error" style="display:none"></div>
+      <input type="text" id="login-user" placeholder="用户名" autocomplete="username">
+      <input type="password" id="login-pass" placeholder="密码" autocomplete="current-password">
+      <button onclick="doLogin()">登录</button>
+    </div>
+  </div>
+
+  <div id="dashboard-page" style="display:none">
+    <div class="stats-grid" id="overview-stats"></div>
+    <div class="card"><h2>Provider 概览</h2><div id="provider-summary"></div></div>
+  </div>
+
+  <div id="providers-page" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2>Provider 管理</h2>
+      <button class="btn btn-primary" onclick="showAddModal()">+ 添加 Provider</button>
+    </div>
+    <div class="card" style="padding:0">
+      <table id="providers-table"><thead><tr><th>名称</th><th>Base URL</th><th>模型</th><th>规则</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div id="models-page" style="display:none">
+    <div class="card"><h2>模型调用统计</h2><table class="stats-table" id="models-table"><thead><tr><th>请求模型</th><th>请求数</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>解析到真实模型</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div id="ips-page" style="display:none">
+    <div class="card"><h2>IP 统计</h2><table class="stats-table" id="ips-table"><thead><tr><th>IP</th><th>请求数</th><th>Token 数</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div id="logs-page" style="display:none">
+    <div class="card"><h2>最近请求日志</h2><div class="log-list" id="log-list"></div></div>
+  </div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <h2 id="modal-title">添加 Provider</h2>
+    <input type="hidden" id="modal-id">
+    <div class="form-group"><label>名称</label><input id="f-name" placeholder="My Provider"></div>
+    <div class="form-group"><label>Base URL</label><input id="f-baseUrl" placeholder="https://api.openai.com/v1"></div>
+    <div class="form-group"><label>API Key</label><input id="f-apiKey" type="password" placeholder="sk-..."></div>
+    <div class="form-group"><label>模型列表</label><input id="f-models" placeholder="model-a,model-b"><div class="hint">逗号分隔多个模型</div></div>
+    <div class="form-group"><label>路由规则</label><select id="f-rule"><option value="priority">优先平台</option><option value="single">单一平台</option><option value="balanced">负载均衡</option></select></div>
+    <div class="form-group"><label>优先级</label><input id="f-priority" type="number" value="0"><div class="hint">数字越小越优先</div></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveProvider()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 'dashboard';
+let authChecked = false;
+
+// --- Auth ---
+async function checkAuth() {
+  const r = await fetch('/admin/api/auth-check');
+  const d = await r.json();
+  if (!d.needAuth) { authChecked = true; showApp(); return; }
+  if (d.authenticated) { authChecked = true; showApp(); } else { showLogin(); }
+}
+
+async function doLogin() {
+  const u = document.getElementById('login-user').value;
+  const p = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  const r = await fetch('/admin/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u,password:p}) });
+  if (r.ok) { authChecked=true; showApp(); } else { errEl.style.display='block'; errEl.textContent='用户名或密码错误'; }
+}
+
+function showLogin() {
+  document.getElementById('login-page').style.display='flex';
+  document.getElementById('dashboard-page').style.display='none';
+  document.getElementById('logout-btn').style.display='none';
+}
+
+function showApp() {
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('logout-btn').style.display='inline-block';
+  loadPage(currentPage);
+}
+
+// --- Navigation ---
+document.querySelectorAll('#main-nav button[data-page]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#main-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPage = btn.dataset.page;
+    loadPage(currentPage);
+  });
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await fetch('/admin/api/logout', { method:'POST' });
+  location.reload();
+});
+
+function showPage(page) {
+  ['dashboard','providers','models','ips','logs'].forEach(p => {
+    document.getElementById(p+'-page').style.display = (p===page)?'block':'none';
+  });
+}
+
+async function loadPage(page) {
+  showPage(page);
+  if (page === 'dashboard') await loadDashboard();
+  else if (page === 'providers') await loadProviders();
+  else if (page === 'models') await loadModels();
+  else if (page === 'ips') await loadIps();
+  else if (page === 'logs') await loadLogs();
+}
+
+// --- Dashboard ---
+async function loadDashboard() {
+  const r = await fetch('/admin/api/stats');
+  const s = await r.json();
+  const rate = s.totalRequests ? ((s.successRequests/s.totalRequests)*100).toFixed(1) : '0.0';
+  document.getElementById('overview-stats').innerHTML = `
+    <div class="stat-item"><div class="value">${s.totalRequests||0}</div><div class="label">总请求数</div></div>
+    <div class="stat-item"><div class="value">${s.totalTokens||0}</div><div class="label">总 Token 数</div></div>
+    <div class="stat-item"><div class="value">${rate}%</div><div class="label">成功率</div></div>
+    <div class="stat-item"><div class="value">${s.successRequests||0}</div><div class="label">成功请求</div></div>
+    <div class="stat-item"><div class="value">${s.failedRequests||0}</div><div class="label">失败请求</div></div>
+    <div class="stat-item"><div class="value">${s.totalPromptTokens||0}</div><div class="label">Prompt Tokens</div></div>
+  `;
+  const pr = await fetch('/admin/api/providers');
+  const providers = await pr.json();
+  if (s.providers && Object.keys(s.providers).length) {
+    let html='<table class="stats-table"><tr><th>Provider</th><th>请求数</th><th>成功</th><th>失败</th><th>Token</th></tr>';
+    for (const [name,d] of Object.entries(s.providers)) {
+      const p = providers.find(x=>x.name===name);
+      const envTag = p&&p.isEnv ? ' <span class="tag tag-env">ENV</span>' : '';
+      html+=`<tr><td>${name}${envTag}</td><td>${d.totalRequests}</td><td>${d.successRequests}</td><td>${d.failedRequests}</td><td>${d.totalTokens}</td></tr>`;
+    }
+    html+='</table>';
+    document.getElementById('provider-summary').innerHTML=html;
+  } else {
+    document.getElementById('provider-summary').innerHTML='<p style="color:var(--text-muted)">暂无数据</p>';
+  }
+}
+
+// --- Providers ---
+async function loadProviders() {
+  const r = await fetch('/admin/api/providers');
+  const providers = await r.json();
+  const tbody = document.querySelector('#providers-table tbody');
+  tbody.innerHTML = providers.map(p => {
+    const models = Array.isArray(p.models)?p.models.join(', '):p.models;
+    const envTag = p.isEnv ? '<span class="tag tag-env">ENV</span> ' : '';
+    const statusTag = p.enabled ? '<span class="tag tag-enabled">启用</span>' : '<span class="tag tag-disabled">禁用</span>';
+    const ruleTag = `<span class="tag tag-rule">${p.rule}</span>`;
+    const actions = p.isEnv
+      ? `<button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>`
+      : `<button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>
+         <button class="btn btn-sm ${p.enabled?'btn-outline':'btn-success'}" onclick="toggleProvider(${p.id},${!p.enabled})">${p.enabled?'禁用':'启用'}</button>
+         <button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id},'${p.name}')">删除</button>`;
+    return `<tr>
+      <td>${envTag}${p.name}</td>
+      <td style="font-size:0.75rem;word-break:break-all;max-width:200px">${p.baseUrl}</td>
+      <td style="font-size:0.75rem">${models}</td>
+      <td>${ruleTag}</td>
+      <td>${p.priority}</td>
+      <td>${statusTag}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+function showAddModal() {
+  document.getElementById('modal-title').textContent='添加 Provider';
+  document.getElementById('modal-id').value='';
+  document.getElementById('f-name').value='';
+  document.getElementById('f-name').disabled=false;
+  document.getElementById('f-baseUrl').value='';
+  document.getElementById('f-baseUrl').disabled=false;
+  document.getElementById('f-apiKey').value='';
+  document.getElementById('f-apiKey').disabled=false;
+  document.getElementById('f-models').value='';
+  document.getElementById('f-rule').value='priority';
+  document.getElementById('f-priority').value='0';
+  document.getElementById('modal').style.display='flex';
+}
+
+async function editProvider(id) {
+  const r = await fetch('/admin/api/providers');
+  const providers = await r.json();
+  const p = providers.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('modal-title').textContent='编辑 Provider';
+  document.getElementById('modal-id').value=id;
+  document.getElementById('f-name').value=p.name;
+  document.getElementById('f-name').disabled=!!p.isEnv;
+  document.getElementById('f-baseUrl').value=p.baseUrl;
+  document.getElementById('f-baseUrl').disabled=!!p.isEnv;
+  document.getElementById('f-apiKey').value='';
+  document.getElementById('f-apiKey').placeholder=p.isEnv?'不可修改':'留空则不修改';
+  document.getElementById('f-apiKey').disabled=!!p.isEnv;
+  document.getElementById('f-models').value=Array.isArray(p.models)?p.models.join(','):p.models;
+  document.getElementById('f-rule').value=p.rule;
+  document.getElementById('f-priority').value=p.priority;
+  document.getElementById('modal').style.display='flex';
+}
+
+function closeModal() { document.getElementById('modal').style.display='none'; }
+
+async function saveProvider() {
+  const id = document.getElementById('modal-id').value;
+  const modelsRaw = document.getElementById('f-models').value.trim();
+  const models = modelsRaw ? modelsRaw.split(',').map(m=>m.trim()).filter(Boolean) : [];
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    baseUrl: document.getElementById('f-baseUrl').value.trim(),
+    models,
+    rule: document.getElementById('f-rule').value,
+    priority: parseInt(document.getElementById('f-priority').value)||0,
+  };
+  const apiKeyVal = document.getElementById('f-apiKey').value.trim();
+  if (apiKeyVal) body.apiKey = apiKeyVal;
+  if (!id && !apiKeyVal) { alert('添加 Provider 时 API Key 不能为空'); return; }
+  const url = id ? `/admin/api/providers/${id}` : '/admin/api/providers';
+  const method = id ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if (r.ok) { closeModal(); loadProviders(); } else { const d=await r.json(); alert(d.error||'保存失败'); }
+}
+
+async function toggleProvider(id, enabled) {
+  await fetch(`/admin/api/providers/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled}) });
+  loadProviders();
+}
+
+async function deleteProvider(id, name) {
+  if (!confirm(`确定删除 Provider "${name}"?`)) return;
+  await fetch(`/admin/api/providers/${id}`, { method:'DELETE' });
+  loadProviders();
+}
+
+// --- Models ---
+async function loadModels() {
+  const r = await fetch('/admin/api/stats');
+  const s = await r.json();
+  const tbody = document.querySelector('#models-table tbody');
+  if (!s.models || !Object.keys(s.models).length) { tbody.innerHTML='<tr><td colspan="5" style="color:var(--text-muted)">暂无数据</td></tr>'; return; }
+  tbody.innerHTML = Object.entries(s.models).map(([model, d]) => {
+    const resolved = d.actualResolved && Object.keys(d.actualResolved).length
+      ? Object.entries(d.actualResolved).map(([a,c])=>`${a} (${c})`).join(', ')
+      : '-';
+    return `<tr><td class="model">${model}</td><td>${d.requested||0}</td><td>${d.promptTokens||0}</td><td>${d.completionTokens||0}</td><td style="font-size:0.75rem">${resolved}</td></tr>`;
+  }).join('');
+}
+
+// --- IPs ---
+async function loadIps() {
+  const r = await fetch('/admin/api/stats');
+  const s = await r.json();
+  const tbody = document.querySelector('#ips-table tbody');
+  if (!s.ips || !Object.keys(s.ips).length) { tbody.innerHTML='<tr><td colspan="3" style="color:var(--text-muted)">暂无数据</td></tr>'; return; }
+  const sorted = Object.entries(s.ips).sort((a,b)=>b[1].requests-a[1].requests);
+  tbody.innerHTML = sorted.map(([ip,d]) => `<tr><td>${ip}</td><td>${d.requests}</td><td>${d.tokens}</td></tr>`).join('');
+}
+
+// --- Logs ---
+async function loadLogs() {
+  const r = await fetch('/admin/api/logs');
+  const logs = await r.json();
+  const el = document.getElementById('log-list');
+  if (!logs.length) { el.innerHTML='<p style="color:var(--text-muted);padding:1rem">暂无日志</p>'; return; }
+  el.innerHTML = logs.reverse().map(l => {
+    const cls = l.success ? 'ok' : 'fail';
+    const actual = l.actualModel ? ` -> <span class="model">${l.actualModel}</span>` : '';
+    const err = l.error ? ` <span class="fail">${l.error}</span>` : '';
+    return `<div class="log-entry"><span class="time">${new Date(l.timestamp).toLocaleTimeString()}</span> <span class="${cls}">${l.success?'OK':'FAIL'}</span> ${l.providerName} <span class="model">${l.requestedModel||'-'}</span>${actual} ip:${l.ip||'-'} tok:${l.promptTokens||0}+${l.completionTokens||0}${err}</div>`;
+  }).join('');
+}
+
+// --- Init ---
+checkAuth();
+</script>
+</body>
+</html>

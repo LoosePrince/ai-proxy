@@ -1,71 +1,72 @@
 # AI Proxy Service
 
-一个简单的 AI 代理服务，基于 Express.js 构建，提供 OpenAI 兼容的 `/v1/chat/completions` 接口，按配置自动回退。
+基于 Express.js 的 AI 代理服务，提供 OpenAI 兼容的 `/v1/chat/completions` 接口，支持多 Provider 动态管理、数据库统计和管理后台。
 
 ## 功能特性
 
-- 🚀 提供 OpenAI 兼容的 `/v1/chat/completions` 接口
-- 💬 支持流式 (stream) 和非流式响应
-- 🌐 内置 Web 聊天界面
-- 🔧 可配置上游模型
-- 🔁 上游失败时按顺序回退：Kilo（若已配置）→ OpenRouter（每日限额）→ SiliconFlow
-- 🐳 支持 Docker 部署
+- OpenAI 兼容的 `/v1/chat/completions` 接口，统一 OpenAI SDK 调用
+- 支持流式和非流式响应
+- 多 Provider 动态管理（通过数据库配置，无需重启）
+- 三种路由规则：单一平台 / 优先平台 / 负载均衡
+- 按 model 名匹配 Provider，自动回退
+- PostgreSQL 数据库记录请求数、Token 用量、IP 统计、模型映射（请求模型 vs 真实模型）
+- 管理后台：Provider 增删改查、统计查看、实时日志
+- 环境变量保底 Provider（不可通过后台关闭或删除）
+- Docker 部署支持
 
 ## 快速开始
 
-### 1. 克隆项目
+### 1. 克隆并安装
 
 ```bash
 git clone <repository-url>
 cd ai-proxy
-```
-
-### 2. 安装依赖
-
-```bash
 npm install
 ```
 
-### 3. 配置环境变量
-
-复制模板文件并修改配置：
+### 2. 配置环境变量
 
 ```bash
 cp .env.template .env
 ```
 
-编辑 `.env`，按需填入 API Key。示例：
+编辑 `.env`：
 
 ```env
-# 可选：配置后优先走 Kilo（见 https://kilo.ai/docs/gateway ）
-KILO_API_KEY=your_kilo_api_key
-# 可选，默认 https://api.kilo.ai/api/gateway/v1/chat/completions
-# KILO_URL=
-# 可选，默认 kilo-auto/free
-# KILO_MODEL=kilo-auto/free
+# 必填：数据库连接
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-SILICONFLOW_API_KEY=your_siliconflow_api_key_here
-SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1/chat/completions
+# 可选：服务端口
 PORT=3000
-DEFAULT_MODEL=openrouter/free
+
+# 可选：管理后台登录（不设则无需登录）
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_password
+
+# 可选：保底 Provider（JSON 数组，不可通过后台关闭或删除）
+FALLBACK_PROVIDERS=[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"],"priority":0}]
 ```
 
-> 💡 Kilo API Key 见 [Kilo 文档](https://kilo.ai/docs/gateway)；OpenRouter 见 [OpenRouter Keys](https://openrouter.ai/keys)；SiliconFlow 见 [SiliconFlow](https://siliconflow.cn)。
+> `baseUrl` 使用 OpenAI SDK 格式（不含 `/chat/completions`，SDK 会自动拼接）。
+> 不设 `FALLBACK_PROVIDERS` 时可通过管理后台添加 Provider。
 
-未配置 `KILO_API_KEY` 时从 OpenRouter 开始，失败或超限后回退 SiliconFlow。
-
-### 4. 启动服务
+### 3. 初始化数据库并启动
 
 ```bash
+# 首次运行：推送数据库 schema
+npx prisma db push
+
+# 启动服务
 node server.js
 ```
 
-服务将在 http://localhost:3000 启动
+服务启动后：
+- API: `http://localhost:3000/v1/chat/completions`
+- 管理后台: `http://localhost:3000/admin`
 
 ## API 使用
 
-### 聊天补全接口
+### 聊天补全
 
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
@@ -76,66 +77,82 @@ curl -X POST http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-### 流式响应
-
-将 `stream` 设置为 `true` 即可启用流式响应：
+### 指定模型
 
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true
+    "model": "kilo-auto/free",
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-## 回退策略说明
+指定 `model` 时，系统会优先选择支持该模型的 Provider，按路由规则选择；未指定模型时在所有启用 Provider 中按优先级选择。
 
-1. **Kilo**（仅当设置了 `KILO_API_KEY`）：使用 `KILO_MODEL`（默认 `kilo-auto/free`），请求 `KILO_URL` 指向的 OpenAI 兼容 Chat Completions 端点。失败则进入下一步。
-2. **OpenRouter**：使用 `DEFAULT_MODEL`（默认 `openrouter/free`），每天最多尝试 50 次（进程内计数，服务重启会重置）。失败或达到当日上限则进入 SiliconFlow。
-3. **SiliconFlow**：从下列白名单模型中随机选一个完成请求：
-   - `Qwen/Qwen3.5-4B`
-   - `PaddlePaddle/PaddleOCR-VL-1.5`
-   - `PaddlePaddle/PaddleOCR-VL`
-   - `THUDM/GLM-4.1V-9B-Thinking`
-   - `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B`
-   - `Qwen/Qwen3-8B`
-   - `THUDM/GLM-Z1-9B-0414`
-   - `THUDM/GLM-4-9B-0414`
-   - `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`
-   - `Qwen/Qwen2.5-7B-Instruct`
-   - `internlm/internlm2_5-7b-chat`
+## 路由规则
 
-客户端始终使用同一套 `/v1/chat/completions` 调用方式，无需因回退链改动代码。
+每个 Provider 可配置路由规则：
+
+| 规则 | 说明 |
+|------|------|
+| `single` | 仅使用优先级最高的 Provider |
+| `priority` | 按优先级从高到低依次尝试，失败后回退下一个 |
+| `balanced` | 同优先级组内 round-robin 轮询 |
+
+优先级数字越小越优先。Provider 失败时自动按优先级尝试下一个可用 Provider。
+
+## 环境变量 Provider
+
+`FALLBACK_PROVIDERS` 中的 Provider 标记为 `isEnv=true`：
+- 启动时 upsert 到数据库
+- 不可通过管理后台关闭或删除
+- 环境变量中移除后，数据库中降级为普通 Provider（可管理）
+
+## 管理后台
+
+访问 `/admin` 进入管理后台（如果设置了 `ADMIN_USERNAME` 则需要登录）。
+
+功能：
+- 仪表盘：总请求数、Token 统计、成功率
+- Provider 管理：添加 / 编辑 / 启用禁用 / 删除
+- 模型统计：请求模型 vs 真实模型映射（如 `kilo-auto/free` -> `gpt-4o-mini`）
+- IP 统计
+- 最近请求日志（内存中，重启清空）
+
+## 数据库
+
+使用 PostgreSQL，单表 `providers` 存储配置和统计信息。
+
+`stats` JSONB 字段结构：
+- `totalRequests` / `successRequests` / `failedRequests` — 请求计数
+- `totalPromptTokens` / `totalCompletionTokens` / `totalTokens` — Token 统计
+- `models.{model}.requested` — 按请求模型的调用次数
+- `models.{model}.actualResolved.{realModel}` — 请求模型到真实模型的映射
+- `ips.{ip}.requests` / `ips.{ip}.tokens` — 按 IP 的统计
 
 ## Docker 部署
 
-### 构建镜像
-
 ```bash
 docker build -t ai-proxy .
-```
 
-### 运行容器
-
-至少传入实际使用的上游 Key。若使用 Kilo 优先，示例：
-
-```bash
 docker run -d \
   -p 3000:3000 \
-  -e KILO_API_KEY=your_kilo_api_key \
-  -e OPENROUTER_API_KEY=your_openrouter_key \
-  -e SILICONFLOW_API_KEY=your_siliconflow_key \
+  -e DATABASE_URL="postgresql://user:password@host:5432/dbname" \
+  -e FALLBACK_PROVIDERS='[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"]}]' \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=secret \
   ai-proxy
 ```
+
+容器启动时自动执行 `prisma migrate deploy` 同步数据库 schema。
 
 ## 技术栈
 
 - [Express.js](https://expressjs.com/) - Web 框架
-- [Axios](https://axios-http.com/) - HTTP 客户端
-- [Kilo AI Gateway](https://kilo.ai/docs/gateway) - 统一 OpenAI 兼容网关
-- [OpenRouter](https://openrouter.ai/) - AI 模型聚合服务
-- [SiliconFlow](https://siliconflow.cn/) - 回退通道
+- [OpenAI Node.js SDK](https://github.com/openai/openai-node) - 统一 AI API 调用
+- [Prisma](https://www.prisma.io/) - PostgreSQL ORM
+- [express-session](https://github.com/expressjs/session) - Session 管理
 
 ## 许可证
 
