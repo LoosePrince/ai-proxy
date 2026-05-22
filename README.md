@@ -7,11 +7,12 @@
 - OpenAI 兼容的 `/v1/chat/completions` 接口，统一 OpenAI SDK 调用
 - 支持流式和非流式响应
 - 多 Provider 动态管理（通过数据库配置，无需重启）
-- 三种路由规则：单一平台 / 优先平台 / 负载均衡
+- 三种全局路由规则：遵循优先级 / 随机 / 平均
+- 首页支持公开贡献 OpenAI 兼容 API，后端逐模型验证后保存为待启用 Provider
 - 按 model 名匹配 Provider，自动回退
 - PostgreSQL 数据库记录请求数、Token 用量、IP 统计、模型映射（请求模型 vs 真实模型）
-- 管理后台：Provider 增删改查、统计查看、实时日志
-- 环境变量保底 Provider（不可通过后台关闭或删除）
+- 管理后台：Provider 增删改查、启用禁用、统计查看、实时日志
+- 环境变量保底 Provider 可在后台关闭，但不可删除
 - Docker 部署支持
 
 ## 快速开始
@@ -43,8 +44,8 @@ PORT=3000
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_password
 
-# 可选：保底 Provider（JSON 数组，不可通过后台关闭或删除）
-FALLBACK_PROVIDERS=[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"],"priority":0}]
+# 可选：保底 Provider（JSON 数组，可在后台关闭但不可删除）
+FALLBACK_PROVIDERS=[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"],"rule":"priority","priority":0}]
 ```
 
 > `baseUrl` 使用 OpenAI SDK 格式（不含 `/chat/completions`，SDK 会自动拼接）。
@@ -92,21 +93,45 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 路由规则
 
-每个 Provider 可配置路由规则：
+路由规则是全局规则，只读取优先级为 `0` 的第一个 Provider（按 `id ASC`）上的 `rule` 字段。其他 Provider 的 `rule` 会保存，但不会决定整体路由策略。
 
 | 规则 | 说明 |
 |------|------|
-| `single` | 仅使用优先级最高的 Provider |
-| `priority` | 按优先级从高到低依次尝试，失败后回退下一个 |
-| `balanced` | 同优先级组内 round-robin 轮询 |
+| `priority` | 遵循优先级，按 `priority ASC, id ASC` 依次尝试，失败后回退下一个 |
+| `random` | 随机打乱当前候选 Provider 后依次尝试 |
+| `average` | 对当前候选 Provider 做 round-robin 平均轮换 |
 
-优先级数字越小越优先。Provider 失败时自动按优先级尝试下一个可用 Provider。
+兼容旧配置：`balanced` 会按 `average` 处理，`single` 会按 `priority` 处理。优先级数字越小越优先。
+
+## 贡献 API 服务
+
+首页提供公开贡献入口，也可以直接调用接口：
+
+```bash
+curl -X POST http://localhost:3000/api/contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Free API",
+    "baseUrl": "https://api.example.com/v1",
+    "apiKey": "sk-xxx",
+    "models": "model-a,model-b"
+  }'
+```
+
+提交后服务端会逐个模型发起一次真实 AI 请求，要求返回固定内容 `AI_PROXY_PROVIDER_OK`。任一模型失败都会整体拒绝，并返回模型级失败原因。
+
+验证通过后：
+- 新贡献会创建为 `isContributed=true` 的 Provider
+- 同一个 `apiKey` 再次提交会更新已有贡献
+- 贡献 Provider 默认 `enabled=false`，需要管理员在后台手动启用
+- 公开贡献列表只返回脱敏信息，不返回 `apiKey`
 
 ## 环境变量 Provider
 
 `FALLBACK_PROVIDERS` 中的 Provider 标记为 `isEnv=true`：
 - 启动时 upsert 到数据库
-- 不可通过管理后台关闭或删除
+- 可通过管理后台启用或关闭，重启不会强制恢复为启用
+- 不可通过管理后台删除
 - 环境变量中移除后，数据库中降级为普通 Provider（可管理）
 
 ## 管理后台

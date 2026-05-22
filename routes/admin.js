@@ -6,6 +6,8 @@ const { getLogs, aggregateAllStats } = require('../lib/stats');
 
 const router = express.Router();
 
+const MIGRATION_REQUIRED_MESSAGE = '数据库结构未完成迁移，请执行 npx prisma migrate deploy 或重启服务触发自动补列';
+
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const NEED_AUTH = !!(ADMIN_USERNAME && ADMIN_PASSWORD);
@@ -23,6 +25,68 @@ function requireAuth(req, res, next) {
   if (!NEED_AUTH) return next();
   if (req.session && req.session.authenticated) return next();
   res.status(401).json({ error: 'Authentication required' });
+}
+
+function isMissingContributionColumn(error) {
+  return error.code === 'P2022' || /isContributed/i.test(error.message || '');
+}
+
+function withContributionFallback(provider) {
+  return { ...provider, isContributed: false };
+}
+
+const providerSelectWithoutContribution = {
+  id: true,
+  name: true,
+  baseUrl: true,
+  apiKey: true,
+  models: true,
+  rule: true,
+  priority: true,
+  enabled: true,
+  isEnv: true,
+  stats: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+async function findProviderByIdCompat(id) {
+  const provider = await prisma.provider.findUnique({
+    where: { id },
+    select: providerSelectWithoutContribution,
+  });
+  return provider ? withContributionFallback(provider) : null;
+}
+
+async function updateProviderCompat(id, data) {
+  const provider = await prisma.provider.update({
+    where: { id },
+    data,
+    select: providerSelectWithoutContribution,
+  });
+  return withContributionFallback(provider);
+}
+
+async function createProviderCompat(data) {
+  const provider = await prisma.provider.create({
+    data,
+    select: providerSelectWithoutContribution,
+  });
+  return withContributionFallback(provider);
+}
+
+async function findProvidersCompat(args = {}) {
+  try {
+    return await prisma.provider.findMany(args);
+  } catch (error) {
+    if (!isMissingContributionColumn(error)) throw error;
+    const rows = await prisma.$queryRaw`
+      SELECT id, name, "baseUrl", "apiKey", models, rule, priority, enabled, "isEnv", stats, "createdAt", "updatedAt"
+      FROM "Provider"
+      ORDER BY priority ASC, id ASC
+    `;
+    return rows.map(withContributionFallback);
+  }
 }
 
 // --- 登录/登出 ---
@@ -54,7 +118,7 @@ router.get('/api/auth-check', (req, res) => {
 
 router.get('/api/providers', requireAuth, async (req, res) => {
   try {
-    const providers = await prisma.provider.findMany({ orderBy: { priority: 'asc' } });
+    const providers = await findProvidersCompat({ orderBy: { priority: 'asc' } });
     // 隐藏 apiKey，仅显示前后4位
     const masked = providers.map(p => ({
       ...p,
@@ -74,23 +138,24 @@ router.post('/api/providers', requireAuth, async (req, res) => {
     if (!name || !baseUrl || !apiKey) {
       return res.status(400).json({ error: 'name, baseUrl, apiKey are required' });
     }
-    const provider = await prisma.provider.create({
-      data: {
-        name,
-        baseUrl,
-        apiKey,
-        models: models || [],
-        rule: rule || 'priority',
-        priority: priority ?? 0,
-        isEnv: false,
-        enabled: true,
-        stats: {},
-      },
+    const provider = await createProviderCompat({
+      name,
+      baseUrl,
+      apiKey,
+      models: models || [],
+      rule: rule || 'priority',
+      priority: priority ?? 0,
+      isEnv: false,
+      enabled: true,
+      stats: {},
     });
     res.json(provider);
   } catch (err) {
     if (err.code === 'P2002') {
       return res.status(409).json({ error: `Provider "${req.body.name}" already exists` });
+    }
+    if (isMissingContributionColumn(err)) {
+      return res.status(503).json({ error: MIGRATION_REQUIRED_MESSAGE });
     }
     res.status(500).json({ error: err.message });
   }
@@ -99,7 +164,7 @@ router.post('/api/providers', requireAuth, async (req, res) => {
 router.put('/api/providers/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const existing = await prisma.provider.findUnique({ where: { id } });
+    const existing = await findProviderByIdCompat(id);
     if (!existing) return res.status(404).json({ error: 'Provider not found' });
 
     const body = req.body;
@@ -110,9 +175,8 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
       if (body.models !== undefined) allowed.models = body.models;
       if (body.rule !== undefined) allowed.rule = body.rule;
       if (body.priority !== undefined) allowed.priority = body.priority;
-      // isEnv 不允许关闭
-      if (body.enabled !== undefined && body.enabled === true) allowed.enabled = true;
-      const updated = await prisma.provider.update({ where: { id }, data: allowed });
+      if (body.enabled !== undefined) allowed.enabled = body.enabled;
+      const updated = await updateProviderCompat(id, allowed);
       return res.json(updated);
     }
 
@@ -127,11 +191,14 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
     if (body.priority !== undefined) data.priority = body.priority;
     if (body.enabled !== undefined) data.enabled = body.enabled;
 
-    const updated = await prisma.provider.update({ where: { id }, data });
+    const updated = await updateProviderCompat(id, data);
     res.json(updated);
   } catch (err) {
     if (err.code === 'P2002') {
       return res.status(409).json({ error: `Provider name "${req.body.name}" already exists` });
+    }
+    if (isMissingContributionColumn(err)) {
+      return res.status(503).json({ error: MIGRATION_REQUIRED_MESSAGE });
     }
     res.status(500).json({ error: err.message });
   }
@@ -140,13 +207,16 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
 router.delete('/api/providers/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const existing = await prisma.provider.findUnique({ where: { id } });
+    const existing = await findProviderByIdCompat(id);
     if (!existing) return res.status(404).json({ error: 'Provider not found' });
     if (existing.isEnv) return res.status(403).json({ error: 'Cannot delete env provider' });
 
     await prisma.provider.delete({ where: { id } });
     res.json({ success: true });
   } catch (err) {
+    if (isMissingContributionColumn(err)) {
+      return res.status(503).json({ error: MIGRATION_REQUIRED_MESSAGE });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -155,10 +225,13 @@ router.delete('/api/providers/:id', requireAuth, async (req, res) => {
 
 router.get('/api/stats', requireAuth, async (req, res) => {
   try {
-    const providers = await prisma.provider.findMany();
+    const providers = await findProvidersCompat();
     const stats = aggregateAllStats(providers);
     res.json(stats);
   } catch (err) {
+    if (isMissingContributionColumn(err)) {
+      return res.status(503).json({ error: MIGRATION_REQUIRED_MESSAGE });
+    }
     res.status(500).json({ error: err.message });
   }
 });

@@ -18,6 +18,7 @@ model Provider {
   priority Int      @default(0)
   enabled  Boolean  @default(true)
   isEnv    Boolean  @default(false)
+  isContributed Boolean @default(false)
   stats    Json     @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

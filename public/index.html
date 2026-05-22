@@ -440,7 +440,7 @@
             color: var(--text-muted);
         }
 
-        .api-card {
+        .api-card, .contribution-card {
             display: grid;
             grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
             gap: 1rem;
@@ -484,6 +484,105 @@
             font-size: 0.88rem;
             line-height: 1.65;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        .contribution-form, .contribution-list {
+            display: grid;
+            gap: 0.85rem;
+        }
+
+        .contribution-field {
+            display: grid;
+            gap: 0.35rem;
+        }
+
+        .contribution-field label {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            font-weight: 800;
+        }
+
+        .contribution-field input, .contribution-field textarea {
+            width: 100%;
+            min-height: 3rem;
+            padding: 0.8rem 0.9rem;
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            color: var(--text);
+            background: var(--surface);
+            outline: none;
+        }
+
+        .contribution-field textarea {
+            min-height: 5.8rem;
+            resize: vertical;
+        }
+
+        .contribution-field input:focus, .contribution-field textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--ring);
+        }
+
+        .contribution-status {
+            display: none;
+            padding: 0.9rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            background: color-mix(in srgb, var(--bg-soft) 72%, transparent);
+            color: var(--text-muted);
+        }
+
+        .contribution-status.show {
+            display: block;
+        }
+
+        .contribution-status.success {
+            border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+            color: var(--success);
+        }
+
+        .contribution-status.error {
+            border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+            color: var(--danger);
+        }
+
+        .contribution-status ul {
+            margin-top: 0.55rem;
+            padding-left: 1.1rem;
+        }
+
+        .contribution-item {
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 1.1rem;
+            background: color-mix(in srgb, var(--bg-soft) 70%, transparent);
+        }
+
+        .contribution-item strong {
+            display: block;
+            margin-bottom: 0.35rem;
+        }
+
+        .contribution-item span {
+            display: block;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+        }
+
+        .contribution-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.7rem;
+        }
+
+        .contribution-badge {
+            padding: 0.24rem 0.55rem;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--primary-strong);
+            font-size: 0.76rem;
+            font-weight: 800;
         }
 
         .chat-card {
@@ -692,7 +791,7 @@
                 flex-direction: column;
             }
 
-            .stat-grid, .feature-grid, .api-card {
+            .stat-grid, .feature-grid, .api-card, .contribution-card {
                 grid-template-columns: 1fr;
             }
 
@@ -756,6 +855,7 @@
                 <div class="hero-actions">
                     <a class="btn btn-primary" href="#chat-test">立即测试</a>
                     <a class="btn btn-secondary" href="#api-guide">查看接入方式</a>
+                    <a class="btn btn-secondary" href="#contribute">贡献 API</a>
                 </div>
             </div>
         </section>
@@ -829,6 +929,39 @@
                     <div class="request-row"><span>模型名称</span><code>默认自动选择</code></div>
                 </div>
                 <pre class="code-block" id="curl-example"></pre>
+            </div>
+        </section>
+
+        <section class="section" id="contribute" aria-label="贡献 API 服务">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Contribute</div>
+                    <h2 class="section-title">贡献 API 服务</h2>
+                </div>
+                <p class="section-desc">提交可用的 OpenAI 兼容 API。系统会测试每个模型，验证通过后保存为待启用的贡献 Provider。</p>
+            </div>
+            <div class="contribution-card">
+                <form class="contribution-form" id="contribution-form">
+                    <div class="contribution-field">
+                        <label for="contribution-name">服务名称</label>
+                        <input id="contribution-name" name="name" placeholder="例如 My Free API" autocomplete="off">
+                    </div>
+                    <div class="contribution-field">
+                        <label for="contribution-base-url">Base URL</label>
+                        <input id="contribution-base-url" name="baseUrl" placeholder="https://api.example.com/v1" autocomplete="off" required>
+                    </div>
+                    <div class="contribution-field">
+                        <label for="contribution-api-key">API Key</label>
+                        <input id="contribution-api-key" name="apiKey" type="password" placeholder="sk-..." autocomplete="off" required>
+                    </div>
+                    <div class="contribution-field">
+                        <label for="contribution-models">模型列表</label>
+                        <textarea id="contribution-models" name="models" placeholder="model-a, model-b" required></textarea>
+                    </div>
+                    <button class="btn btn-primary" id="contribution-submit" type="submit">提交并验证</button>
+                    <div class="contribution-status" id="contribution-status"></div>
+                </form>
+                <div class="contribution-list" id="contribution-list" aria-live="polite"></div>
             </div>
         </section>
 
@@ -928,6 +1061,83 @@
                 }
             }
 
+            function escapeHtml(value) {
+                const div = document.createElement('div');
+                div.textContent = value == null ? '' : String(value);
+                return div.innerHTML;
+            }
+
+            function setContributionStatus(type, message, results) {
+                const status = document.getElementById('contribution-status');
+                status.className = `contribution-status show ${type || ''}`;
+                const resultHtml = Array.isArray(results) && results.length
+                    ? `<ul>${results.map((item) => `<li>${escapeHtml(item.model)}：${item.passed ? '通过' : escapeHtml(item.error || '失败')}</li>`).join('')}</ul>`
+                    : '';
+                status.innerHTML = `${escapeHtml(message)}${resultHtml}`;
+            }
+
+            async function loadContributions() {
+                const list = document.getElementById('contribution-list');
+                try {
+                    const response = await fetch('/api/contributions');
+                    if (!response.ok) throw new Error('contributions unavailable');
+                    const contributions = await response.json();
+                    if (!contributions.length) {
+                        list.innerHTML = '<div class="contribution-item"><strong>暂无贡献记录</strong><span>提交通过验证的服务后，会显示在这里。</span></div>';
+                        return;
+                    }
+                    list.innerHTML = contributions.map((item) => `
+                        <div class="contribution-item">
+                            <strong>${escapeHtml(item.name)}</strong>
+                            <span>${escapeHtml(item.baseUrl)}</span>
+                            <span>${formatter.format(item.modelCount || 0)} 个模型 · ${item.enabled ? '已启用' : '待启用'}</span>
+                            <div class="contribution-badges">
+                                ${(item.models || []).slice(0, 6).map((model) => `<span class="contribution-badge">${escapeHtml(model)}</span>`).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+                } catch (error) {
+                    list.innerHTML = '<div class="contribution-item"><strong>贡献记录加载失败</strong><span>请稍后刷新页面重试。</span></div>';
+                }
+            }
+
+            document.getElementById('contribution-form').addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const submit = document.getElementById('contribution-submit');
+                const formData = new FormData(event.currentTarget);
+                const body = {
+                    name: formData.get('name'),
+                    baseUrl: formData.get('baseUrl'),
+                    apiKey: formData.get('apiKey'),
+                    models: formData.get('models'),
+                };
+
+                submit.disabled = true;
+                submit.textContent = '正在验证...';
+                setContributionStatus('', '正在验证 API、Key 和模型列表，请稍候。');
+
+                try {
+                    const response = await fetch('/api/contributions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        setContributionStatus('error', data.error || '贡献提交失败', data.results);
+                        return;
+                    }
+                    event.currentTarget.reset();
+                    setContributionStatus('success', `${data.action === 'updated' ? '贡献已更新' : '贡献已创建'}，验证通过。该 Provider 默认关闭，等待管理员启用。`, data.results);
+                    loadContributions();
+                } catch (error) {
+                    setContributionStatus('error', '网络异常，贡献提交失败。');
+                } finally {
+                    submit.disabled = false;
+                    submit.textContent = '提交并验证';
+                }
+            });
+
             document.querySelectorAll('[data-prompt]').forEach(function (button) {
                 button.addEventListener('click', function () {
                     const input = document.getElementById('user-input');
@@ -937,6 +1147,7 @@
             });
 
             loadPublicStats();
+            loadContributions();
         })();
     </script>
 </body>

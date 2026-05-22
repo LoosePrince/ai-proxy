@@ -7,11 +7,12 @@ const { syncEnvProviders } = require('./lib/provider');
 const { aggregateAllStats } = require('./lib/stats');
 const proxyRoute = require('./routes/proxy');
 const adminRoute = require('./routes/admin');
+const contributionsRoute = require('./routes/contributions');
 
 const PORT = process.env.PORT || 3000;
 
 async function start() {
-  // 1. 同步环境变量 Provider 到数据库
+  // 1. 同步数据库结构与环境变量 Provider
   try {
     await syncEnvProviders(process.env.FALLBACK_PROVIDERS);
   } catch (err) {
@@ -46,6 +47,7 @@ async function start() {
   });
 
   // 4. 路由
+  app.use(contributionsRoute);
   app.use(proxyRoute);
   app.use('/admin', adminRoute);
 
