@@ -1,5 +1,6 @@
 const express = require('express');
 const OpenAI = require('openai');
+const { Readable } = require('stream');
 const { resolveProviders } = require('../lib/provider');
 const { updateStats, addLog } = require('../lib/stats');
 
@@ -39,6 +40,49 @@ function formatSSE(data) {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+function setStreamHeaders(res) {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.flushHeaders?.();
+}
+
+function writeSSE(res, data) {
+  res.write(data);
+  res.flush?.();
+}
+
+function extractRawStream(upstream) {
+  const body = upstream?.controller?.response?.body;
+  if (!body) return null;
+  if (typeof body.getReader === 'function') return Readable.fromWeb(body);
+  if (typeof body.on === 'function') return body;
+  return null;
+}
+
+function parseSSEFrames(buffer, onFrame) {
+  let cursor = 0;
+  let boundary = buffer.indexOf('\n\n', cursor);
+  while (boundary !== -1) {
+    const frame = buffer.slice(cursor, boundary);
+    onFrame(frame);
+    cursor = boundary + 2;
+    boundary = buffer.indexOf('\n\n', cursor);
+  }
+  return buffer.slice(cursor);
+}
+
+function readSSEData(frame) {
+  return frame
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n');
+}
+
 // POST /v1/chat/completions
 router.post('/v1/chat/completions', async (req, res) => {
   const requestedModel = req.body.model || null;
@@ -70,6 +114,15 @@ router.post('/v1/chat/completions', async (req, res) => {
       const status = err.status || (err.response && err.response.status) || 'NO_STATUS';
       const message = err.message || 'Unknown error';
       console.warn(`[Proxy] ${provider.name} (${model}) failed: status=${status}, ${message}`);
+
+      if (res.headersSent) {
+        if (!res.writableEnded) {
+          writeSSE(res, formatSSE({ error: { message } }));
+          writeSSE(res, 'data: [DONE]\n\n');
+          res.end();
+        }
+        return;
+      }
 
       // 记录失败
       updateStats(provider.id, {
@@ -131,52 +184,75 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
   const streamPayload = { ...payload, stream: true, stream_options: { include_usage: true } };
   const stream = await client.chat.completions.create(streamPayload);
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  setStreamHeaders(res);
 
   let actualModel = model;
   let promptTokens = 0;
   let completionTokens = 0;
+  let completed = false;
 
-  for await (const chunk of stream) {
-    // 提取真实模型
-    if (chunk.model && chunk.model !== actualModel) {
-      actualModel = chunk.model;
-    } else if (!actualModel || actualModel === model) {
+  const recordSuccess = () => {
+    updateStats(provider.id, {
+      requestedModel,
+      actualModel,
+      ip,
+      promptTokens,
+      completionTokens,
+      success: true,
+    }).catch(() => {});
+    addLog({
+      providerName: provider.name,
+      requestedModel,
+      actualModel,
+      ip,
+      promptTokens,
+      completionTokens,
+      success: true,
+    });
+  };
+
+  const rawStream = extractRawStream(stream);
+  if (rawStream) {
+    let buffer = '';
+
+    for await (const chunk of rawStream) {
+      const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+      writeSSE(res, text);
+
+      buffer = parseSSEFrames(buffer + text.replace(/\r\n/g, '\n'), (frame) => {
+        const data = readSSEData(frame);
+        if (!data || data === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.model) actualModel = parsed.model;
+          if (parsed.usage) {
+            promptTokens = parsed.usage.prompt_tokens || 0;
+            completionTokens = parsed.usage.completion_tokens || 0;
+          }
+        } catch (error) {
+          // 上游偶发非 JSON 事件不影响流式透传
+        }
+      });
+    }
+
+    completed = true;
+  } else {
+    for await (const chunk of stream) {
       if (chunk.model) actualModel = chunk.model;
+      if (chunk.usage) {
+        promptTokens = chunk.usage.prompt_tokens || 0;
+        completionTokens = chunk.usage.completion_tokens || 0;
+      }
+
+      writeSSE(res, formatSSE(chunk));
     }
 
-    // 提取 usage（最后一个 chunk 通常包含）
-    if (chunk.usage) {
-      promptTokens = chunk.usage.prompt_tokens || 0;
-      completionTokens = chunk.usage.completion_tokens || 0;
-    }
-
-    res.write(formatSSE(chunk));
+    writeSSE(res, 'data: [DONE]\n\n');
+    completed = true;
   }
 
-  res.write('data: [DONE]\n\n');
-  res.end();
-
-  // 统计
-  updateStats(provider.id, {
-    requestedModel,
-    actualModel,
-    ip,
-    promptTokens,
-    completionTokens,
-    success: true,
-  }).catch(() => {});
-  addLog({
-    providerName: provider.name,
-    requestedModel,
-    actualModel,
-    ip,
-    promptTokens,
-    completionTokens,
-    success: true,
-  });
+  if (!res.writableEnded) res.end();
+  if (completed) recordSuccess();
 }
 
 module.exports = router;

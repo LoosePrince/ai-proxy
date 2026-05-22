@@ -558,9 +558,42 @@
             background: color-mix(in srgb, var(--bg-soft) 70%, transparent);
         }
 
+        .contribution-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            margin-bottom: 0.45rem;
+        }
+
+        .contribution-avatar {
+            width: 2.4rem;
+            height: 2.4rem;
+            flex: 0 0 auto;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            object-fit: cover;
+            background: var(--surface);
+        }
+
+        .contribution-avatar-fallback {
+            display: grid;
+            place-items: center;
+            color: var(--primary-strong);
+            background: var(--accent-soft);
+            font-weight: 900;
+        }
+
+        .contribution-profile-text {
+            min-width: 0;
+        }
+
+        .contribution-profile-text span {
+            overflow-wrap: anywhere;
+        }
+
         .contribution-item strong {
             display: block;
-            margin-bottom: 0.35rem;
+            margin-bottom: 0.2rem;
         }
 
         .contribution-item span {
@@ -943,8 +976,8 @@
             <div class="contribution-card">
                 <form class="contribution-form" id="contribution-form">
                     <div class="contribution-field">
-                        <label for="contribution-name">服务名称</label>
-                        <input id="contribution-name" name="name" placeholder="例如 My Free API" autocomplete="off">
+                        <label for="contribution-contributor">邮箱或 GitHub 用户 ID</label>
+                        <input id="contribution-contributor" name="contributor" placeholder="例如 123456@qq.com 或 github-user" autocomplete="off" required>
                     </div>
                     <div class="contribution-field">
                         <label for="contribution-base-url">Base URL</label>
@@ -1067,6 +1100,27 @@
                 return div.innerHTML;
             }
 
+            function renderContributionAvatar(item) {
+                if (item.avatarUrl) {
+                    return `<img class="contribution-avatar" src="${escapeHtml(item.avatarUrl)}" alt="${escapeHtml(item.displayName || item.name || '贡献者')} 头像" loading="lazy" referrerpolicy="no-referrer">`;
+                }
+                const initial = String(item.displayName || item.name || '?').trim().slice(0, 1).toUpperCase() || '?';
+                return `<div class="contribution-avatar contribution-avatar-fallback" aria-hidden="true">${escapeHtml(initial)}</div>`;
+            }
+
+            function renderContributionIdentity(item) {
+                const typeLabel = item.contributorType === 'email' ? '邮箱贡献者' : item.contributorType === 'github' ? 'GitHub 贡献者' : '贡献者';
+                return `
+                    <div class="contribution-profile">
+                        ${renderContributionAvatar(item)}
+                        <div class="contribution-profile-text">
+                            <strong>${escapeHtml(item.displayName || item.name)}</strong>
+                            <span>${typeLabel}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
             function setContributionStatus(type, message, results) {
                 const status = document.getElementById('contribution-status');
                 status.className = `contribution-status show ${type || ''}`;
@@ -1088,7 +1142,7 @@
                     }
                     list.innerHTML = contributions.map((item) => `
                         <div class="contribution-item">
-                            <strong>${escapeHtml(item.name)}</strong>
+                            ${renderContributionIdentity(item)}
                             <span>${escapeHtml(item.baseUrl)}</span>
                             <span>${formatter.format(item.modelCount || 0)} 个模型 · ${item.enabled ? '已启用' : '待启用'}</span>
                             <div class="contribution-badges">
@@ -1106,7 +1160,7 @@
                 const submit = document.getElementById('contribution-submit');
                 const formData = new FormData(event.currentTarget);
                 const body = {
-                    name: formData.get('name'),
+                    contributor: formData.get('contributor'),
                     baseUrl: formData.get('baseUrl'),
                     apiKey: formData.get('apiKey'),
                     models: formData.get('models'),

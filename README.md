@@ -111,12 +111,14 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 curl -X POST http://localhost:3000/api/contributions \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "My Free API",
+    "contributor": "123456@qq.com",
     "baseUrl": "https://api.example.com/v1",
     "apiKey": "sk-xxx",
     "models": "model-a,model-b"
   }'
 ```
+
+提交字段中的 `contributor` 必须是邮箱或 GitHub 用户 ID；如果使用 QQ 邮箱，公开贡献列表会展示对应 QQ 头像。
 
 提交后服务端会逐个模型发起一次真实 AI 请求，要求返回固定内容 `AI_PROXY_PROVIDER_OK`。任一模型失败都会整体拒绝，并返回模型级失败原因。
 

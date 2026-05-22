@@ -77,6 +77,14 @@ function createAIMessage() {
     };
 }
 
+function readSSEData(frame) {
+    return frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+}
+
 // 流式发送消息
 async function sendMessageStream() {
     const text = userInput.value.trim();
@@ -112,6 +120,7 @@ async function sendMessageStream() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
+        let buffer = '';
 
         typingIndicator.style.display = 'none';
 
@@ -119,25 +128,40 @@ async function sendMessageStream() {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop() || '';
 
-            for (const line of lines) {
-                if (line.trim() === '') continue;
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
+            for (const frame of frames) {
+                const data = readSSEData(frame);
+                if (!data || data === '[DONE]') continue;
 
-                    try {
-                        const parsed = JSON.parse(data);
-                        const delta = parsed.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            fullContent += delta;
-                            aiMessage.update(fullContent);
-                        }
-                    } catch (e) {
-                        // 忽略解析错误
+                try {
+                    const parsed = JSON.parse(data);
+                    const delta = parsed.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        fullContent += delta;
+                        aiMessage.update(fullContent);
                     }
+                } catch (e) {
+                    // 忽略非 JSON SSE 事件
+                }
+            }
+        }
+
+        const tail = buffer + decoder.decode();
+        if (tail.trim()) {
+            const data = readSSEData(tail);
+            if (data && data !== '[DONE]') {
+                try {
+                    const parsed = JSON.parse(data);
+                    const delta = parsed.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        fullContent += delta;
+                        aiMessage.update(fullContent);
+                    }
+                } catch (e) {
+                    // 忽略非 JSON SSE 事件
                 }
             }
         }

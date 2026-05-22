@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const dns = require('dns').promises;
 const express = require('express');
 const net = require('net');
@@ -10,6 +9,47 @@ const router = express.Router();
 const EXPECTED_REPLY = 'AI_PROXY_PROVIDER_OK';
 const MAX_MODELS = 20;
 const MAX_MODEL_TEST_MS = 20_000;
+
+function normalizeContributor(value) {
+  const raw = String(value || '').trim();
+  if (!raw) throw new Error('邮箱或 GitHub 用户 ID 不能为空');
+
+  const email = raw.toLowerCase();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { type: 'email', value: email, displayName: email, avatarUrl: createQqAvatarUrl(email) };
+  }
+
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(raw)) {
+    return { type: 'github', value: raw, displayName: raw, avatarUrl: null };
+  }
+
+  throw new Error('请输入有效邮箱或 GitHub 用户 ID');
+}
+
+function createQqAvatarUrl(identifier) {
+  const match = String(identifier || '').toLowerCase().match(/^([1-9]\d{4,11})@qq\.com$/);
+  if (!match) return null;
+  return `https://q.qlogo.cn/headimg_dl?dst_uin=${match[1]}&spec=100`;
+}
+
+function createContributorPublicProfile(identifier) {
+  try {
+    const contributor = normalizeContributor(identifier);
+    return {
+      contributor: contributor.value,
+      contributorType: contributor.type,
+      displayName: contributor.displayName,
+      avatarUrl: contributor.avatarUrl,
+    };
+  } catch (error) {
+    return {
+      contributor: identifier,
+      contributorType: 'legacy',
+      displayName: identifier,
+      avatarUrl: createQqAvatarUrl(identifier),
+    };
+  }
+}
 
 function normalizeModels(value) {
   const raw = Array.isArray(value) ? value : String(value || '').split(',');
@@ -117,13 +157,6 @@ async function validateModel(client, model) {
   }
 }
 
-function createContributionName(inputName, apiKey) {
-  const cleanName = String(inputName || '').trim();
-  if (cleanName) return cleanName.slice(0, 80);
-  const digest = crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 8);
-  return `贡献 Provider ${digest}`;
-}
-
 function isMissingContributionColumn(error) {
   return error.code === 'P2022' || /isContributed/i.test(error.message || '');
 }
@@ -138,15 +171,19 @@ router.get('/api/contributions', async (req, res) => {
       take: 20,
     });
 
-    res.json(providers.map((provider) => ({
-      id: provider.id,
-      name: provider.name,
-      baseUrl: maskBaseUrl(provider.baseUrl),
-      modelCount: Array.isArray(provider.models) ? provider.models.length : 0,
-      models: Array.isArray(provider.models) ? provider.models : [],
-      enabled: provider.enabled,
-      updatedAt: provider.updatedAt,
-    })));
+    res.json(providers.map((provider) => {
+      const publicProfile = createContributorPublicProfile(provider.name);
+      return {
+        id: provider.id,
+        name: provider.name,
+        ...publicProfile,
+        baseUrl: maskBaseUrl(provider.baseUrl),
+        modelCount: Array.isArray(provider.models) ? provider.models.length : 0,
+        models: Array.isArray(provider.models) ? provider.models : [],
+        enabled: provider.enabled,
+        updatedAt: provider.updatedAt,
+      };
+    }));
   } catch (error) {
     if (isMissingContributionColumn(error)) {
       return res.json([]);
@@ -157,7 +194,7 @@ router.get('/api/contributions', async (req, res) => {
 
 router.post('/api/contributions', async (req, res) => {
   try {
-    const name = String(req.body.name || '').trim();
+    const contributor = normalizeContributor(req.body.contributor || req.body.name);
     const apiKey = String(req.body.apiKey || '').trim();
     const models = normalizeModels(req.body.models);
     const baseUrl = await assertPublicBaseUrl(String(req.body.baseUrl || '').trim());
@@ -181,7 +218,7 @@ router.post('/api/contributions', async (req, res) => {
       });
     }
 
-    const providerName = createContributionName(name, apiKey);
+    const providerName = contributor.value;
     const existing = await prisma.provider.findFirst({ where: { isContributed: true, apiKey } });
     const data = {
       name: providerName,
@@ -205,6 +242,10 @@ router.post('/api/contributions', async (req, res) => {
       provider: {
         id: provider.id,
         name: provider.name,
+        contributor: contributor.value,
+        contributorType: contributor.type,
+        displayName: contributor.displayName,
+        avatarUrl: contributor.avatarUrl,
         enabled: provider.enabled,
         modelCount: models.length,
       },
@@ -215,7 +256,7 @@ router.post('/api/contributions', async (req, res) => {
       return res.status(503).json({ error: migrationRequiredMessage });
     }
     if (error.code === 'P2002') {
-      return res.status(409).json({ error: 'Provider 名称已存在，请更换名称后重试' });
+      return res.status(409).json({ error: '该邮箱或 GitHub 用户 ID 已存在，请更换后重试' });
     }
     res.status(400).json({ error: error.message || '贡献提交失败' });
   }
