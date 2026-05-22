@@ -7,182 +7,259 @@
 <link rel="icon" type="image/webp" href="/logo.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<script>
+  (function () {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  })();
+</script>
 <style>
 :root {
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --bg: #0f172a;
-  --card-bg: #1e293b;
-  --text: #f8fafc;
-  --text-muted: #94a3b8;
-  --border: #334155;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
+  color-scheme: light dark;
+  --bg:#f6efe4;
+  --bg-soft:#fbf6ee;
+  --surface:rgba(255,251,244,.82);
+  --surface-strong:#fffaf2;
+  --surface-muted:#efe3d1;
+  --text:#2b241c;
+  --text-muted:#776b5d;
+  --text-soft:#9d8e7a;
+  --primary:#9a6a3a;
+  --primary-strong:#6f4724;
+  --accent:#c28a55;
+  --accent-soft:rgba(194,138,85,.16);
+  --success:#46785a;
+  --success-soft:rgba(70,120,90,.14);
+  --danger:#b65a46;
+  --danger-soft:rgba(182,90,70,.14);
+  --warning:#b6782e;
+  --warning-soft:rgba(182,120,46,.15);
+  --border:rgba(111,71,36,.16);
+  --shadow:0 24px 80px rgba(94,62,32,.14);
+  --shadow-soft:0 12px 34px rgba(94,62,32,.09);
+  --ring:rgba(154,106,58,.28);
+  --code:#2b241c;
 }
-* { margin:0; padding:0; box-sizing:border-box; scrollbar-width:thin; scrollbar-color:#475569 transparent; }
-body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
-h1,h2 { font-family:'Outfit',sans-serif; }
-
-/* Header */
-header { padding:0.75rem 2rem; background:rgba(15,23,42,0.9); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; backdrop-filter:blur(8px); position:sticky; top:0; z-index:10; }
-.logo { font-size:1.3rem; font-weight:700; background:linear-gradient(135deg,#818cf8,#c084fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-decoration:none; }
-nav { display:flex; gap:0.5rem; }
-nav button { background:transparent; border:1px solid var(--border); color:var(--text-muted); padding:0.4rem 1rem; border-radius:0.5rem; cursor:pointer; font-size:0.85rem; transition:all 0.2s; }
-nav button:hover, nav button.active { background:var(--primary); border-color:var(--primary); color:#fff; }
-
-/* Main */
-main { max-width:1200px; margin:0 auto; padding:1.5rem 2rem; }
-.card { background:var(--card-bg); border:1px solid var(--border); border-radius:1rem; padding:1.5rem; margin-bottom:1.5rem; }
-.card h2 { font-size:1.1rem; margin-bottom:1rem; color:var(--primary); }
-
-/* Login */
-.login-wrap { display:flex; justify-content:center; align-items:center; min-height:80vh; }
-.login-box { width:320px; }
-.login-box h1 { text-align:center; margin-bottom:1.5rem; }
-.login-box input { width:100%; background:var(--bg); border:1px solid var(--border); padding:0.7rem 1rem; border-radius:0.5rem; color:var(--text); margin-bottom:0.75rem; outline:none; font-size:0.9rem; }
-.login-box input:focus { border-color:var(--primary); }
-.login-box button { width:100%; background:var(--primary); color:#fff; border:none; padding:0.7rem; border-radius:0.5rem; font-weight:600; cursor:pointer; font-size:0.95rem; }
-.login-box button:hover { background:var(--primary-hover); }
-.login-error { color:var(--danger); font-size:0.85rem; margin-bottom:0.5rem; text-align:center; }
-
-/* Stats grid */
-.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:1rem; }
-.stat-item { background:var(--bg); padding:1rem; border-radius:0.75rem; text-align:center; }
-.stat-item .value { font-size:1.8rem; font-weight:700; color:var(--primary); }
-.stat-item .label { font-size:0.8rem; color:var(--text-muted); margin-top:0.25rem; }
-
-/* Table */
-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
-th,td { padding:0.65rem 0.75rem; text-align:left; border-bottom:1px solid var(--border); }
-th { color:var(--text-muted); font-weight:600; font-size:0.8rem; text-transform:uppercase; }
-tr:hover td { background:rgba(99,102,241,0.05); }
-.tag { display:inline-block; padding:0.15rem 0.5rem; border-radius:999px; font-size:0.75rem; font-weight:600; }
-.tag-env { background:rgba(245,158,11,0.15); color:var(--warning); }
-.tag-enabled { background:rgba(16,185,129,0.15); color:var(--success); }
-.tag-disabled { background:rgba(239,68,68,0.15); color:var(--danger); }
-.tag-rule { background:rgba(99,102,241,0.15); color:var(--primary); }
-
-/* Buttons */
-.btn { display:inline-block; padding:0.35rem 0.75rem; border-radius:0.4rem; font-size:0.8rem; border:none; cursor:pointer; font-weight:600; transition:all 0.2s; }
-.btn-sm { padding:0.25rem 0.6rem; font-size:0.75rem; }
-.btn-primary { background:var(--primary); color:#fff; }
-.btn-primary:hover { background:var(--primary-hover); }
-.btn-danger { background:var(--danger); color:#fff; }
-.btn-danger:hover { opacity:0.85; }
-.btn-success { background:var(--success); color:#fff; }
-.btn-success:hover { opacity:0.85; }
-.btn-outline { background:transparent; border:1px solid var(--border); color:var(--text-muted); }
-.btn-outline:hover { border-color:var(--primary); color:var(--primary); }
-
-/* Modal */
-.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; z-index:100; }
-.modal { background:var(--card-bg); border:1px solid var(--border); border-radius:1rem; padding:1.5rem; width:90%; max-width:500px; }
-.modal h2 { margin-bottom:1rem; }
-.form-group { margin-bottom:0.75rem; }
-.form-group label { display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.3rem; }
-.form-group input, .form-group select { width:100%; background:var(--bg); border:1px solid var(--border); padding:0.55rem 0.75rem; border-radius:0.4rem; color:var(--text); font-size:0.85rem; outline:none; }
-.form-group input:focus, .form-group select:focus { border-color:var(--primary); }
-.form-group .hint { font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem; }
-.modal-actions { display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; }
-
-/* Log list */
-.log-list { max-height:500px; overflow-y:auto; }
-.log-entry { padding:0.5rem 0.75rem; border-bottom:1px solid var(--border); font-size:0.8rem; font-family:monospace; }
-.log-entry .time { color:var(--text-muted); margin-right:0.5rem; }
-.log-entry .ok { color:var(--success); }
-.log-entry .fail { color:var(--danger); }
-.log-entry .model { color:var(--primary); }
-
-/* IP & Model stats */
-.stats-table td:nth-child(n+2) { text-align:right; }
-
-/* Responsive */
-@media(max-width:768px) {
-  main { padding:1rem; }
-  .stats-grid { grid-template-columns:repeat(2,1fr); }
-  table { font-size:0.75rem; }
-  th,td { padding:0.4rem 0.5rem; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#17130f;
+    --bg-soft:#211a14;
+    --surface:rgba(39,31,23,.82);
+    --surface-strong:#2b2118;
+    --surface-muted:#3a2d21;
+    --text:#f7ead8;
+    --text-muted:#c8b9a4;
+    --text-soft:#9f8e79;
+    --primary:#e2b778;
+    --primary-strong:#f4d19a;
+    --accent:#bf8752;
+    --accent-soft:rgba(226,183,120,.14);
+    --success:#91caa2;
+    --success-soft:rgba(145,202,162,.14);
+    --danger:#f09a84;
+    --danger-soft:rgba(240,154,132,.14);
+    --warning:#e8b363;
+    --warning-soft:rgba(232,179,99,.14);
+    --border:rgba(244,209,154,.15);
+    --shadow:0 24px 80px rgba(0,0,0,.42);
+    --shadow-soft:0 12px 34px rgba(0,0,0,.26);
+    --ring:rgba(226,183,120,.28);
+    --code:#f7ead8;
+  }
 }
+:root[data-theme="dark"] {
+  --bg:#17130f;
+  --bg-soft:#211a14;
+  --surface:rgba(39,31,23,.82);
+  --surface-strong:#2b2118;
+  --surface-muted:#3a2d21;
+  --text:#f7ead8;
+  --text-muted:#c8b9a4;
+  --text-soft:#9f8e79;
+  --primary:#e2b778;
+  --primary-strong:#f4d19a;
+  --accent:#bf8752;
+  --accent-soft:rgba(226,183,120,.14);
+  --success:#91caa2;
+  --success-soft:rgba(145,202,162,.14);
+  --danger:#f09a84;
+  --danger-soft:rgba(240,154,132,.14);
+  --warning:#e8b363;
+  --warning-soft:rgba(232,179,99,.14);
+  --border:rgba(244,209,154,.15);
+  --shadow:0 24px 80px rgba(0,0,0,.42);
+  --shadow-soft:0 12px 34px rgba(0,0,0,.26);
+  --ring:rgba(226,183,120,.28);
+  --code:#f7ead8;
+}
+*{margin:0;padding:0;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--surface-muted) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:var(--surface-muted);border-radius:999px;border:3px solid transparent;background-clip:content-box}
+body{min-height:100vh;font-family:'Inter','Noto Sans SC',system-ui,-apple-system,BlinkMacSystemFont,sans-serif;color:var(--text);background:radial-gradient(circle at 8% 8%,rgba(194,138,85,.22),transparent 26rem),radial-gradient(circle at 92% 10%,rgba(154,106,58,.16),transparent 24rem),linear-gradient(135deg,var(--bg),var(--bg-soft));line-height:1.55}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(154,106,58,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(154,106,58,.055) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.62),transparent 82%)}
+button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-decoration:none}.app-shell{position:relative;z-index:1;min-height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr)}
+.sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:1rem;padding:1.2rem;border-right:1px solid var(--border);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(22px)}
+.brand{display:flex;align-items:center;gap:.75rem;padding:.45rem .35rem .9rem;font-weight:800;letter-spacing:-.04em}.brand-mark{width:2.45rem;height:2.45rem;border-radius:.9rem;display:grid;place-items:center;color:#fff7e8;background:linear-gradient(135deg,var(--primary-strong),var(--accent));box-shadow:var(--shadow-soft)}.brand small{display:block;color:var(--text-soft);font-size:.76rem;font-weight:700;letter-spacing:0}
+.nav-title{padding:.75rem .55rem .15rem;color:var(--text-soft);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.13em}nav{display:grid;gap:.45rem}nav button,.side-action{width:100%;display:flex;align-items:center;justify-content:space-between;gap:.75rem;min-height:2.9rem;padding:.72rem .85rem;border:1px solid transparent;border-radius:1rem;background:transparent;color:var(--text-muted);font-weight:800;text-align:left;transition:.18s ease}.nav-label{display:flex;align-items:center;gap:.65rem}.nav-icon{width:1.65rem;height:1.65rem;border-radius:.65rem;display:grid;place-items:center;background:var(--surface-muted);color:var(--primary-strong);font-size:.85rem}nav button:hover,.side-action:hover,nav button.active{color:var(--primary-strong);border-color:var(--border);background:var(--surface);box-shadow:var(--shadow-soft)}nav button.active .nav-icon{color:#fff7e8;background:linear-gradient(135deg,var(--primary-strong),var(--accent))}.sidebar-footer{margin-top:auto;display:grid;gap:.55rem}.side-action{justify-content:center;background:var(--surface);border-color:var(--border)}#logout-btn{display:none}.content{min-width:0;padding:1.3rem clamp(1rem,3vw,2.4rem) 2.4rem}.topbar{position:sticky;top:0;z-index:10;margin:-1.3rem calc(clamp(1rem,3vw,2.4rem) * -1) 1.4rem;padding:1rem clamp(1rem,3vw,2.4rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(22px)}.page-kicker{color:var(--text-soft);font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.page-title{font-size:clamp(1.6rem,3vw,2.4rem);line-height:1.1;letter-spacing:-.055em}.top-actions{display:flex;align-items:center;gap:.65rem}.pill{display:inline-flex;align-items:center;gap:.48rem;min-height:2.45rem;padding:.55rem .8rem;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-muted);font-size:.88rem;font-weight:700}.status-dot{width:.55rem;height:.55rem;border-radius:999px;background:var(--success);box-shadow:0 0 0 .35rem color-mix(in srgb,var(--success) 14%,transparent)}.theme-toggle{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:999px;padding:.58rem .82rem;font-weight:800}.theme-toggle:hover{color:var(--primary-strong);border-color:var(--primary)}.page{display:none}.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1rem}.section-head h2{font-size:1.25rem;letter-spacing:-.035em}.section-head p{margin-top:.25rem;color:var(--text-muted);font-size:.92rem}.card{border:1px solid var(--border);border-radius:1.35rem;background:var(--surface);box-shadow:var(--shadow-soft);overflow:hidden}.card-pad{padding:1.1rem}.stats-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:.85rem;margin-bottom:1rem}.stat-item{position:relative;min-height:8rem;padding:1rem;border:1px solid var(--border);border-radius:1.25rem;background:linear-gradient(180deg,var(--surface-strong),var(--surface));box-shadow:var(--shadow-soft);overflow:hidden}.stat-item::after{content:'';position:absolute;right:-2rem;top:-2rem;width:5rem;height:5rem;border-radius:999px;background:var(--accent-soft)}.stat-item .value{position:relative;color:var(--primary-strong);font-size:clamp(1.45rem,2.6vw,2.15rem);line-height:1;font-weight:800;letter-spacing:-.055em}.stat-item .label{position:relative;margin-top:.7rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.table-wrap{width:100%;overflow:auto}.table-empty{padding:1.4rem;color:var(--text-soft);text-align:center}table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem}th,td{padding:.86rem .9rem;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}th{position:sticky;top:0;background:var(--surface-strong);color:var(--text-soft);font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}tbody tr:hover td{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}td code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--code)}.tag{display:inline-flex;align-items:center;gap:.3rem;padding:.22rem .55rem;border-radius:999px;font-size:.74rem;font-weight:800;white-space:nowrap}.tag-env{background:var(--warning-soft);color:var(--warning)}.tag-enabled{background:var(--success-soft);color:var(--success)}.tag-disabled{background:var(--danger-soft);color:var(--danger)}.tag-rule{background:var(--accent-soft);color:var(--primary-strong)}.actions{display:flex;flex-wrap:wrap;gap:.42rem}.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.4rem;padding:.55rem .82rem;border-radius:.82rem;border:1px solid transparent;font-weight:800;font-size:.84rem;transition:.18s ease}.btn:hover{transform:translateY(-1px)}.btn-sm{min-height:2rem;padding:.38rem .62rem;font-size:.76rem}.btn-primary{background:linear-gradient(135deg,var(--primary-strong),var(--accent));color:#fff7e8;box-shadow:0 14px 28px rgba(111,71,36,.18)}.btn-outline{background:var(--surface);border-color:var(--border);color:var(--text-muted)}.btn-outline:hover{color:var(--primary-strong);border-color:var(--primary)}.btn-danger{background:var(--danger);color:#fff7e8}.btn-success{background:var(--success);color:#fff7e8}.login-wrap{display:flex;justify-content:center;align-items:center;min-height:calc(100vh - 7rem)}.login-box{width:min(420px,100%);padding:1.4rem;border:1px solid var(--border);border-radius:1.6rem;background:var(--surface);box-shadow:var(--shadow)}.login-box h1{font-size:2rem;letter-spacing:-.055em;margin-bottom:.35rem}.login-box p{color:var(--text-muted);margin-bottom:1.2rem}.login-box input,.form-group input,.form-group select{width:100%;height:2.9rem;border:1px solid var(--border);border-radius:.9rem;background:var(--surface-strong);color:var(--text);padding:.65rem .85rem;outline:none}.login-box input{margin-bottom:.75rem}.login-box input:focus,.form-group input:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.login-error{display:none;margin-bottom:.75rem;padding:.65rem .8rem;border-radius:.8rem;background:var(--danger-soft);color:var(--danger);font-size:.88rem;font-weight:700}.modal-overlay{position:fixed;inset:0;z-index:100;display:none;justify-content:center;align-items:center;padding:1rem;background:rgba(28,20,12,.58);backdrop-filter:blur(10px)}.modal{width:min(560px,100%);max-height:92vh;overflow:auto;padding:1.25rem;border:1px solid var(--border);border-radius:1.5rem;background:var(--surface-strong);box-shadow:var(--shadow)}.modal h2{font-size:1.45rem;letter-spacing:-.04em;margin-bottom:1rem}.form-grid{display:grid;gap:.82rem}.form-group label{display:block;margin-bottom:.34rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.form-group .hint{margin-top:.25rem;color:var(--text-soft);font-size:.76rem}.modal-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.1rem}.log-list{max-height:620px;overflow:auto}.log-entry{display:grid;grid-template-columns:90px 56px minmax(120px,1fr) minmax(120px,1fr) minmax(150px,1.2fr);gap:.8rem;align-items:center;padding:.75rem .9rem;border-bottom:1px solid var(--border);font-size:.82rem}.log-entry:hover{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}.log-entry .time,.log-entry .muted{color:var(--text-soft)}.ok{color:var(--success);font-weight:800}.fail{color:var(--danger);font-weight:800}.model{color:var(--primary-strong);font-weight:800}.stats-table td:nth-child(n+2){text-align:right}.toast{position:fixed;right:1rem;bottom:1rem;z-index:200;max-width:min(420px,calc(100vw - 2rem));display:none;padding:.85rem 1rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow);color:var(--text);font-weight:800}.toast.show{display:block}.toast.error{color:var(--danger)}
+@media(max-width:1180px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.content{padding-top:1rem}.topbar{position:relative;margin:0 0 1rem;padding:0 0 1rem;background:transparent;backdrop-filter:none}.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.sidebar,.content{padding:1rem}.topbar,.section-head{align-items:flex-start;flex-direction:column}.top-actions{width:100%;overflow:auto}.stats-grid{grid-template-columns:1fr}.log-entry{grid-template-columns:1fr;gap:.25rem}th,td{padding:.72rem}.brand{padding-bottom:.2rem}}
 </style>
 </head>
 <body>
-
-<header>
-  <a href="/" class="logo">AI Proxy Admin</a>
-  <nav id="main-nav">
-    <button class="active" data-page="dashboard">仪表盘</button>
-    <button data-page="providers">Provider</button>
-    <button data-page="models">模型</button>
-    <button data-page="ips">IP</button>
-    <button data-page="logs">日志</button>
-    <button id="logout-btn" style="display:none">登出</button>
-  </nav>
-</header>
-
-<main id="app-content">
-  <div class="login-wrap" id="login-page">
-    <div class="login-box">
-      <h1>管理后台</h1>
-      <div id="login-error" class="login-error" style="display:none"></div>
-      <input type="text" id="login-user" placeholder="用户名" autocomplete="username">
-      <input type="password" id="login-pass" placeholder="密码" autocomplete="current-password">
-      <button onclick="doLogin()">登录</button>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a href="/" class="brand">
+      <span class="brand-mark">AI</span>
+      <span>AI Proxy<small>Control Center</small></span>
+    </a>
+    <div class="nav-title">管理模块</div>
+    <nav id="main-nav">
+      <button class="active" data-page="dashboard"><span class="nav-label"><span class="nav-icon">总</span>仪表盘</span><span>›</span></button>
+      <button data-page="providers"><span class="nav-label"><span class="nav-icon">源</span>Provider</span><span>›</span></button>
+      <button data-page="models"><span class="nav-label"><span class="nav-icon">模</span>模型统计</span><span>›</span></button>
+      <button data-page="ips"><span class="nav-label"><span class="nav-icon">IP</span>IP 统计</span><span>›</span></button>
+      <button data-page="logs"><span class="nav-label"><span class="nav-icon">志</span>请求日志</span><span>›</span></button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="side-action" id="admin-theme-toggle" type="button">自动主题</button>
+      <button class="side-action" id="logout-btn" type="button">登出</button>
     </div>
-  </div>
+  </aside>
 
-  <div id="dashboard-page" style="display:none">
-    <div class="stats-grid" id="overview-stats"></div>
-    <div class="card"><h2>Provider 概览</h2><div id="provider-summary"></div></div>
-  </div>
+  <section class="content">
+    <header class="topbar">
+      <div>
+        <div class="page-kicker">Admin Console</div>
+        <h1 class="page-title" id="page-title">仪表盘</h1>
+      </div>
+      <div class="top-actions">
+        <span class="pill"><span class="status-dot"></span> 服务在线</span>
+        <a class="pill" href="/">返回首页</a>
+      </div>
+    </header>
 
-  <div id="providers-page" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <h2>Provider 管理</h2>
-      <button class="btn btn-primary" onclick="showAddModal()">+ 添加 Provider</button>
-    </div>
-    <div class="card" style="padding:0">
-      <table id="providers-table"><thead><tr><th>名称</th><th>Base URL</th><th>模型</th><th>规则</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
-    </div>
-  </div>
+    <main id="app-content">
+      <div class="login-wrap" id="login-page">
+        <div class="login-box">
+          <h1>管理后台</h1>
+          <p>集中管理 Provider、模型路由和请求数据。</p>
+          <div id="login-error" class="login-error"></div>
+          <input type="text" id="login-user" placeholder="用户名" autocomplete="username">
+          <input type="password" id="login-pass" placeholder="密码" autocomplete="current-password">
+          <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登录</button>
+        </div>
+      </div>
 
-  <div id="models-page" style="display:none">
-    <div class="card"><h2>模型调用统计</h2><table class="stats-table" id="models-table"><thead><tr><th>请求模型</th><th>请求数</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>解析到真实模型</th></tr></thead><tbody></tbody></table></div>
-  </div>
+      <div id="dashboard-page" class="page">
+        <div class="section-head">
+          <div><h2>运行概览</h2><p>聚合当前全部 Provider 的请求、Token 和成功情况。</p></div>
+        </div>
+        <div class="stats-grid" id="overview-stats"></div>
+        <div class="section-head" style="margin-top:1.2rem">
+          <div><h2>Provider 概览</h2><p>快速判断各个上游服务的调用分布。</p></div>
+        </div>
+        <div class="card"><div id="provider-summary" class="table-wrap"></div></div>
+      </div>
 
-  <div id="ips-page" style="display:none">
-    <div class="card"><h2>IP 统计</h2><table class="stats-table" id="ips-table"><thead><tr><th>IP</th><th>请求数</th><th>Token 数</th></tr></thead><tbody></tbody></table></div>
-  </div>
+      <div id="providers-page" class="page">
+        <div class="section-head">
+          <div><h2>Provider 管理</h2><p>添加、编辑、启停和删除上游服务。</p></div>
+          <button class="btn btn-primary" onclick="showAddModal()">添加 Provider</button>
+        </div>
+        <div class="card table-wrap">
+          <table id="providers-table"><thead><tr><th>名称</th><th>Base URL</th><th>模型</th><th>规则</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
 
-  <div id="logs-page" style="display:none">
-    <div class="card"><h2>最近请求日志</h2><div class="log-list" id="log-list"></div></div>
-  </div>
-</main>
+      <div id="models-page" class="page">
+        <div class="section-head">
+          <div><h2>模型调用统计</h2><p>查看请求模型、Token 消耗和实际解析模型。</p></div>
+        </div>
+        <div class="card table-wrap"><table class="stats-table" id="models-table"><thead><tr><th>请求模型</th><th>请求数</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>解析到真实模型</th></tr></thead><tbody></tbody></table></div>
+      </div>
 
-<!-- Modal -->
-<div class="modal-overlay" id="modal" style="display:none">
+      <div id="ips-page" class="page">
+        <div class="section-head">
+          <div><h2>IP 统计</h2><p>按访问来源查看请求量和 Token 使用量。</p></div>
+        </div>
+        <div class="card table-wrap"><table class="stats-table" id="ips-table"><thead><tr><th>IP</th><th>请求数</th><th>Token 数</th></tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div id="logs-page" class="page">
+        <div class="section-head">
+          <div><h2>最近请求日志</h2><p>最近 200 条内存日志，用于快速排障。</p></div>
+          <button class="btn btn-outline" onclick="loadLogs()">刷新日志</button>
+        </div>
+        <div class="card"><div class="log-list" id="log-list"></div></div>
+      </div>
+    </main>
+  </section>
+</div>
+
+<div class="modal-overlay" id="modal">
   <div class="modal">
     <h2 id="modal-title">添加 Provider</h2>
     <input type="hidden" id="modal-id">
-    <div class="form-group"><label>名称</label><input id="f-name" placeholder="My Provider"></div>
-    <div class="form-group"><label>Base URL</label><input id="f-baseUrl" placeholder="https://api.openai.com/v1"></div>
-    <div class="form-group"><label>API Key</label><input id="f-apiKey" type="password" placeholder="sk-..."></div>
-    <div class="form-group"><label>模型列表</label><input id="f-models" placeholder="model-a,model-b"><div class="hint">逗号分隔多个模型</div></div>
-    <div class="form-group"><label>路由规则</label><select id="f-rule"><option value="priority">优先平台</option><option value="single">单一平台</option><option value="balanced">负载均衡</option></select></div>
-    <div class="form-group"><label>优先级</label><input id="f-priority" type="number" value="0"><div class="hint">数字越小越优先</div></div>
+    <div class="form-grid">
+      <div class="form-group"><label>名称</label><input id="f-name" placeholder="My Provider"></div>
+      <div class="form-group"><label>Base URL</label><input id="f-baseUrl" placeholder="https://api.openai.com/v1"></div>
+      <div class="form-group"><label>API Key</label><input id="f-apiKey" type="password" placeholder="sk-..."></div>
+      <div class="form-group"><label>模型列表</label><input id="f-models" placeholder="model-a,model-b"><div class="hint">多个模型使用英文逗号分隔。</div></div>
+      <div class="form-group"><label>路由规则</label><select id="f-rule"><option value="priority">优先平台</option><option value="single">单一平台</option><option value="balanced">负载均衡</option></select></div>
+      <div class="form-group"><label>优先级</label><input id="f-priority" type="number" value="0"><div class="hint">数字越小越优先。</div></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" onclick="saveProvider()">保存</button>
     </div>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
 let currentPage = 'dashboard';
 let authChecked = false;
+const pageTitles = { dashboard: '仪表盘', providers: 'Provider 管理', models: '模型统计', ips: 'IP 统计', logs: '请求日志' };
+const numberFormatter = new Intl.NumberFormat('zh-CN');
 
-// --- Auth ---
+function showToast(message, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = `toast show ${type === 'error' ? 'error' : ''}`;
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => { el.className = 'toast'; }, 2400);
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+function themeMode() {
+  return localStorage.getItem('theme') || 'auto';
+}
+
+function refreshThemeLabel() {
+  const labels = { auto: '自动主题', light: '浅色主题', dark: '深色主题' };
+  document.getElementById('admin-theme-toggle').textContent = labels[themeMode()] || labels.auto;
+}
+
+document.getElementById('admin-theme-toggle').addEventListener('click', () => {
+  const order = ['auto', 'light', 'dark'];
+  const next = order[(order.indexOf(themeMode()) + 1) % order.length];
+  if (next === 'auto') {
+    localStorage.removeItem('theme');
+    delete document.documentElement.dataset.theme;
+  } else {
+    localStorage.setItem('theme', next);
+    document.documentElement.dataset.theme = next;
+  }
+  refreshThemeLabel();
+});
+refreshThemeLabel();
+
 async function checkAuth() {
   const r = await fetch('/admin/api/auth-check');
   const d = await r.json();
@@ -195,22 +272,21 @@ async function doLogin() {
   const p = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
   const r = await fetch('/admin/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u,password:p}) });
-  if (r.ok) { authChecked=true; showApp(); } else { errEl.style.display='block'; errEl.textContent='用户名或密码错误'; }
+  if (r.ok) { authChecked=true; showApp(); showToast('登录成功'); } else { errEl.style.display='block'; errEl.textContent='用户名或密码错误'; }
 }
 
 function showLogin() {
   document.getElementById('login-page').style.display='flex';
-  document.getElementById('dashboard-page').style.display='none';
+  ['dashboard','providers','models','ips','logs'].forEach(p => document.getElementById(p+'-page').style.display='none');
   document.getElementById('logout-btn').style.display='none';
 }
 
 function showApp() {
   document.getElementById('login-page').style.display='none';
-  document.getElementById('logout-btn').style.display='inline-block';
+  document.getElementById('logout-btn').style.display='flex';
   loadPage(currentPage);
 }
 
-// --- Navigation ---
 document.querySelectorAll('#main-nav button[data-page]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#main-nav button').forEach(b => b.classList.remove('active'));
@@ -226,6 +302,7 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
 });
 
 function showPage(page) {
+  document.getElementById('page-title').textContent = pageTitles[page] || '管理后台';
   ['dashboard','providers','models','ips','logs'].forEach(p => {
     document.getElementById(p+'-page').style.display = (p===page)?'block':'none';
   });
@@ -240,54 +317,54 @@ async function loadPage(page) {
   else if (page === 'logs') await loadLogs();
 }
 
-// --- Dashboard ---
 async function loadDashboard() {
   const r = await fetch('/admin/api/stats');
   const s = await r.json();
   const rate = s.totalRequests ? ((s.successRequests/s.totalRequests)*100).toFixed(1) : '0.0';
   document.getElementById('overview-stats').innerHTML = `
-    <div class="stat-item"><div class="value">${s.totalRequests||0}</div><div class="label">总请求数</div></div>
-    <div class="stat-item"><div class="value">${s.totalTokens||0}</div><div class="label">总 Token 数</div></div>
+    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalRequests||0)}</div><div class="label">总请求数</div></div>
+    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalTokens||0)}</div><div class="label">总 Token 数</div></div>
     <div class="stat-item"><div class="value">${rate}%</div><div class="label">成功率</div></div>
-    <div class="stat-item"><div class="value">${s.successRequests||0}</div><div class="label">成功请求</div></div>
-    <div class="stat-item"><div class="value">${s.failedRequests||0}</div><div class="label">失败请求</div></div>
-    <div class="stat-item"><div class="value">${s.totalPromptTokens||0}</div><div class="label">Prompt Tokens</div></div>
+    <div class="stat-item"><div class="value">${numberFormatter.format(s.successRequests||0)}</div><div class="label">成功请求</div></div>
+    <div class="stat-item"><div class="value">${numberFormatter.format(s.failedRequests||0)}</div><div class="label">失败请求</div></div>
+    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalPromptTokens||0)}</div><div class="label">Prompt Tokens</div></div>
   `;
   const pr = await fetch('/admin/api/providers');
   const providers = await pr.json();
   if (s.providers && Object.keys(s.providers).length) {
-    let html='<table class="stats-table"><tr><th>Provider</th><th>请求数</th><th>成功</th><th>失败</th><th>Token</th></tr>';
+    let html='<table class="stats-table"><thead><tr><th>Provider</th><th>请求数</th><th>成功</th><th>失败</th><th>Token</th></tr></thead><tbody>';
     for (const [name,d] of Object.entries(s.providers)) {
       const p = providers.find(x=>x.name===name);
       const envTag = p&&p.isEnv ? ' <span class="tag tag-env">ENV</span>' : '';
-      html+=`<tr><td>${name}${envTag}</td><td>${d.totalRequests}</td><td>${d.successRequests}</td><td>${d.failedRequests}</td><td>${d.totalTokens}</td></tr>`;
+      html+=`<tr><td>${escapeHtml(name)}${envTag}</td><td>${numberFormatter.format(d.totalRequests||0)}</td><td>${numberFormatter.format(d.successRequests||0)}</td><td>${numberFormatter.format(d.failedRequests||0)}</td><td>${numberFormatter.format(d.totalTokens||0)}</td></tr>`;
     }
-    html+='</table>';
+    html+='</tbody></table>';
     document.getElementById('provider-summary').innerHTML=html;
   } else {
-    document.getElementById('provider-summary').innerHTML='<p style="color:var(--text-muted)">暂无数据</p>';
+    document.getElementById('provider-summary').innerHTML='<div class="table-empty">暂无 Provider 调用数据</div>';
   }
 }
 
-// --- Providers ---
 async function loadProviders() {
   const r = await fetch('/admin/api/providers');
   const providers = await r.json();
   const tbody = document.querySelector('#providers-table tbody');
+  if (!providers.length) { tbody.innerHTML='<tr><td colspan="7" class="table-empty">暂无 Provider，请先添加上游服务</td></tr>'; return; }
   tbody.innerHTML = providers.map(p => {
     const models = Array.isArray(p.models)?p.models.join(', '):p.models;
     const envTag = p.isEnv ? '<span class="tag tag-env">ENV</span> ' : '';
     const statusTag = p.enabled ? '<span class="tag tag-enabled">启用</span>' : '<span class="tag tag-disabled">禁用</span>';
-    const ruleTag = `<span class="tag tag-rule">${p.rule}</span>`;
+    const ruleTag = `<span class="tag tag-rule">${escapeHtml(p.rule)}</span>`;
+    const nameArg = encodeURIComponent(p.name || '');
     const actions = p.isEnv
-      ? `<button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>`
-      : `<button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>
+      ? `<div class="actions"><button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button></div>`
+      : `<div class="actions"><button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>
          <button class="btn btn-sm ${p.enabled?'btn-outline':'btn-success'}" onclick="toggleProvider(${p.id},${!p.enabled})">${p.enabled?'禁用':'启用'}</button>
-         <button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id},'${p.name}')">删除</button>`;
+         <button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id}, decodeURIComponent('${nameArg}'))">删除</button></div>`;
     return `<tr>
-      <td>${envTag}${p.name}</td>
-      <td style="font-size:0.75rem;word-break:break-all;max-width:200px">${p.baseUrl}</td>
-      <td style="font-size:0.75rem">${models}</td>
+      <td>${envTag}<strong>${escapeHtml(p.name)}</strong></td>
+      <td style="word-break:break-all;min-width:220px"><code>${escapeHtml(p.baseUrl)}</code></td>
+      <td style="min-width:180px;color:var(--text-muted)">${escapeHtml(models)}</td>
       <td>${ruleTag}</td>
       <td>${p.priority}</td>
       <td>${statusTag}</td>
@@ -304,6 +381,7 @@ function showAddModal() {
   document.getElementById('f-baseUrl').value='';
   document.getElementById('f-baseUrl').disabled=false;
   document.getElementById('f-apiKey').value='';
+  document.getElementById('f-apiKey').placeholder='sk-...';
   document.getElementById('f-apiKey').disabled=false;
   document.getElementById('f-models').value='';
   document.getElementById('f-rule').value='priority';
@@ -323,7 +401,7 @@ async function editProvider(id) {
   document.getElementById('f-baseUrl').value=p.baseUrl;
   document.getElementById('f-baseUrl').disabled=!!p.isEnv;
   document.getElementById('f-apiKey').value='';
-  document.getElementById('f-apiKey').placeholder=p.isEnv?'不可修改':'留空则不修改';
+  document.getElementById('f-apiKey').placeholder=p.isEnv?'环境变量 Provider 不可修改 Key':'留空则不修改';
   document.getElementById('f-apiKey').disabled=!!p.isEnv;
   document.getElementById('f-models').value=Array.isArray(p.models)?p.models.join(','):p.models;
   document.getElementById('f-rule').value=p.rule;
@@ -332,6 +410,10 @@ async function editProvider(id) {
 }
 
 function closeModal() { document.getElementById('modal').style.display='none'; }
+
+document.getElementById('modal').addEventListener('click', (event) => {
+  if (event.target.id === 'modal') closeModal();
+});
 
 async function saveProvider() {
   const id = document.getElementById('modal-id').value;
@@ -346,63 +428,62 @@ async function saveProvider() {
   };
   const apiKeyVal = document.getElementById('f-apiKey').value.trim();
   if (apiKeyVal) body.apiKey = apiKeyVal;
-  if (!id && !apiKeyVal) { alert('添加 Provider 时 API Key 不能为空'); return; }
+  if (!id && !apiKeyVal) { showToast('添加 Provider 时 API Key 不能为空', 'error'); return; }
   const url = id ? `/admin/api/providers/${id}` : '/admin/api/providers';
   const method = id ? 'PUT' : 'POST';
   const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-  if (r.ok) { closeModal(); loadProviders(); } else { const d=await r.json(); alert(d.error||'保存失败'); }
+  if (r.ok) { closeModal(); await loadProviders(); showToast(id ? 'Provider 已更新' : 'Provider 已添加'); }
+  else { const d=await r.json(); showToast(d.error||'保存失败', 'error'); }
 }
 
 async function toggleProvider(id, enabled) {
-  await fetch(`/admin/api/providers/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled}) });
-  loadProviders();
+  const r = await fetch(`/admin/api/providers/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled}) });
+  if (r.ok) { await loadProviders(); showToast(enabled ? 'Provider 已启用' : 'Provider 已禁用'); }
+  else showToast('操作失败', 'error');
 }
 
 async function deleteProvider(id, name) {
   if (!confirm(`确定删除 Provider "${name}"?`)) return;
-  await fetch(`/admin/api/providers/${id}`, { method:'DELETE' });
-  loadProviders();
+  const r = await fetch(`/admin/api/providers/${id}`, { method:'DELETE' });
+  if (r.ok) { await loadProviders(); showToast('Provider 已删除'); }
+  else showToast('删除失败', 'error');
 }
 
-// --- Models ---
 async function loadModels() {
   const r = await fetch('/admin/api/stats');
   const s = await r.json();
   const tbody = document.querySelector('#models-table tbody');
-  if (!s.models || !Object.keys(s.models).length) { tbody.innerHTML='<tr><td colspan="5" style="color:var(--text-muted)">暂无数据</td></tr>'; return; }
+  if (!s.models || !Object.keys(s.models).length) { tbody.innerHTML='<tr><td colspan="5" class="table-empty">暂无模型调用数据</td></tr>'; return; }
   tbody.innerHTML = Object.entries(s.models).map(([model, d]) => {
     const resolved = d.actualResolved && Object.keys(d.actualResolved).length
-      ? Object.entries(d.actualResolved).map(([a,c])=>`${a} (${c})`).join(', ')
+      ? Object.entries(d.actualResolved).map(([a,c])=>`${escapeHtml(a)} (${numberFormatter.format(c)})`).join(', ')
       : '-';
-    return `<tr><td class="model">${model}</td><td>${d.requested||0}</td><td>${d.promptTokens||0}</td><td>${d.completionTokens||0}</td><td style="font-size:0.75rem">${resolved}</td></tr>`;
+    return `<tr><td class="model">${escapeHtml(model)}</td><td>${numberFormatter.format(d.requested||0)}</td><td>${numberFormatter.format(d.promptTokens||0)}</td><td>${numberFormatter.format(d.completionTokens||0)}</td><td style="font-size:.8rem;text-align:left">${resolved}</td></tr>`;
   }).join('');
 }
 
-// --- IPs ---
 async function loadIps() {
   const r = await fetch('/admin/api/stats');
   const s = await r.json();
   const tbody = document.querySelector('#ips-table tbody');
-  if (!s.ips || !Object.keys(s.ips).length) { tbody.innerHTML='<tr><td colspan="3" style="color:var(--text-muted)">暂无数据</td></tr>'; return; }
+  if (!s.ips || !Object.keys(s.ips).length) { tbody.innerHTML='<tr><td colspan="3" class="table-empty">暂无 IP 统计数据</td></tr>'; return; }
   const sorted = Object.entries(s.ips).sort((a,b)=>b[1].requests-a[1].requests);
-  tbody.innerHTML = sorted.map(([ip,d]) => `<tr><td>${ip}</td><td>${d.requests}</td><td>${d.tokens}</td></tr>`).join('');
+  tbody.innerHTML = sorted.map(([ip,d]) => `<tr><td><code>${escapeHtml(ip)}</code></td><td>${numberFormatter.format(d.requests||0)}</td><td>${numberFormatter.format(d.tokens||0)}</td></tr>`).join('');
 }
 
-// --- Logs ---
 async function loadLogs() {
   const r = await fetch('/admin/api/logs');
   const logs = await r.json();
   const el = document.getElementById('log-list');
-  if (!logs.length) { el.innerHTML='<p style="color:var(--text-muted);padding:1rem">暂无日志</p>'; return; }
+  if (!logs.length) { el.innerHTML='<div class="table-empty">暂无日志</div>'; return; }
   el.innerHTML = logs.reverse().map(l => {
     const cls = l.success ? 'ok' : 'fail';
-    const actual = l.actualModel ? ` -> <span class="model">${l.actualModel}</span>` : '';
-    const err = l.error ? ` <span class="fail">${l.error}</span>` : '';
-    return `<div class="log-entry"><span class="time">${new Date(l.timestamp).toLocaleTimeString()}</span> <span class="${cls}">${l.success?'OK':'FAIL'}</span> ${l.providerName} <span class="model">${l.requestedModel||'-'}</span>${actual} ip:${l.ip||'-'} tok:${l.promptTokens||0}+${l.completionTokens||0}${err}</div>`;
+    const actual = l.actualModel ? ` → <span class="model">${escapeHtml(l.actualModel)}</span>` : '';
+    const err = l.error ? ` <span class="fail">${escapeHtml(l.error)}</span>` : '';
+    return `<div class="log-entry"><span class="time">${new Date(l.timestamp).toLocaleTimeString()}</span><span class="${cls}">${l.success?'OK':'FAIL'}</span><span>${escapeHtml(l.providerName||'-')}</span><span><span class="model">${escapeHtml(l.requestedModel||'-')}</span>${actual}</span><span class="muted">ip:${escapeHtml(l.ip||'-')} tok:${numberFormatter.format((l.promptTokens||0)+(l.completionTokens||0))}${err}</span></div>`;
   }).join('');
 }
 
-// --- Init ---
 checkAuth();
 </script>
 </body>

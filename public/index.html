@@ -4,24 +4,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI API - 免费AI服务</title>
+    <title>免费 AI API - 即开即用的 AI 接口</title>
     <link rel="icon" type="image/webp" href="/logo.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@400;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        (function () {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+        })();
+    </script>
     <script src="https://cdn.bootcdn.net/ajax/libs/marked/15.0.7/marked.min.js"></script>
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --bg: #0f172a;
-            --card-bg: #1e293b;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: #334155;
-            --user-bubble: #312e81;
-            --ai-bubble: #334155;
+            color-scheme: light dark;
+            --bg: #f6efe4;
+            --bg-soft: #fbf6ee;
+            --surface: rgba(255, 251, 244, 0.78);
+            --surface-strong: #fffaf2;
+            --surface-muted: #efe3d1;
+            --text: #2b241c;
+            --text-muted: #766b5d;
+            --text-soft: #9a8b79;
+            --primary: #9a6a3a;
+            --primary-strong: #6f4724;
+            --accent: #c28a55;
+            --accent-soft: rgba(194, 138, 85, 0.18);
+            --success: #46785a;
+            --danger: #b65a46;
+            --border: rgba(111, 71, 36, 0.16);
+            --shadow: 0 24px 80px rgba(94, 62, 32, 0.16);
+            --shadow-soft: 0 14px 40px rgba(94, 62, 32, 0.10);
+            --code-bg: #2b241c;
+            --code-text: #f8ead6;
+            --user-bubble: #8f6337;
+            --ai-bubble: rgba(255, 250, 242, 0.92);
+            --ring: rgba(154, 106, 58, 0.28);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #17130f;
+                --bg-soft: #211a14;
+                --surface: rgba(39, 31, 23, 0.78);
+                --surface-strong: #2b2118;
+                --surface-muted: #3a2d21;
+                --text: #f7ead8;
+                --text-muted: #c8b9a4;
+                --text-soft: #9f8e79;
+                --primary: #e2b778;
+                --primary-strong: #f4d19a;
+                --accent: #bf8752;
+                --accent-soft: rgba(226, 183, 120, 0.14);
+                --success: #91caa2;
+                --danger: #f09a84;
+                --border: rgba(244, 209, 154, 0.15);
+                --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+                --shadow-soft: 0 14px 42px rgba(0, 0, 0, 0.28);
+                --code-bg: #0f0c09;
+                --code-text: #ffe6bd;
+                --user-bubble: #b9824e;
+                --ai-bubble: rgba(43, 33, 24, 0.96);
+                --ring: rgba(226, 183, 120, 0.28);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #17130f;
+            --bg-soft: #211a14;
+            --surface: rgba(39, 31, 23, 0.78);
+            --surface-strong: #2b2118;
+            --surface-muted: #3a2d21;
+            --text: #f7ead8;
+            --text-muted: #c8b9a4;
+            --text-soft: #9f8e79;
+            --primary: #e2b778;
+            --primary-strong: #f4d19a;
+            --accent: #bf8752;
+            --accent-soft: rgba(226, 183, 120, 0.14);
+            --success: #91caa2;
+            --danger: #f09a84;
+            --border: rgba(244, 209, 154, 0.15);
+            --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+            --shadow-soft: 0 14px 42px rgba(0, 0, 0, 0.28);
+            --code-bg: #0f0c09;
+            --code-text: #ffe6bd;
+            --user-bubble: #b9824e;
+            --ai-bubble: rgba(43, 33, 24, 0.96);
+            --ring: rgba(226, 183, 120, 0.28);
         }
 
         * {
@@ -30,15 +101,14 @@
             box-sizing: border-box;
         }
 
-        /* 全局滚动条美化 */
         * {
             scrollbar-width: thin;
-            scrollbar-color: #475569 transparent;
+            scrollbar-color: var(--surface-muted) transparent;
         }
 
         *::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
         }
 
         *::-webkit-scrollbar-track {
@@ -46,329 +116,542 @@
         }
 
         *::-webkit-scrollbar-thumb {
-            background: rgba(148, 163, 184, 0.7);
+            background: var(--surface-muted);
             border-radius: 999px;
-            border: 2px solid transparent;
+            border: 3px solid transparent;
             background-clip: content-box;
         }
 
-        *::-webkit-scrollbar-thumb:hover {
-            background: rgba(129, 140, 248, 0.9);
+        html {
+            scroll-behavior: smooth;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+            font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 12% 4%, rgba(194, 138, 85, 0.26), transparent 28rem),
+                radial-gradient(circle at 88% 16%, rgba(154, 106, 58, 0.16), transparent 24rem),
+                linear-gradient(135deg, var(--bg), var(--bg-soft));
+            line-height: 1.6;
         }
 
-        h1,
-        h2 {
-            font-family: 'Outfit', sans-serif;
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(154, 106, 58, 0.055) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(154, 106, 58, 0.055) 1px, transparent 1px);
+            background-size: 42px 42px;
+            mask-image: linear-gradient(to bottom, rgba(0,0,0,0.62), transparent 78%);
         }
 
-        header {
-            padding: 0.5rem 2rem;
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 10;
-        }
-
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #818cf8, #c084fc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        footer {
-            padding: 1rem 2rem;
-            background: rgba(15, 23, 42, 0.9);
-            border-top: 1px solid var(--border);
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        footer a {
-            color: var(--primary);
+        a {
+            color: inherit;
             text-decoration: none;
         }
 
-        footer a:hover {
-            color: var(--primary-hover);
-            text-decoration: underline;
+        button, input, textarea {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem clamp(1rem, 4vw, 4rem);
+            border-bottom: 1px solid var(--border);
+            background: color-mix(in srgb, var(--bg) 84%, transparent);
+            backdrop-filter: blur(22px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            letter-spacing: -0.035em;
+        }
+
+        .brand-mark {
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 0.9rem;
+            display: grid;
+            place-items: center;
+            color: #fff7e8;
+            background: linear-gradient(135deg, var(--primary-strong), var(--accent));
+            box-shadow: var(--shadow-soft);
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .status-pill, .theme-toggle, .ghost-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 2.45rem;
+            padding: 0.55rem 0.82rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--text-muted);
+            box-shadow: 0 1px 0 rgba(255,255,255,0.24) inset;
+        }
+
+        .theme-toggle:hover, .ghost-link:hover {
+            color: var(--primary-strong);
+            border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+        }
+
+        .status-dot {
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 999px;
+            background: var(--success);
+            box-shadow: 0 0 0 0.35rem color-mix(in srgb, var(--success) 14%, transparent);
         }
 
         main {
-            flex: 1;
-            display: flex;
-            padding: 2rem;
-            gap: 2rem;
-            max-width: 1400px;
+            position: relative;
+            z-index: 1;
+            width: min(1180px, calc(100% - 2rem));
             margin: 0 auto;
-            width: 100%;
-            min-height: 0;
-            overflow: hidden;
         }
 
-        .intro {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+        .section {
+            padding: clamp(3.4rem, 7vw, 6.5rem) 0;
         }
 
-        .intro h1 {
-            font-size: 3.5rem;
-            margin-bottom: 1rem;
-            line-height: 1.1;
-        }
-
-        .intro p {
-            font-size: 1.2rem;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            max-width: 500px;
-        }
-
-        .features {
+        .hero {
+            min-height: min(760px, calc(100vh - 4.5rem));
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            align-items: center;
+            padding: clamp(3rem, 7vw, 6rem) 0 clamp(4rem, 8vw, 7rem);
+        }
+
+        .hero-inner {
+            max-width: 960px;
+        }
+
+        .eyebrow {
+            width: fit-content;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin-bottom: 1.4rem;
+            padding: 0.48rem 0.82rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--primary-strong);
+            font-weight: 800;
+            font-size: 0.88rem;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .hero h1 {
+            max-width: 920px;
+            font-size: clamp(3.8rem, 10vw, 8.6rem);
+            line-height: 0.9;
+            letter-spacing: -0.09em;
+            font-weight: 800;
+        }
+
+        .hero h1 span {
+            color: var(--primary-strong);
+        }
+
+        .hero-description {
+            max-width: 680px;
+            margin: 1.45rem 0 1.9rem;
+            color: var(--text-muted);
+            font-size: clamp(1rem, 1.45vw, 1.2rem);
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.85rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            min-height: 3rem;
+            padding: 0.75rem 1.08rem;
+            border-radius: 999px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            font-weight: 800;
+            transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            color: #fff7e8;
+            background: linear-gradient(135deg, var(--primary-strong), var(--accent));
+            box-shadow: 0 16px 34px rgba(111, 71, 36, 0.22);
+        }
+
+        .btn-secondary {
+            color: var(--text);
+            border-color: var(--border);
+            background: var(--surface);
+        }
+
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
             gap: 1.5rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .section-kicker {
+            color: var(--primary-strong);
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .section-title {
+            margin-top: 0.25rem;
+            font-size: clamp(2rem, 4.5vw, 4rem);
+            line-height: 1;
+            letter-spacing: -0.07em;
+        }
+
+        .section-desc {
+            max-width: 520px;
+            color: var(--text-muted);
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-card {
+            min-height: 12rem;
+            padding: clamp(1.1rem, 2vw, 1.5rem);
+            border: 1px solid var(--border);
+            border-radius: 1.6rem;
+            background: linear-gradient(180deg, var(--surface-strong), var(--surface));
+            box-shadow: var(--shadow-soft);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            right: -3rem;
+            top: -3rem;
+            width: 7rem;
+            height: 7rem;
+            border-radius: 999px;
+            background: var(--accent-soft);
+        }
+
+        .stat-card .label {
+            position: relative;
+            color: var(--text-soft);
+            font-size: 0.9rem;
+            font-weight: 800;
+        }
+
+        .stat-card .value {
+            position: relative;
+            margin-top: 1rem;
+            color: var(--primary-strong);
+            font-size: clamp(2.2rem, 5vw, 4rem);
+            line-height: 0.95;
+            font-weight: 800;
+            letter-spacing: -0.075em;
+        }
+
+        .stat-card .hint {
+            position: relative;
+            margin-top: 0.8rem;
+            color: var(--text-soft);
+            font-size: 0.84rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
         }
 
         .feature-item {
-            background: var(--card-bg);
-            padding: 1.5rem;
-            border-radius: 1rem;
+            min-height: 12rem;
+            padding: 1.25rem;
             border: 1px solid var(--border);
-            transition: transform 0.2s;
+            border-radius: 1.6rem;
+            background: color-mix(in srgb, var(--surface) 82%, transparent);
+            box-shadow: var(--shadow-soft);
         }
 
-        .feature-item:hover {
-            transform: translateY(-5px);
-            border-color: var(--primary);
+        .feature-number {
+            display: grid;
+            place-items: center;
+            width: 2.4rem;
+            height: 2.4rem;
+            margin-bottom: 1.1rem;
+            border-radius: 0.9rem;
+            color: #fff7e8;
+            background: linear-gradient(135deg, var(--primary-strong), var(--accent));
+            font-weight: 800;
         }
 
-        .feature-item h3 {
-            margin-bottom: 0.5rem;
-            color: var(--primary);
+        .feature-item strong {
+            display: block;
+            margin-bottom: 0.45rem;
+            color: var(--text);
+            font-size: 1.08rem;
         }
 
-        .chat-container {
-            flex: 1.2;
-            background: var(--card-bg);
-            border-radius: 1.5rem;
+        .feature-item span {
+            color: var(--text-muted);
+        }
+
+        .api-card {
+            display: grid;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+            gap: 1rem;
             border: 1px solid var(--border);
+            border-radius: 1.8rem;
+            background: linear-gradient(180deg, var(--surface-strong), var(--surface));
+            box-shadow: var(--shadow);
+            padding: clamp(1rem, 2vw, 1.4rem);
+        }
+
+        .api-info {
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .request-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 1.1rem;
+            background: color-mix(in srgb, var(--bg-soft) 70%, transparent);
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .request-row code {
+            color: var(--primary-strong);
+            word-break: break-all;
+            text-align: right;
+        }
+
+        .code-block {
+            min-height: 17rem;
+            padding: 1.2rem;
+            border-radius: 1.2rem;
+            color: var(--code-text);
+            background: var(--code-bg);
+            overflow: auto;
+            font-size: 0.88rem;
+            line-height: 1.65;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+
+        .chat-card {
             display: flex;
             flex-direction: column;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            position: relative;
+            min-height: 620px;
+            border: 1px solid var(--border);
+            border-radius: 1.8rem;
+            background: linear-gradient(180deg, var(--surface-strong), var(--surface));
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .chat-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .chat-head strong {
+            display: block;
+            letter-spacing: -0.03em;
+        }
+
+        .chat-head span {
+            display: block;
+            color: var(--text-soft);
+            font-size: 0.86rem;
+        }
+
+        .panel-chip {
+            white-space: nowrap;
+            padding: 0.45rem 0.7rem;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--primary-strong);
+            font-size: 0.78rem;
+            font-weight: 800;
         }
 
         #chat-messages {
             flex: 1;
-            padding: 1.5rem;
+            min-height: 0;
+            padding: 1.1rem;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.75rem;
         }
 
         .message {
-            max-width: 80%;
-            padding: 1rem;
-            border-radius: 1rem;
-            position: relative;
-            animation: fadeIn 0.3s ease;
+            max-width: min(720px, 88%);
+            padding: 0.85rem 0.98rem;
+            border-radius: 1.05rem;
+            animation: fadeIn 0.24s ease;
+            word-break: break-word;
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .message.user {
             align-self: flex-end;
+            color: #fff7e8;
             background: var(--user-bubble);
             border-bottom-right-radius: 0.25rem;
         }
 
         .message.ai {
             align-self: flex-start;
+            color: var(--text);
             background: var(--ai-bubble);
+            border: 1px solid var(--border);
             border-bottom-left-radius: 0.25rem;
+            line-height: 1.7;
+        }
+
+        .message.ai p { margin: 0.35rem 0; }
+        .message.ai p:first-child { margin-top: 0; }
+        .message.ai p:last-child { margin-bottom: 0; }
+        .message.ai code { background: var(--accent-soft); padding: 0.16rem 0.35rem; border-radius: 0.35rem; }
+        .message.ai pre { background: var(--code-bg); color: var(--code-text); padding: 0.85rem; border-radius: 0.75rem; overflow-x: auto; margin: 0.5rem 0; }
+        .message.ai pre code { background: none; padding: 0; }
+        .message.ai ul, .message.ai ol { margin: 0.5rem 0; padding-left: 1.3rem; }
+        .message.ai blockquote { border-left: 3px solid var(--primary); padding-left: 0.8rem; color: var(--text-muted); }
+        .message.ai table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
+        .message.ai th, .message.ai td { border: 1px solid var(--border); padding: 0.45rem; text-align: left; }
+
+        .typing-indicator {
+            display: none;
+            padding: 0 1.1rem 0.8rem;
+            color: var(--text-soft);
+            font-size: 0.84rem;
         }
 
         .chat-input-area {
-            padding: 1.5rem;
-            border-top: 1px solid var(--border);
             display: flex;
-            gap: 1rem;
+            align-items: flex-end;
+            gap: 0.7rem;
+            padding: 1rem;
+            border-top: 1px solid var(--border);
+            background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
         }
 
         #user-input {
             flex: 1;
-            background: var(--bg);
+            min-height: 3.2rem;
+            max-height: 10rem;
+            resize: vertical;
+            padding: 0.9rem 1rem;
             border: 1px solid var(--border);
-            padding: 0.75rem 1rem;
-            border-radius: 0.75rem;
+            border-radius: 1rem;
             color: var(--text);
+            background: var(--surface);
             outline: none;
-            transition: border-color 0.2s;
         }
 
         #user-input:focus {
             border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--ring);
         }
 
-        button#send-btn {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.75rem;
-            font-weight: 600;
+        #send-btn {
+            min-width: 5.5rem;
+            min-height: 3.2rem;
+            border: 0;
+            border-radius: 1rem;
             cursor: pointer;
-            transition: background 0.2s;
+            color: #fff7e8;
+            background: linear-gradient(135deg, var(--primary-strong), var(--accent));
+            font-weight: 800;
         }
 
-        button#send-btn:hover {
-            background: var(--primary-hover);
-        }
-
-        button#send-btn:disabled {
-            opacity: 0.5;
+        #send-btn:disabled {
+            opacity: 0.55;
             cursor: not-allowed;
         }
 
-        .typing-indicator {
-            padding: 0.5rem;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-style: italic;
+        .prompt-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            padding: 0 1rem 1rem;
+            border-top: 1px solid var(--border);
         }
 
-        /* Markdown 样式 */
-        .message.ai {
-            line-height: 1.7;
-        }
-
-        .message.ai p {
-            margin: 0.5rem 0;
-        }
-
-        .message.ai p:first-child {
-            margin-top: 0;
-        }
-
-        .message.ai p:last-child {
-            margin-bottom: 0;
-        }
-
-        .message.ai code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 0.2rem 0.4rem;
-            border-radius: 0.3rem;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-        }
-
-        .message.ai pre {
-            background: rgba(0, 0, 0, 0.4);
-            padding: 1rem;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            margin: 0.5rem 0;
-        }
-
-        .message.ai pre code {
-            background: none;
-            padding: 0;
-        }
-
-        .message.ai ul, .message.ai ol {
-            margin: 0.5rem 0;
-            padding-left: 1.5rem;
-        }
-
-        .message.ai li {
-            margin: 0.2rem 0;
-        }
-
-        .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4 {
-            margin: 1rem 0 0.5rem 0;
-        }
-
-        .message.ai blockquote {
-            border-left: 3px solid var(--primary);
-            padding-left: 1rem;
-            margin: 0.5rem 0;
-            color: var(--text-muted);
-        }
-
-        .message.ai table {
-            border-collapse: collapse;
-            margin: 0.5rem 0;
-            width: 100%;
-        }
-
-        .message.ai th, .message.ai td {
-            border: 1px solid var(--border);
-            padding: 0.5rem;
-            text-align: left;
-        }
-
-        .message.ai th {
-            background: rgba(99, 102, 241, 0.2);
-        }
-
-        /* API 指南样式 */
-        .api-docs {
+        .prompt-chip {
             margin-top: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.48rem 0.72rem;
+            font-size: 0.84rem;
+            font-weight: 700;
         }
 
-        .api-docs .feature-item {
-            padding: 1rem;
+        .prompt-chip:hover {
+            color: var(--primary-strong);
+            border-color: var(--primary);
         }
 
-        .api-docs .feature-item h3 {
-            font-size: 0.95rem;
-            margin-bottom: 0.75rem;
-        }
-
-        .api-docs .feature-item > div > div {
-            padding: 0.4rem 0.75rem;
-            font-size: 0.8rem;
-            margin-bottom: 0.4rem;
-        }
-
-        .api-docs pre {
-            padding: 0.75rem;
-            font-size: 0.75rem;
-            margin: 0;
-        }
-
-        /* 流式输出光标 */
         .streaming-cursor {
             display: inline-block;
             width: 8px;
@@ -384,15 +667,66 @@
             51%, 100% { opacity: 0; }
         }
 
-        /* Responsive */
-        @media (max-width: 1024px) {
-            main {
+        footer {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: center;
+            width: min(1180px, calc(100% - 2rem));
+            margin: 0 auto;
+            padding: 2rem 0 2.5rem;
+            color: var(--text-soft);
+            font-size: 0.88rem;
+            border-top: 1px solid var(--border);
+        }
+
+        footer code {
+            color: var(--primary-strong);
+        }
+
+        @media (max-width: 920px) {
+            .section-head {
+                align-items: start;
                 flex-direction: column;
-                overflow-y: auto;
             }
 
-            .chat-container {
-                min-height: 500px;
+            .stat-grid, .feature-grid, .api-card {
+                grid-template-columns: 1fr;
+            }
+
+            .code-block {
+                min-height: 14rem;
+            }
+        }
+
+        @media (max-width: 760px) {
+            header, footer {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .nav-actions {
+                width: 100%;
+                overflow-x: auto;
+                padding-bottom: 0.2rem;
+            }
+
+            .hero {
+                min-height: auto;
+            }
+
+            .hero h1 {
+                font-size: clamp(3.2rem, 18vw, 5.4rem);
+            }
+
+            .chat-input-area {
+                flex-direction: column;
+            }
+
+            #send-btn {
+                width: 100%;
             }
         }
     </style>
@@ -400,93 +734,209 @@
 
 <body>
     <header>
-        <div class="logo">AI Free API</div>
-        <div class="status">
-            <span style="color: #10b981;">●</span> 系统正常
+        <a class="brand" href="/" aria-label="免费 AI API 首页">
+            <span class="brand-mark">AI</span>
+            <span>免费 AI API</span>
+        </a>
+        <div class="nav-actions">
+            <span class="status-pill"><span class="status-dot"></span> 系统在线</span>
+            <a class="ghost-link" href="/admin">管理后台</a>
+            <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色">自动主题</button>
         </div>
     </header>
 
     <main>
-        <div class="intro">
-            <h1>无限可能<br><span style="color: var(--primary);">极简 · 高效 · 免费</span></h1>
-            <p>极简 AI 服务。标准的 API 接口，无需 Key，无需登录注册，即开即用。</p>
-
-            <div class="api-docs">
-                <div class="feature-item" style="max-width: 550px;">
-                    <h3>API 接入指南</h3>
-                    <div>
-                        <div
-                            style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; background: var(--bg); padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.9rem;">
-                            <span style="color: var(--text-muted);">API Base</span>
-                            <code id="api-base" style="color: var(--primary);"></code>
-                        </div>
-                        <div
-                            style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; background: var(--bg); padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.9rem;">
-                            <span style="color: var(--text-muted);">API Key</span>
-                            <code style="color: var(--primary);">不需要 (可填任意字符)</code>
-                        </div>
-                        <div
-                            style="display: flex; justify-content: space-between; margin-bottom: 1rem; background: var(--bg); padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.9rem;">
-                            <span style="color: var(--text-muted);">模型名称</span>
-                            <code style="color: var(--primary);">默认 (使用随机模型，无法指定模型，自动忽略)</code>
-                        </div>
-                    </div>
-                    <div
-                        style="background: #000; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.85rem; color: #10b981; overflow-x: auto;">
-                        <pre id="curl-example"></pre>
-                    </div>
+        <section class="hero" aria-label="首页介绍">
+            <div class="hero-inner">
+                <div class="eyebrow">免费 AI API · OpenAI 兼容 · 无需注册</div>
+                <h1>免费 AI API<br><span>打开就能用。</span></h1>
+                <p class="hero-description">
+                    面向开发者和轻量应用的免费 AI 接口服务。无需注册账号，无需单独申请 Key，使用标准 API 地址即可快速完成聊天、测试和原型验证。
+                </p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="#chat-test">立即测试</a>
+                    <a class="btn btn-secondary" href="#api-guide">查看接入方式</a>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <div class="chat-container">
-            <div id="chat-messages">
-                <div class="message ai">你好！我是你的 AI 助手，有什么我可以帮你的吗？</div>
+        <section class="section" id="stats" aria-label="数据展示">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Live data</div>
+                    <h2 class="section-title">公开运行数据</h2>
+                </div>
+                <p class="section-desc">用三个核心指标快速判断服务当前使用规模和可用状态。</p>
             </div>
-            <div id="typing" class="typing-indicator" style="display: none;">AI 正在思考...</div>
-            <div class="chat-input-area">
-                <input type="text" id="user-input" placeholder="输入消息..." autocomplete="off">
-                <button id="send-btn">发送</button>
+            <div class="stat-grid">
+                <article class="stat-card">
+                    <div class="label">总请求数</div>
+                    <div class="value" id="stat-requests">--</div>
+                    <div class="hint">累计 API 调用次数</div>
+                </article>
+                <article class="stat-card">
+                    <div class="label">总 Token 数</div>
+                    <div class="value" id="stat-tokens">--</div>
+                    <div class="hint">Prompt 与 Completion 合计</div>
+                </article>
+                <article class="stat-card">
+                    <div class="label">成功率</div>
+                    <div class="value" id="stat-success">--</div>
+                    <div class="hint">已完成请求的成功占比</div>
+                </article>
             </div>
-        </div>
+        </section>
+
+        <section class="section" aria-label="功能说明">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Why use it</div>
+                    <h2 class="section-title">为快速使用而设计</h2>
+                </div>
+                <p class="section-desc">免费开放的 AI 接口服务，适合快速体验、原型开发和轻量应用接入。</p>
+            </div>
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <div class="feature-number">01</div>
+                    <strong>无需注册</strong>
+                    <span>打开页面即可获得 API Base，调用时 API Key 可留空或填写任意字符。</span>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-number">02</div>
+                    <strong>兼容 OpenAI 格式</strong>
+                    <span>沿用常见的 `/v1/chat/completions` 请求结构，迁移成本低。</span>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-number">03</div>
+                    <strong>先测再接入</strong>
+                    <span>页面内置在线对话框，可以直接验证服务是否可用，再复制请求示例接入项目。</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="api-guide" aria-label="API 接入指南">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">API guide</div>
+                    <h2 class="section-title">接入方式</h2>
+                </div>
+                <p class="section-desc">复制下面的请求示例，即可在前端、后端或调试工具中发起一次对话请求。</p>
+            </div>
+            <div class="api-card">
+                <div class="api-info">
+                    <div class="request-row"><span>API Base</span><code id="api-base"></code></div>
+                    <div class="request-row"><span>API Key</span><code>任意字符 / 可留空</code></div>
+                    <div class="request-row"><span>模型名称</span><code>默认自动选择</code></div>
+                </div>
+                <pre class="code-block" id="curl-example"></pre>
+            </div>
+        </section>
+
+        <section class="section" id="chat-test" aria-label="在线对话测试">
+            <div class="section-head">
+                <div>
+                    <div class="section-kicker">Quick test</div>
+                    <h2 class="section-title">在线对话测试</h2>
+                </div>
+                <p class="section-desc">直接发送消息，体验接口响应效果，也可以用快捷提示词快速开始。</p>
+            </div>
+            <section class="chat-card" aria-label="在线对话框">
+                <div class="chat-head">
+                    <div>
+                        <strong>免费 AI API 测试助手</strong>
+                        <span>输入一句话，确认当前服务是否可用。</span>
+                    </div>
+                    <span class="panel-chip">无需额外配置</span>
+                </div>
+                <div id="chat-messages">
+                    <div class="message ai">你好，这里是免费 AI API 的在线测试区。你可以直接发送消息，验证接口响应是否正常。</div>
+                </div>
+                <div id="typing" class="typing-indicator">AI 正在思考...</div>
+                <div class="chat-input-area">
+                    <textarea id="user-input" placeholder="输入消息，Enter 发送，Shift + Enter 换行..." autocomplete="off" rows="1"></textarea>
+                    <button id="send-btn">发送</button>
+                </div>
+                <div class="prompt-row">
+                    <button class="prompt-chip" type="button" data-prompt="用三句话介绍免费 AI API 适合什么场景">适用场景</button>
+                    <button class="prompt-chip" type="button" data-prompt="请生成一个调用 /v1/chat/completions 的 JavaScript fetch 示例">生成 fetch 示例</button>
+                    <button class="prompt-chip" type="button" data-prompt="帮我测试当前接口是否响应正常">测试接口</button>
+                </div>
+            </section>
+        </section>
     </main>
 
     <footer>
-        <div>© 2026 AI Free API · 极简 · 高效 · 免费</div>
-        <div style="display: flex; gap: 1rem; font-size: 0.8rem;">
-            <span>API Base: <code id="api-base-footer"></code></span>
-            由<a href="https://github.com/LoosePrince" target="_blank" rel="noopener noreferrer">树梢(LoosePrince)</a>提供支持
-        </div>
+        <div>© 2026 免费 AI API · 即开即用</div>
+        <div>API Base: <code id="api-base-footer"></code></div>
     </footer>
 
     <script src="chat.js"></script>
     <script>
         (function () {
-            var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
-            var base = origin + '/v1';
+            const origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
+            const base = origin + '/v1';
+            const formatter = new Intl.NumberFormat('zh-CN');
+            const themeButton = document.getElementById('theme-toggle');
+            const themeLabels = { auto: '自动主题', light: '浅色主题', dark: '深色主题' };
 
-            var apiBaseEl = document.getElementById('api-base');
-            if (apiBaseEl) {
-                apiBaseEl.textContent = base;
+            function currentThemeMode() {
+                return localStorage.getItem('theme') || 'auto';
             }
 
-            var apiBaseFooterEl = document.getElementById('api-base-footer');
-            if (apiBaseFooterEl) {
-                apiBaseFooterEl.textContent = base;
+            function applyThemeLabel() {
+                const mode = currentThemeMode();
+                themeButton.textContent = themeLabels[mode] || themeLabels.auto;
             }
 
-            var curlEl = document.getElementById('curl-example');
-            if (curlEl) {
-                curlEl.textContent =
-                    `curl ${base}/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "你好"}
-    ]
-  }'`;
+            themeButton.addEventListener('click', function () {
+                const order = ['auto', 'light', 'dark'];
+                const next = order[(order.indexOf(currentThemeMode()) + 1) % order.length];
+                if (next === 'auto') {
+                    localStorage.removeItem('theme');
+                    delete document.documentElement.dataset.theme;
+                } else {
+                    localStorage.setItem('theme', next);
+                    document.documentElement.dataset.theme = next;
+                }
+                applyThemeLabel();
+            });
+            applyThemeLabel();
+
+            document.getElementById('api-base').textContent = base;
+            document.getElementById('api-base-footer').textContent = base;
+            document.getElementById('curl-example').textContent = `fetch('${base}/chat/completions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    messages: [{ role: 'user', content: '你好' }],
+    stream: true
+  })
+})`;
+
+            async function loadPublicStats() {
+                try {
+                    const response = await fetch('/api/public-stats');
+                    if (!response.ok) throw new Error('stats unavailable');
+                    const stats = await response.json();
+                    document.getElementById('stat-requests').textContent = formatter.format(stats.totalRequests || 0);
+                    document.getElementById('stat-tokens').textContent = formatter.format(stats.totalTokens || 0);
+                    document.getElementById('stat-success').textContent = `${Number(stats.successRate || 0).toFixed(1)}%`;
+                } catch (error) {
+                    document.getElementById('stat-requests').textContent = '0';
+                    document.getElementById('stat-tokens').textContent = '0';
+                    document.getElementById('stat-success').textContent = '0.0%';
+                }
             }
 
+            document.querySelectorAll('[data-prompt]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const input = document.getElementById('user-input');
+                    input.value = button.dataset.prompt;
+                    input.focus();
+                });
+            });
+
+            loadPublicStats();
         })();
     </script>
 </body>

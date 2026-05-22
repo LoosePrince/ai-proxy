@@ -251,8 +251,17 @@ function clearHistory() {
 
 // 事件监听
 sendBtn.addEventListener('click', sendMessage);
-userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
+userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+userInput.addEventListener('input', () => {
+    if (userInput.tagName !== 'TEXTAREA') return;
+    userInput.style.height = 'auto';
+    userInput.style.height = `${Math.min(userInput.scrollHeight, 160)}px`;
 });
 
 // 导出函数供外部使用（可选）

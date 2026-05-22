@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const prisma = require('./lib/prisma');
 const { syncEnvProviders } = require('./lib/provider');
+const { aggregateAllStats } = require('./lib/stats');
 const proxyRoute = require('./routes/proxy');
 const adminRoute = require('./routes/admin');
 
@@ -25,6 +26,24 @@ async function start() {
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
+
+  app.get('/api/public-stats', async (req, res) => {
+    try {
+      const providers = await prisma.provider.findMany({ select: { stats: true, name: true } });
+      const stats = aggregateAllStats(providers);
+      const successRate = stats.totalRequests
+        ? Number(((stats.successRequests / stats.totalRequests) * 100).toFixed(1))
+        : 0;
+
+      res.json({
+        totalRequests: stats.totalRequests,
+        totalTokens: stats.totalTokens,
+        successRate,
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to load public stats' });
+    }
+  });
 
   // 4. 路由
   app.use(proxyRoute);
