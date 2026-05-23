@@ -8,6 +8,7 @@ const router = express.Router();
 
 // OpenAI client 缓存
 const clientCache = new Map();
+const modelRRCounters = new Map();
 
 function getClient(provider) {
   const key = `${provider.baseUrl}::${provider.apiKey}`;
@@ -26,14 +27,37 @@ function getClientIp(req) {
   return req.ip || req.connection.remoteAddress || 'unknown';
 }
 
-function pickModel(provider, requestedModel) {
-  if (requestedModel) {
-    const models = Array.isArray(provider.models) ? provider.models : [];
-    if (models.includes(requestedModel)) return requestedModel;
+function normalizeModelRoutingRule(rule) {
+  if (rule === 'random') return 'random';
+  if (rule === 'average' || rule === 'balanced') return 'average';
+  return 'priority';
+}
+
+function pickFallbackModel(provider, models) {
+  if (models.length === 0) return null;
+
+  const rule = normalizeModelRoutingRule(provider.rule);
+  if (rule === 'random') {
+    return models[Math.floor(Math.random() * models.length)];
   }
-  // 使用 provider 的第一个模型
-  const models = Array.isArray(provider.models) ? provider.models : [];
-  return models[0] || requestedModel || 'gpt-3.5-turbo';
+
+  if (rule === 'average') {
+    const key = `provider-model:${provider.id}:${models.join(',')}`;
+    const current = modelRRCounters.get(key) || 0;
+    modelRRCounters.set(key, current + 1);
+    return models[current % models.length];
+  }
+
+  return models[0];
+}
+
+function pickModel(provider, requestedModel) {
+  const models = Array.isArray(provider.models) ? provider.models.filter(Boolean) : [];
+  if (requestedModel && models.includes(requestedModel)) {
+    return requestedModel;
+  }
+
+  return pickFallbackModel(provider, models) || requestedModel || 'gpt-3.5-turbo';
 }
 
 function formatSSE(data) {
