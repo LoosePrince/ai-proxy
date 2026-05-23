@@ -167,15 +167,34 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
           <div><h2>Provider 管理</h2><p>添加、编辑、启停和删除上游服务。</p></div>
           <button class="btn btn-primary" onclick="showAddModal()">添加 Provider</button>
         </div>
-        <div class="card card-pad" style="margin-bottom:1rem">
-          <div class="section-head" style="margin-bottom:.35rem">
-            <div>
-              <h2>全局路由规则</h2>
-              <p>只有优先级为 0 的 Provider 的路由规则会作为整体规则；其余 Provider 只参与候选和优先级排序。</p>
+        <div class="card card-pad" style="margin-bottom:1rem;background:linear-gradient(135deg,color-mix(in srgb,var(--surface-strong) 86%,transparent),color-mix(in srgb,var(--accent-soft) 78%,transparent));border-color:color-mix(in srgb,var(--primary) 22%,var(--border))">
+          <div style="display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,1fr);gap:1rem;align-items:stretch">
+            <div style="display:flex;flex-direction:column;justify-content:space-between;gap:1rem">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.6rem">
+                  <div>
+                    <h2 style="font-size:1.25rem;letter-spacing:-.035em">全局路由切换</h2>
+                    <p style="margin-top:.35rem;color:var(--text-muted)">单独控制普通 Provider 优先级组之间的顺序，不再混入 Provider 列表和统计视图。</p>
+                  </div>
+                  <span class="tag tag-rule" id="global-rule-badge">遵循优先级</span>
+                </div>
+                <div style="display:grid;gap:.55rem;margin-top:.9rem">
+                  <div class="pill" style="justify-content:flex-start">作用范围：普通优先级组之间</div>
+                  <div class="pill" style="justify-content:flex-start">组内规则：继续由同优先级 Provider 共享</div>
+                </div>
+              </div>
+              <div id="global-route-status" style="font-size:.88rem;color:var(--text-muted);font-weight:700">正在读取当前配置</div>
             </div>
-            <span class="tag tag-rule" id="global-rule-badge">遵循优先级</span>
+            <div style="display:flex;flex-direction:column;justify-content:center;gap:.75rem;padding:1rem;border:1px solid var(--border);border-radius:1.1rem;background:color-mix(in srgb,var(--surface) 92%,transparent)">
+              <label for="global-route-rule" style="color:var(--text-muted);font-size:.82rem;font-weight:800">组间路由模式</label>
+              <select id="global-route-rule" style="width:100%;height:3rem;border:1px solid var(--border);border-radius:.9rem;background:var(--surface-strong);color:var(--text);padding:.65rem .85rem;outline:none">
+                <option value="priority">遵循优先级</option>
+                <option value="random">随机</option>
+                <option value="average">平均</option>
+              </select>
+              <button class="btn btn-primary" id="save-global-route-btn" type="button" onclick="saveGlobalRoute()" style="width:100%">保存全局路由</button>
+            </div>
           </div>
-          <p style="color:var(--text-muted);font-size:.9rem">可选规则：遵循优先级、随机、平均。没有优先级 0 的 Provider 时默认遵循优先级。</p>
         </div>
         <div class="card table-wrap">
           <table id="providers-table"><thead><tr><th>名称</th><th>Base URL</th><th>模型</th><th>规则</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead><tbody></tbody></table>
@@ -216,7 +235,7 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
       <div class="form-group"><label>Base URL</label><input id="f-baseUrl" placeholder="https://api.openai.com/v1"></div>
       <div class="form-group"><label>API Key</label><input id="f-apiKey" type="password" placeholder="sk-..."></div>
       <div class="form-group"><label>模型列表</label><input id="f-models" placeholder="model-a,model-b"><div class="hint">多个模型使用英文逗号分隔。</div></div>
-      <div class="form-group"><label>路由规则</label><select id="f-rule"><option value="priority">遵循优先级</option><option value="random">随机</option><option value="average">平均</option></select><div class="hint" id="f-rule-hint">只有优先级为 0 的 Provider 的规则会作为全局路由规则。</div></div>
+      <div class="form-group"><label>路由规则</label><select id="f-rule"><option value="priority">遵循优先级</option><option value="random">随机</option><option value="average">平均</option></select><div class="hint" id="f-rule-hint">这是当前 Provider 所在优先级组的组内路由规则，不再承担全局控制语义。</div></div>
       <div class="form-group"><label>优先级</label><input id="f-priority" type="number" value="0"><div class="hint">数字越小越优先。</div></div>
     </div>
     <div class="modal-actions">
@@ -234,6 +253,29 @@ const pageTitles = { dashboard: '仪表盘', providers: 'Provider 管理', model
 const numberFormatter = new Intl.NumberFormat('zh-CN');
 const ruleLabels = { priority: '遵循优先级', random: '随机', average: '平均', balanced: '平均', single: '遵循优先级' };
 
+async function apiFetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const raw = await response.text();
+  let data = null;
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch (error) {
+      if (raw.trim().startsWith('<!DOCTYPE') || raw.trim().startsWith('<html')) {
+        throw new Error('接口返回了页面内容，请确认服务已重启到最新版本');
+      }
+      throw new Error('接口返回了无法解析的数据');
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.error || `请求失败 (${response.status})`);
+  }
+
+  return data || {};
+}
+
 function normalizeRule(rule) {
   if (rule === 'random') return 'random';
   if (rule === 'average' || rule === 'balanced') return 'average';
@@ -249,6 +291,13 @@ function providerSourceTags(provider) {
   if (provider.isEnv) tags.push('<span class="tag tag-env">ENV</span>');
   if (provider.isContributed) tags.push('<span class="tag tag-contributed">贡献</span>');
   return tags.join(' ');
+}
+
+function setGlobalRouteStatus(message, type = 'muted') {
+  const el = document.getElementById('global-route-status');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
 }
 
 function showToast(message, type = 'success') {
@@ -289,18 +338,35 @@ document.getElementById('admin-theme-toggle').addEventListener('click', () => {
 refreshThemeLabel();
 
 async function checkAuth() {
-  const r = await fetch('/admin/api/auth-check');
-  const d = await r.json();
-  if (!d.needAuth) { authChecked = true; showApp(); return; }
-  if (d.authenticated) { authChecked = true; showApp(); } else { showLogin(); }
+  try {
+    const d = await apiFetchJson('/admin/api/auth-check');
+    if (!d.needAuth) { authChecked = true; showApp(); return; }
+    if (d.authenticated) { authChecked = true; showApp(); } else { showLogin(); }
+  } catch (error) {
+    showLogin();
+    showToast(error.message || '认证状态读取失败', 'error');
+  }
 }
 
 async function doLogin() {
   const u = document.getElementById('login-user').value;
   const p = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
-  const r = await fetch('/admin/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u,password:p}) });
-  if (r.ok) { authChecked=true; showApp(); showToast('登录成功'); } else { errEl.style.display='block'; errEl.textContent='用户名或密码错误'; }
+
+  try {
+    await apiFetchJson('/admin/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p }),
+    });
+    errEl.style.display = 'none';
+    authChecked = true;
+    showApp();
+    showToast('登录成功');
+  } catch (error) {
+    errEl.style.display = 'block';
+    errEl.textContent = error.message || '用户名或密码错误';
+  }
 }
 
 function showLogin() {
@@ -338,17 +404,26 @@ function showPage(page) {
 
 async function loadPage(page) {
   showPage(page);
-  if (page === 'dashboard') await loadDashboard();
-  else if (page === 'providers') await loadProviders();
-  else if (page === 'models') await loadModels();
-  else if (page === 'ips') await loadIps();
-  else if (page === 'logs') await loadLogs();
+  try {
+    if (page === 'dashboard') await loadDashboard();
+    else if (page === 'providers') await loadProviders();
+    else if (page === 'models') await loadModels();
+    else if (page === 'ips') await loadIps();
+    else if (page === 'logs') await loadLogs();
+  } catch (error) {
+    showToast(error.message || '页面加载失败', 'error');
+  }
 }
 
 async function loadDashboard() {
-  const r = await fetch('/admin/api/stats');
-  const s = await r.json();
-  const rate = s.totalRequests ? ((s.successRequests/s.totalRequests)*100).toFixed(1) : '0.0';
+  const s = await apiFetchJson('/admin/api/stats');
+  const providers = await apiFetchJson('/admin/api/providers');
+  const providerMap = new Map(providers.map(provider => [provider.name, provider]));
+  const summaryRows = Object.entries(s.providers || {})
+    .filter(([name]) => providerMap.has(name))
+    .sort((a, b) => (b[1].totalRequests || 0) - (a[1].totalRequests || 0));
+  const rate = s.totalRequests ? ((s.successRequests / s.totalRequests) * 100).toFixed(1) : '0.0';
+
   document.getElementById('overview-stats').innerHTML = `
     <div class="stat-item"><div class="value">${numberFormatter.format(s.totalRequests||0)}</div><div class="label">总请求数</div></div>
     <div class="stat-item"><div class="value">${numberFormatter.format(s.totalTokens||0)}</div><div class="label">总 Token 数</div></div>
@@ -357,35 +432,88 @@ async function loadDashboard() {
     <div class="stat-item"><div class="value">${numberFormatter.format(s.failedRequests||0)}</div><div class="label">失败请求</div></div>
     <div class="stat-item"><div class="value">${numberFormatter.format(s.totalPromptTokens||0)}</div><div class="label">Prompt Tokens</div></div>
   `;
-  const pr = await fetch('/admin/api/providers');
-  const providers = await pr.json();
-  if (s.providers && Object.keys(s.providers).length) {
-    let html='<table class="stats-table"><thead><tr><th>Provider</th><th>请求数</th><th>成功</th><th>失败</th><th>Token</th></tr></thead><tbody>';
-    for (const [name,d] of Object.entries(s.providers)) {
-      const p = providers.find(x=>x.name===name);
-      const tags = p ? providerSourceTags(p) : '';
-      html+=`<tr><td>${escapeHtml(name)} ${tags}</td><td>${numberFormatter.format(d.totalRequests||0)}</td><td>${numberFormatter.format(d.successRequests||0)}</td><td>${numberFormatter.format(d.failedRequests||0)}</td><td>${numberFormatter.format(d.totalTokens||0)}</td></tr>`;
-    }
-    html+='</tbody></table>';
-    document.getElementById('provider-summary').innerHTML=html;
+
+  if (summaryRows.length) {
+    const maxRequests = Math.max(...summaryRows.map(([, data]) => data.totalRequests || 0), 1);
+    const cards = summaryRows.map(([name, data]) => {
+      const provider = providerMap.get(name);
+      const tags = providerSourceTags(provider);
+      const successRate = data.totalRequests ? (((data.successRequests || 0) / data.totalRequests) * 100).toFixed(1) : '0.0';
+      const width = Math.max(8, Math.round(((data.totalRequests || 0) / maxRequests) * 100));
+      return `
+        <div style="padding:1rem 1.05rem;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+            <div>
+              <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap">
+                <strong>${escapeHtml(name)}</strong>
+                ${tags}
+              </div>
+              <div style="margin-top:.45rem;color:var(--text-muted);font-size:.84rem">请求 ${numberFormatter.format(data.totalRequests||0)} · 成功率 ${successRate}% · Token ${numberFormatter.format(data.totalTokens||0)}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(90px,1fr));gap:.45rem;min-width:min(100%,220px)">
+              <div class="pill" style="justify-content:center">成功 ${numberFormatter.format(data.successRequests||0)}</div>
+              <div class="pill" style="justify-content:center">失败 ${numberFormatter.format(data.failedRequests||0)}</div>
+            </div>
+          </div>
+          <div style="margin-top:.8rem;height:.6rem;border-radius:999px;background:var(--surface-muted);overflow:hidden">
+            <div style="height:100%;width:${width}%;background:linear-gradient(90deg,var(--primary-strong),var(--accent));border-radius:999px"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('provider-summary').innerHTML = `<div>${cards}</div>`;
   } else {
     document.getElementById('provider-summary').innerHTML='<div class="table-empty">暂无 Provider 调用数据</div>';
   }
 }
 
+async function loadGlobalRoute() {
+  try {
+    setGlobalRouteStatus('正在读取当前配置');
+    const globalRoute = await apiFetchJson('/admin/api/global-route');
+    document.getElementById('global-rule-badge').textContent = ruleLabel(globalRoute.rule);
+    document.getElementById('global-route-rule').value = normalizeRule(globalRoute.rule);
+    setGlobalRouteStatus('已同步当前全局组间路由', 'success');
+    return globalRoute;
+  } catch (error) {
+    setGlobalRouteStatus(error.message || '全局路由读取失败', 'error');
+    throw error;
+  }
+}
+
+async function saveGlobalRoute() {
+  const button = document.getElementById('save-global-route-btn');
+  button.disabled = true;
+  try {
+    setGlobalRouteStatus('正在保存全局路由');
+    const data = await apiFetchJson('/admin/api/global-route', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rule: document.getElementById('global-route-rule').value }),
+    });
+    document.getElementById('global-rule-badge').textContent = ruleLabel(data.rule);
+    setGlobalRouteStatus('全局路由已更新', 'success');
+    showToast('全局路由已更新');
+  } catch (error) {
+    setGlobalRouteStatus(error.message || '保存失败', 'error');
+    showToast(error.message || '保存失败', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadProviders() {
-  const r = await fetch('/admin/api/providers');
-  const providers = await r.json();
   const tbody = document.querySelector('#providers-table tbody');
-  const controller = providers.find(p => Number(p.priority) === 0);
-  document.getElementById('global-rule-badge').textContent = controller ? ruleLabel(controller.rule) : '遵循优先级';
+  try {
+    await loadGlobalRoute();
+  } catch (_) {}
+  const providers = await apiFetchJson('/admin/api/providers');
   if (!providers.length) { tbody.innerHTML='<tr><td colspan="7" class="table-empty">暂无 Provider，请先添加上游服务</td></tr>'; return; }
   tbody.innerHTML = providers.map(p => {
     const models = Array.isArray(p.models)?p.models.join(', '):p.models;
     const sourceTags = providerSourceTags(p);
     const statusTag = p.enabled ? '<span class="tag tag-enabled">启用</span>' : '<span class="tag tag-disabled">禁用</span>';
-    const isGlobalRule = Number(p.priority) === 0;
-    const ruleTag = `<span class="tag tag-rule">${escapeHtml(ruleLabel(p.rule))}${isGlobalRule ? ' · 全局' : ''}</span>`;
+    const ruleTag = `<span class="tag tag-rule">${escapeHtml(ruleLabel(p.effectiveRule || p.rule))} · 组内</span>`;
     const nameArg = encodeURIComponent(p.name || '');
     const toggleButton = `<button class="btn btn-sm ${p.enabled?'btn-outline':'btn-success'}" onclick="toggleProvider(${p.id},${!p.enabled})">${p.enabled?'禁用':'启用'}</button>`;
     const deleteButton = p.isEnv
@@ -416,14 +544,13 @@ function showAddModal() {
   document.getElementById('f-apiKey').disabled=false;
   document.getElementById('f-models').value='';
   document.getElementById('f-rule').value='priority';
-  document.getElementById('f-rule-hint').textContent='优先级为 0 时，该规则会作为全局路由规则。';
+  document.getElementById('f-rule-hint').textContent='优先级 -1 保留给虚拟全局控制条目，普通 Provider 只能配置自己所在优先级组的内部路由。';
   document.getElementById('f-priority').value='0';
   document.getElementById('modal').style.display='flex';
 }
 
 async function editProvider(id) {
-  const r = await fetch('/admin/api/providers');
-  const providers = await r.json();
+  const providers = await apiFetchJson('/admin/api/providers');
   const p = providers.find(x => x.id === id);
   if (!p) return;
   document.getElementById('modal-title').textContent='编辑 Provider';
@@ -436,15 +563,19 @@ async function editProvider(id) {
   document.getElementById('f-apiKey').placeholder=p.isEnv?'环境变量 Provider 不可修改 Key':'留空则不修改';
   document.getElementById('f-apiKey').disabled=!!p.isEnv;
   document.getElementById('f-models').value=Array.isArray(p.models)?p.models.join(','):p.models;
-  document.getElementById('f-rule').value=normalizeRule(p.rule);
-  document.getElementById('f-rule-hint').textContent=Number(p.priority) === 0
-    ? '当前 Provider 的规则正在作为全局路由规则。'
-    : '当前优先级不是 0，该规则会保存但不会影响全局路由。';
+  document.getElementById('f-models').disabled=false;
+  document.getElementById('f-rule').value=normalizeRule(p.effectiveRule || p.rule);
+  document.getElementById('f-rule-hint').textContent='当前 Provider 所在优先级组共享这一条组内路由规则，保存后会同步到同优先级 Provider。';
   document.getElementById('f-priority').value=p.priority;
+  document.getElementById('f-priority').disabled=false;
   document.getElementById('modal').style.display='flex';
 }
 
-function closeModal() { document.getElementById('modal').style.display='none'; }
+function closeModal() {
+  document.getElementById('f-models').disabled=false;
+  document.getElementById('f-priority').disabled=false;
+  document.getElementById('modal').style.display='none';
+}
 
 document.getElementById('modal').addEventListener('click', (event) => {
   if (event.target.id === 'modal') closeModal();
@@ -466,27 +597,48 @@ async function saveProvider() {
   if (!id && !apiKeyVal) { showToast('添加 Provider 时 API Key 不能为空', 'error'); return; }
   const url = id ? `/admin/api/providers/${id}` : '/admin/api/providers';
   const method = id ? 'PUT' : 'POST';
-  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-  if (r.ok) { closeModal(); await loadProviders(); showToast(id ? 'Provider 已更新' : 'Provider 已添加'); }
-  else { const d=await r.json(); showToast(d.error||'保存失败', 'error'); }
+
+  try {
+    await apiFetchJson(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    closeModal();
+    await loadProviders();
+    showToast(id ? 'Provider 已更新' : 'Provider 已添加');
+  } catch (error) {
+    showToast(error.message || '保存失败', 'error');
+  }
 }
 
 async function toggleProvider(id, enabled) {
-  const r = await fetch(`/admin/api/providers/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({enabled}) });
-  if (r.ok) { await loadProviders(); showToast(enabled ? 'Provider 已启用' : 'Provider 已禁用'); }
-  else showToast('操作失败', 'error');
+  try {
+    await apiFetchJson(`/admin/api/providers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    await loadProviders();
+    showToast(enabled ? 'Provider 已启用' : 'Provider 已禁用');
+  } catch (error) {
+    showToast(error.message || '操作失败', 'error');
+  }
 }
 
 async function deleteProvider(id, name) {
-  if (!confirm(`确定删除 Provider "${name}"?`)) return;
-  const r = await fetch(`/admin/api/providers/${id}`, { method:'DELETE' });
-  if (r.ok) { await loadProviders(); showToast('Provider 已删除'); }
-  else showToast('删除失败', 'error');
+  if (!confirm(`确定删除 Provider \"${name}\"?`)) return;
+  try {
+    await apiFetchJson(`/admin/api/providers/${id}`, { method: 'DELETE' });
+    await loadProviders();
+    showToast('Provider 已删除');
+  } catch (error) {
+    showToast(error.message || '删除失败', 'error');
+  }
 }
 
 async function loadModels() {
-  const r = await fetch('/admin/api/stats');
-  const s = await r.json();
+  const s = await apiFetchJson('/admin/api/stats');
   const tbody = document.querySelector('#models-table tbody');
   if (!s.models || !Object.keys(s.models).length) { tbody.innerHTML='<tr><td colspan="5" class="table-empty">暂无模型调用数据</td></tr>'; return; }
   tbody.innerHTML = Object.entries(s.models).map(([model, d]) => {
@@ -498,8 +650,7 @@ async function loadModels() {
 }
 
 async function loadIps() {
-  const r = await fetch('/admin/api/stats');
-  const s = await r.json();
+  const s = await apiFetchJson('/admin/api/stats');
   const tbody = document.querySelector('#ips-table tbody');
   if (!s.ips || !Object.keys(s.ips).length) { tbody.innerHTML='<tr><td colspan="3" class="table-empty">暂无 IP 统计数据</td></tr>'; return; }
   const sorted = Object.entries(s.ips).sort((a,b)=>b[1].requests-a[1].requests);
@@ -507,8 +658,7 @@ async function loadIps() {
 }
 
 async function loadLogs() {
-  const r = await fetch('/admin/api/logs');
-  const logs = await r.json();
+  const logs = await apiFetchJson('/admin/api/logs');
   const el = document.getElementById('log-list');
   if (!logs.length) { el.innerHTML='<div class="table-empty">暂无日志</div>'; return; }
   el.innerHTML = logs.reverse().map(l => {

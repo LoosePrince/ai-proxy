@@ -3,6 +3,11 @@ const session = require('express-session');
 const path = require('path');
 const prisma = require('../lib/prisma');
 const { getLogs, aggregateAllStats } = require('../lib/stats');
+const {
+  ensureGlobalRouteController,
+  explainResolvedRouting,
+  normalizeRoutingRule,
+} = require('../lib/provider');
 
 const router = express.Router();
 
@@ -89,6 +94,19 @@ async function findProvidersCompat(args = {}) {
   }
 }
 
+async function syncPriorityGroupRule(priority, rule, excludeId = null) {
+  const numericPriority = Number(priority);
+  if (numericPriority < 0) return;
+  const normalizedRule = normalizeRoutingRule(rule);
+  await prisma.provider.updateMany({
+    where: {
+      priority: numericPriority,
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    },
+    data: { rule: normalizedRule },
+  });
+}
+
 // --- 登录/登出 ---
 
 router.post('/api/login', (req, res) => {
@@ -118,15 +136,58 @@ router.get('/api/auth-check', (req, res) => {
 
 router.get('/api/providers', requireAuth, async (req, res) => {
   try {
-    const providers = await findProvidersCompat({ orderBy: { priority: 'asc' } });
+    await ensureGlobalRouteController();
+    const providers = await findProvidersCompat({ orderBy: [{ priority: 'asc' }, { id: 'asc' }] });
+    const routingState = await explainResolvedRouting(null);
+    const groupRuleMap = new Map(
+      (routingState.routing?.groups || []).map((group) => [Number(group.priority), group.internalRule]),
+    );
     // 隐藏 apiKey，仅显示前后4位
-    const masked = providers.map(p => ({
-      ...p,
-      apiKey: p.apiKey.length > 8
-        ? p.apiKey.slice(0, 4) + '***' + p.apiKey.slice(-4)
-        : '***',
-    }));
+    const masked = providers
+      .filter((p) => Number(p.priority) >= 0)
+      .map(p => ({
+        ...p,
+        isVirtualController: false,
+        effectiveRule: groupRuleMap.get(Number(p.priority)) || normalizeRoutingRule(p.rule),
+        routeScope: 'internal',
+        apiKey: p.apiKey.length > 8
+          ? p.apiKey.slice(0, 4) + '***' + p.apiKey.slice(-4)
+          : '***',
+      }));
     res.json(masked);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/api/global-route', requireAuth, async (req, res) => {
+  try {
+    const controller = await ensureGlobalRouteController();
+    const full = await findProviderByIdCompat(controller.id);
+    res.json({
+      id: full.id,
+      rule: normalizeRoutingRule(full.rule),
+      enabled: full.enabled,
+      priority: full.priority,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/api/global-route', requireAuth, async (req, res) => {
+  try {
+    const controller = await ensureGlobalRouteController();
+    const data = {};
+    if (req.body.rule !== undefined) data.rule = normalizeRoutingRule(req.body.rule);
+    if (req.body.enabled !== undefined) data.enabled = !!req.body.enabled;
+    const updated = await updateProviderCompat(controller.id, data);
+    res.json({
+      id: updated.id,
+      rule: normalizeRoutingRule(updated.rule),
+      enabled: updated.enabled,
+      priority: updated.priority,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -135,20 +196,26 @@ router.get('/api/providers', requireAuth, async (req, res) => {
 router.post('/api/providers', requireAuth, async (req, res) => {
   try {
     const { name, baseUrl, apiKey, models, rule, priority } = req.body;
+    const normalizedPriority = Number(priority ?? 0);
+    if (normalizedPriority < 0) {
+      return res.status(400).json({ error: 'priority < 0 保留给虚拟全局控制条目，不能手动创建' });
+    }
     if (!name || !baseUrl || !apiKey) {
       return res.status(400).json({ error: 'name, baseUrl, apiKey are required' });
     }
+    const normalizedRule = normalizeRoutingRule(rule || 'priority');
     const provider = await createProviderCompat({
       name,
       baseUrl,
       apiKey,
       models: models || [],
-      rule: rule || 'priority',
-      priority: priority ?? 0,
+      rule: normalizedRule,
+      priority: normalizedPriority,
       isEnv: false,
       enabled: true,
       stats: {},
     });
+    await syncPriorityGroupRule(normalizedPriority, normalizedRule, provider.id);
     res.json(provider);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -168,15 +235,31 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Provider not found' });
 
     const body = req.body;
+    const isVirtualController = Number(existing.priority) < 0;
+
+    if (isVirtualController) {
+      const allowed = {};
+      if (body.rule !== undefined) allowed.rule = normalizeRoutingRule(body.rule);
+      if (body.enabled !== undefined) allowed.enabled = body.enabled;
+      const updated = await updateProviderCompat(id, allowed);
+      return res.json(updated);
+    }
 
     if (existing.isEnv) {
       // isEnv 的 provider 仅允许改 models, rule, priority, enabled
       const allowed = {};
       if (body.models !== undefined) allowed.models = body.models;
-      if (body.rule !== undefined) allowed.rule = body.rule;
-      if (body.priority !== undefined) allowed.priority = body.priority;
+      if (body.rule !== undefined) allowed.rule = normalizeRoutingRule(body.rule);
+      if (body.priority !== undefined) allowed.priority = Number(body.priority);
       if (body.enabled !== undefined) allowed.enabled = body.enabled;
+      const targetPriority = allowed.priority !== undefined ? allowed.priority : existing.priority;
+      const targetRule = allowed.rule !== undefined ? allowed.rule : existing.rule;
+      const oldPriority = Number(existing.priority);
       const updated = await updateProviderCompat(id, allowed);
+      if (oldPriority >= 0 && oldPriority !== targetPriority) {
+        await syncPriorityGroupRule(oldPriority, existing.rule, updated.id);
+      }
+      await syncPriorityGroupRule(targetPriority, targetRule, updated.id);
       return res.json(updated);
     }
 
@@ -187,11 +270,18 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
     // 跳过脱敏的 apiKey（含 ***）避免覆盖真实 key
     if (body.apiKey !== undefined && !body.apiKey.includes('***')) data.apiKey = body.apiKey;
     if (body.models !== undefined) data.models = body.models;
-    if (body.rule !== undefined) data.rule = body.rule;
-    if (body.priority !== undefined) data.priority = body.priority;
+    if (body.rule !== undefined) data.rule = normalizeRoutingRule(body.rule);
+    if (body.priority !== undefined) data.priority = Number(body.priority);
     if (body.enabled !== undefined) data.enabled = body.enabled;
 
+    const oldPriority = Number(existing.priority);
+    const targetPriority = data.priority !== undefined ? data.priority : oldPriority;
+    const targetRule = data.rule !== undefined ? data.rule : existing.rule;
     const updated = await updateProviderCompat(id, data);
+    if (oldPriority >= 0 && oldPriority !== targetPriority) {
+      await syncPriorityGroupRule(oldPriority, existing.rule, updated.id);
+    }
+    await syncPriorityGroupRule(targetPriority, targetRule, updated.id);
     res.json(updated);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -210,6 +300,7 @@ router.delete('/api/providers/:id', requireAuth, async (req, res) => {
     const existing = await findProviderByIdCompat(id);
     if (!existing) return res.status(404).json({ error: 'Provider not found' });
     if (existing.isEnv) return res.status(403).json({ error: 'Cannot delete env provider' });
+    if (Number(existing.priority) < 0) return res.status(403).json({ error: 'Cannot delete virtual global controller' });
 
     await prisma.provider.delete({ where: { id } });
     res.json({ success: true });

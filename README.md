@@ -89,17 +89,21 @@ curl -X POST http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-指定 `model` 时，系统会优先选择支持该模型的 Provider，按路由规则选择；未指定模型时在所有启用 Provider 中按优先级选择。
+指定 `model` 时，系统会优先选择支持该模型的普通 Provider 候选组，再按双重路由规则选择；未指定模型时在所有启用的普通 Provider 组中路由。
 
 ## 路由规则
 
-路由规则是全局规则，只读取优先级为 `0` 的第一个 Provider（按 `id ASC`）上的 `rule` 字段。其他 Provider 的 `rule` 会保存，但不会决定整体路由策略。
+路由规则分为两层：
+- 全局路由：只读取虚拟控制条目 `priority=-1` 的 `rule` 字段，用来决定“先尝试哪个普通优先级组”。
+- 内部路由：同一普通优先级组内共享一条 `rule`，用来决定“组内 Provider 的尝试顺序”。
 
-| 规则 | 说明 |
-|------|------|
-| `priority` | 遵循优先级，按 `priority ASC, id ASC` 依次尝试，失败后回退下一个 |
-| `random` | 随机打乱当前候选 Provider 后依次尝试 |
-| `average` | 对当前候选 Provider 做 round-robin 平均轮换 |
+注意：`priority=-1` 是专门的虚拟全局控制条目，不参与实际 AI 转发；普通 AI Provider 不再承担全局控制职责。后台不会在 Provider 列表中显示这条虚拟记录，而是通过独立的全局路由切换入口来修改它。
+
+| 规则 | 全局层含义 | 内部层含义 |
+|------|------|------|
+| `priority` | 按优先级组从小到大依次尝试 | 按组内 `id ASC` 依次尝试 |
+| `random` | 随机打乱内部优先级组顺序 | 随机打乱组内 Provider 顺序 |
+| `average` | 对内部优先级组做 round-robin 轮换 | 对组内 Provider 做 round-robin 轮换 |
 
 兼容旧配置：`balanced` 会按 `average` 处理，`single` 会按 `priority` 处理。优先级数字越小越优先。
 
@@ -142,7 +146,7 @@ curl -X POST http://localhost:3000/api/contributions \
 
 功能：
 - 仪表盘：总请求数、Token 统计、成功率
-- Provider 管理：添加 / 编辑 / 启用禁用 / 删除
+- Provider 管理：添加 / 编辑 / 启用禁用 / 删除，普通 Provider 只展示组内路由；全局路由通过独立切换入口控制
 - 模型统计：请求模型 vs 真实模型映射（如 `kilo-auto/free` -> `gpt-4o-mini`）
 - IP 统计
 - 最近请求日志（内存中，重启清空）
