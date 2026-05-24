@@ -315,7 +315,7 @@ async function handleNonStream(client, payload, provider, model, requestedModel,
   res.json(response);
 }
 
-async function handleStream(client, payload, provider, model, requestedModel, ip, req, res) {
+async function handleStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace) {
   const streamPayload = { ...payload, stream: true, stream_options: { include_usage: true } };
   const stream = await runWithTimeout(
     (signal) => client.chat.completions.create(streamPayload, { signal }),
