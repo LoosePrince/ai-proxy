@@ -160,11 +160,39 @@ function readSSEData(frame) {
     .join('\n');
 }
 
+function createRequestTrace() {
+  const requestStartedAtMs = Date.now();
+  return {
+    requestStartedAtMs,
+    requestStartedAt: new Date(requestStartedAtMs).toISOString(),
+    firstResponseAtMs: null,
+    firstResponseAt: null,
+  };
+}
+
+function markFirstResponse(trace) {
+  if (!trace || trace.firstResponseAtMs) return;
+  trace.firstResponseAtMs = Date.now();
+  trace.firstResponseAt = new Date(trace.firstResponseAtMs).toISOString();
+}
+
+function buildTimingFields(trace) {
+  const completedAtMs = Date.now();
+  return {
+    requestStartedAt: trace?.requestStartedAt || null,
+    firstResponseAt: trace?.firstResponseAt || null,
+    completedAt: new Date(completedAtMs).toISOString(),
+    firstResponseDurationMs: trace?.firstResponseAtMs ? trace.firstResponseAtMs - trace.requestStartedAtMs : null,
+    totalDurationMs: trace?.requestStartedAtMs ? completedAtMs - trace.requestStartedAtMs : null,
+  };
+}
+
 // POST /v1/chat/completions
 router.post('/v1/chat/completions', async (req, res) => {
   const requestedModel = req.body.model || null;
   const stream = !!req.body.stream;
   const ip = getClientIp(req);
+  const requestTrace = createRequestTrace();
   const providers = await resolveProviders(requestedModel);
 
   if (providers.length === 0) {
@@ -172,6 +200,7 @@ router.post('/v1/chat/completions', async (req, res) => {
   }
 
   let lastError = null;
+  let lastAttempt = null;
 
   for (const provider of providers) {
     const client = getClient(provider);
@@ -179,12 +208,13 @@ router.post('/v1/chat/completions', async (req, res) => {
 
     for (const model of modelCandidates) {
       const payload = { ...req.body, model };
+      lastAttempt = { provider, model, requestedModel: requestedModel || model };
 
       try {
         if (stream) {
-          await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res);
+          await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace);
         } else {
-          await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res);
+          await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace);
         }
         return;
       } catch (err) {
@@ -195,31 +225,31 @@ router.post('/v1/chat/completions', async (req, res) => {
 
         if (res.headersSent) {
           if (!res.writableEnded) {
+            updateStats(provider.id, {
+              requestedModel: requestedModel || model,
+              actualModel: null,
+              ip,
+              promptTokens: 0,
+              completionTokens: 0,
+              success: false,
+            }).catch(() => {});
+            addLog({
+              providerName: provider.name,
+              requestedModel: requestedModel || model,
+              actualModel: null,
+              ip,
+              promptTokens: 0,
+              completionTokens: 0,
+              success: false,
+              error: message,
+              ...buildTimingFields(requestTrace),
+            });
             writeSSE(res, formatSSE({ error: { message } }));
             writeSSE(res, 'data: [DONE]\n\n');
             res.end();
           }
           return;
         }
-
-        updateStats(provider.id, {
-          requestedModel: requestedModel || model,
-          actualModel: null,
-          ip,
-          promptTokens: 0,
-          completionTokens: 0,
-          success: false,
-        }).catch(() => {});
-        addLog({
-          providerName: provider.name,
-          requestedModel: requestedModel || model,
-          actualModel: null,
-          ip,
-          promptTokens: 0,
-          completionTokens: 0,
-          success: false,
-          error: message,
-        });
       }
     }
   }
@@ -227,16 +257,38 @@ router.post('/v1/chat/completions', async (req, res) => {
   // 所有 provider 都失败
   const status = lastError?.status || lastError?.response?.status || 500;
   const message = lastError?.message || 'All providers failed';
+  if (lastAttempt) {
+    updateStats(lastAttempt.provider.id, {
+      requestedModel: lastAttempt.requestedModel,
+      actualModel: null,
+      ip,
+      promptTokens: 0,
+      completionTokens: 0,
+      success: false,
+    }).catch(() => {});
+    addLog({
+      providerName: lastAttempt.provider.name,
+      requestedModel: lastAttempt.requestedModel,
+      actualModel: null,
+      ip,
+      promptTokens: 0,
+      completionTokens: 0,
+      success: false,
+      error: message,
+      ...buildTimingFields(requestTrace),
+    });
+  }
   res.status(status).json({ error: { message, providerErrors: [] } });
 });
 
-async function handleNonStream(client, payload, provider, model, requestedModel, ip, req, res) {
+async function handleNonStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace) {
   const response = await runWithTimeout(
     (signal) => client.chat.completions.create(payload, { signal }),
     MODEL_RESPONSE_TIMEOUT_MS,
     `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
   );
 
+  markFirstResponse(requestTrace);
   const actualModel = response.model || model;
   const usage = response.usage || {};
 
@@ -257,6 +309,7 @@ async function handleNonStream(client, payload, provider, model, requestedModel,
     promptTokens: usage.prompt_tokens || 0,
     completionTokens: usage.completion_tokens || 0,
     success: true,
+    ...buildTimingFields(requestTrace),
   });
 
   res.json(response);
@@ -278,6 +331,7 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
 
   const ensureStreamStarted = () => {
     if (headersOpened) return;
+    markFirstResponse(requestTrace);
     setStreamHeaders(res);
     headersOpened = true;
   };
@@ -299,6 +353,7 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
       promptTokens,
       completionTokens,
       success: true,
+      ...buildTimingFields(requestTrace),
     });
   };
 

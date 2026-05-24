@@ -2,7 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const prisma = require('../lib/prisma');
-const { getLogs, aggregateAllStats } = require('../lib/stats');
+const { getLogs, aggregateAllStats, ensureStatsProviders } = require('../lib/stats');
 const {
   ensureGlobalRouteController,
   explainResolvedRouting,
@@ -316,6 +316,7 @@ router.delete('/api/providers/:id', requireAuth, async (req, res) => {
 
 router.get('/api/stats', requireAuth, async (req, res) => {
   try {
+    await ensureStatsProviders();
     const providers = await findProvidersCompat();
     const stats = aggregateAllStats(providers);
     res.json(stats);

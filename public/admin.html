@@ -784,7 +784,11 @@ async function loadLogs() {
     const cls = l.success ? 'ok' : 'fail';
     const actual = l.actualModel ? ` → <span class="model">${escapeHtml(l.actualModel)}</span>` : '';
     const err = l.error ? ` <span class="fail">${escapeHtml(l.error)}</span>` : '';
-    return `<div class="log-entry"><span class="time">${new Date(l.timestamp).toLocaleTimeString()}</span><span class="${cls}">${l.success?'OK':'FAIL'}</span><span>${escapeHtml(l.providerName||'-')}</span><span><span class="model">${escapeHtml(l.requestedModel||'-')}</span>${actual}</span><span class="muted">ip:${escapeHtml(l.ip||'-')} tok:${numberFormatter.format((l.promptTokens||0)+(l.completionTokens||0))}${err}</span></div>`;
+    const started = l.requestStartedAt ? new Date(l.requestStartedAt).toLocaleTimeString() : new Date(l.timestamp).toLocaleTimeString();
+    const firstResponse = l.firstResponseAt ? new Date(l.firstResponseAt).toLocaleTimeString() : '-';
+    const firstLatency = l.firstResponseDurationMs != null ? `${numberFormatter.format(l.firstResponseDurationMs)}ms` : '-';
+    const totalDuration = l.totalDurationMs != null ? `${numberFormatter.format(l.totalDurationMs)}ms` : '-';
+    return `<div class="log-entry"><span class="time">${started}</span><span class="${cls}">${l.success?'OK':'FAIL'}</span><span>${escapeHtml(l.providerName||'-')}</span><span><span class="model">${escapeHtml(l.requestedModel||'-')}</span>${actual}</span><span class="muted">首包:${firstResponse} (${firstLatency}) · 总耗时:${totalDuration} · ip:${escapeHtml(l.ip||'-')} tok:${numberFormatter.format((l.promptTokens||0)+(l.completionTokens||0))}${err}</span></div>`;
   }).join('');
 }
 
