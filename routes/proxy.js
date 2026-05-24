@@ -9,6 +9,8 @@ const router = express.Router();
 // OpenAI client 缓存
 const clientCache = new Map();
 const modelRRCounters = new Map();
+const MAX_MODEL_RETRY_COUNT = 3;
+const MODEL_RESPONSE_TIMEOUT_MS = 5000;
 
 function getClient(provider) {
   const key = `${provider.baseUrl}::${provider.apiKey}`;
@@ -33,31 +35,82 @@ function normalizeModelRoutingRule(rule) {
   return 'priority';
 }
 
-function pickFallbackModel(provider, models) {
-  if (models.length === 0) return null;
-
-  const rule = normalizeModelRoutingRule(provider.rule);
-  if (rule === 'random') {
-    return models[Math.floor(Math.random() * models.length)];
+function shuffleItems(items) {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
   }
-
-  if (rule === 'average') {
-    const key = `provider-model:${provider.id}:${models.join(',')}`;
-    const current = modelRRCounters.get(key) || 0;
-    modelRRCounters.set(key, current + 1);
-    return models[current % models.length];
-  }
-
-  return models[0];
+  return result;
 }
 
-function pickModel(provider, requestedModel) {
-  const models = Array.isArray(provider.models) ? provider.models.filter(Boolean) : [];
-  if (requestedModel && models.includes(requestedModel)) {
-    return requestedModel;
+function rotateModelItems(provider, models) {
+  if (models.length <= 1) return [...models];
+  const key = `provider-model:${provider.id}:${models.join(',')}`;
+  const current = modelRRCounters.get(key) || 0;
+  modelRRCounters.set(key, current + 1);
+  const offset = current % models.length;
+  return [...models.slice(offset), ...models.slice(0, offset)];
+}
+
+function orderProviderModels(provider, models) {
+  const rule = normalizeModelRoutingRule(provider.rule);
+  if (rule === 'random') return shuffleItems(models);
+  if (rule === 'average') return rotateModelItems(provider, models);
+  return [...models];
+}
+
+function buildModelCandidates(provider, requestedModel) {
+  const models = [...new Set((Array.isArray(provider.models) ? provider.models : []).map((item) => String(item || '').trim()).filter(Boolean))];
+  if (models.length === 0) {
+    return [requestedModel || 'gpt-3.5-turbo'].filter(Boolean);
   }
 
-  return pickFallbackModel(provider, models) || requestedModel || 'gpt-3.5-turbo';
+  const orderedModels = orderProviderModels(provider, models);
+  if (requestedModel && models.includes(requestedModel)) {
+    return [requestedModel, ...orderedModels.filter((model) => model !== requestedModel)]
+      .slice(0, MAX_MODEL_RETRY_COUNT);
+  }
+
+  return orderedModels.slice(0, MAX_MODEL_RETRY_COUNT);
+}
+
+function createTimeoutError(message) {
+  const error = new Error(message);
+  error.status = 408;
+  error.code = 'MODEL_TIMEOUT';
+  return error;
+}
+
+async function runWithTimeout(run, timeoutMs, timeoutMessage) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      throw createTimeoutError(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readNextChunkWithTimeout(iterator, timeoutMs, timeoutMessage) {
+  let timer = null;
+
+  try {
+    return await Promise.race([
+      iterator.next(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(createTimeoutError(timeoutMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function formatSSE(data) {
@@ -121,52 +174,53 @@ router.post('/v1/chat/completions', async (req, res) => {
   let lastError = null;
 
   for (const provider of providers) {
-    const model = pickModel(provider, requestedModel);
-    const payload = { ...req.body, model };
+    const client = getClient(provider);
+    const modelCandidates = buildModelCandidates(provider, requestedModel);
 
-    try {
-      const client = getClient(provider);
+    for (const model of modelCandidates) {
+      const payload = { ...req.body, model };
 
-      if (stream) {
-        await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res);
-      } else {
-        await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res);
-      }
-      return; // 成功，结束
-    } catch (err) {
-      lastError = err;
-      const status = err.status || (err.response && err.response.status) || 'NO_STATUS';
-      const message = err.message || 'Unknown error';
-      console.warn(`[Proxy] ${provider.name} (${model}) failed: status=${status}, ${message}`);
-
-      if (res.headersSent) {
-        if (!res.writableEnded) {
-          writeSSE(res, formatSSE({ error: { message } }));
-          writeSSE(res, 'data: [DONE]\n\n');
-          res.end();
+      try {
+        if (stream) {
+          await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res);
+        } else {
+          await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res);
         }
         return;
-      }
+      } catch (err) {
+        lastError = err;
+        const status = err.status || (err.response && err.response.status) || 'NO_STATUS';
+        const message = err.message || 'Unknown error';
+        console.warn(`[Proxy] ${provider.name} (${model}) failed: status=${status}, ${message}`);
 
-      // 记录失败
-      updateStats(provider.id, {
-        requestedModel: requestedModel || model,
-        actualModel: null,
-        ip,
-        promptTokens: 0,
-        completionTokens: 0,
-        success: false,
-      }).catch(() => {});
-      addLog({
-        providerName: provider.name,
-        requestedModel: requestedModel || model,
-        actualModel: null,
-        ip,
-        promptTokens: 0,
-        completionTokens: 0,
-        success: false,
-        error: message,
-      });
+        if (res.headersSent) {
+          if (!res.writableEnded) {
+            writeSSE(res, formatSSE({ error: { message } }));
+            writeSSE(res, 'data: [DONE]\n\n');
+            res.end();
+          }
+          return;
+        }
+
+        updateStats(provider.id, {
+          requestedModel: requestedModel || model,
+          actualModel: null,
+          ip,
+          promptTokens: 0,
+          completionTokens: 0,
+          success: false,
+        }).catch(() => {});
+        addLog({
+          providerName: provider.name,
+          requestedModel: requestedModel || model,
+          actualModel: null,
+          ip,
+          promptTokens: 0,
+          completionTokens: 0,
+          success: false,
+          error: message,
+        });
+      }
     }
   }
 
@@ -177,7 +231,11 @@ router.post('/v1/chat/completions', async (req, res) => {
 });
 
 async function handleNonStream(client, payload, provider, model, requestedModel, ip, req, res) {
-  const response = await client.chat.completions.create(payload);
+  const response = await runWithTimeout(
+    (signal) => client.chat.completions.create(payload, { signal }),
+    MODEL_RESPONSE_TIMEOUT_MS,
+    `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+  );
 
   const actualModel = response.model || model;
   const usage = response.usage || {};
@@ -206,14 +264,23 @@ async function handleNonStream(client, payload, provider, model, requestedModel,
 
 async function handleStream(client, payload, provider, model, requestedModel, ip, req, res) {
   const streamPayload = { ...payload, stream: true, stream_options: { include_usage: true } };
-  const stream = await client.chat.completions.create(streamPayload);
-
-  setStreamHeaders(res);
+  const stream = await runWithTimeout(
+    (signal) => client.chat.completions.create(streamPayload, { signal }),
+    MODEL_RESPONSE_TIMEOUT_MS,
+    `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+  );
 
   let actualModel = model;
   let promptTokens = 0;
   let completionTokens = 0;
   let completed = false;
+  let headersOpened = false;
+
+  const ensureStreamStarted = () => {
+    if (headersOpened) return;
+    setStreamHeaders(res);
+    headersOpened = true;
+  };
 
   const recordSuccess = () => {
     updateStats(provider.id, {
@@ -237,10 +304,19 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
 
   const rawStream = extractRawStream(stream);
   if (rawStream) {
+    const iterator = rawStream[Symbol.asyncIterator]();
     let buffer = '';
 
-    for await (const chunk of rawStream) {
-      const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+    while (true) {
+      const { value, done } = await readNextChunkWithTimeout(
+        iterator,
+        MODEL_RESPONSE_TIMEOUT_MS,
+        `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+      );
+      if (done) break;
+
+      ensureStreamStarted();
+      const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
       writeSSE(res, text);
 
       buffer = parseSSEFrames(buffer + text.replace(/\r\n/g, '\n'), (frame) => {
@@ -261,7 +337,17 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
 
     completed = true;
   } else {
-    for await (const chunk of stream) {
+    const iterator = stream[Symbol.asyncIterator]();
+
+    while (true) {
+      const { value: chunk, done } = await readNextChunkWithTimeout(
+        iterator,
+        MODEL_RESPONSE_TIMEOUT_MS,
+        `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+      );
+      if (done) break;
+
+      ensureStreamStarted();
       if (chunk.model) actualModel = chunk.model;
       if (chunk.usage) {
         promptTokens = chunk.usage.prompt_tokens || 0;
@@ -271,11 +357,13 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
       writeSSE(res, formatSSE(chunk));
     }
 
-    writeSSE(res, 'data: [DONE]\n\n');
+    if (headersOpened) {
+      writeSSE(res, 'data: [DONE]\n\n');
+    }
     completed = true;
   }
 
-  if (!res.writableEnded) res.end();
+  if (headersOpened && !res.writableEnded) res.end();
   if (completed) recordSuccess();
 }
 
