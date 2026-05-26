@@ -6,7 +6,9 @@ const { getLogs, aggregateAllStats, ensureStatsProviders } = require('../lib/sta
 const {
   ensureGlobalRouteController,
   explainResolvedRouting,
+  normalizeGlobalModelConfig,
   normalizeRoutingRule,
+  updateGlobalModelConfig,
 } = require('../lib/provider');
 
 const router = express.Router();
@@ -160,6 +162,46 @@ router.get('/api/providers', requireAuth, async (req, res) => {
   }
 });
 
+function sanitizeGlobalModelConfigForResponse(config) {
+  const normalized = normalizeGlobalModelConfig(config || {});
+  return {
+    ...normalized,
+    fallbackProvider: {
+      ...normalized.fallbackProvider,
+      apiKey: '',
+      hasApiKey: !!normalized.fallbackProvider.apiKey,
+    },
+    parallelProvider: {
+      ...normalized.parallelProvider,
+      apiKey: '',
+      hasApiKey: !!normalized.parallelProvider.apiKey,
+    },
+  };
+}
+
+function mergeGlobalModelConfigInput(currentConfig, inputConfig) {
+  const current = normalizeGlobalModelConfig(currentConfig || {});
+  const input = inputConfig || {};
+  return normalizeGlobalModelConfig({
+    ...input,
+    fallbackProvider: {
+      ...(input.fallbackProvider || {}),
+      apiKey: input.fallbackProvider?.apiKey || current.fallbackProvider.apiKey,
+    },
+    parallelProvider: {
+      ...(input.parallelProvider || {}),
+      apiKey: input.parallelProvider?.apiKey || current.parallelProvider.apiKey,
+    },
+  });
+}
+
+function validateSpecialProviderConfig(provider, label) {
+  if (!provider?.enabled) return null;
+  if (!provider.baseUrl || !provider.apiKey) return `${label} 已启用时必须填写 Base URL 和 API Key`;
+  if (!/^https?:\/\//i.test(provider.baseUrl)) return `${label} 的 Base URL 必须以 http:// 或 https:// 开头`;
+  return null;
+}
+
 router.get('/api/global-route', requireAuth, async (req, res) => {
   try {
     const controller = await ensureGlobalRouteController();
@@ -169,6 +211,7 @@ router.get('/api/global-route', requireAuth, async (req, res) => {
       rule: normalizeRoutingRule(full.rule),
       enabled: full.enabled,
       priority: full.priority,
+      modelConfig: sanitizeGlobalModelConfigForResponse(full.stats?.modelConfig || {}),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -181,12 +224,25 @@ router.put('/api/global-route', requireAuth, async (req, res) => {
     const data = {};
     if (req.body.rule !== undefined) data.rule = normalizeRoutingRule(req.body.rule);
     if (req.body.enabled !== undefined) data.enabled = !!req.body.enabled;
-    const updated = await updateProviderCompat(controller.id, data);
+    if (req.body.modelConfig !== undefined) {
+      const current = await findProviderByIdCompat(controller.id);
+      const modelConfig = mergeGlobalModelConfigInput(current?.stats?.modelConfig || {}, req.body.modelConfig || {});
+      const fallbackError = validateSpecialProviderConfig(modelConfig.fallbackProvider, '保底 Provider');
+      const parallelError = validateSpecialProviderConfig(modelConfig.parallelProvider, '并行 Provider');
+      if (fallbackError || parallelError) {
+        return res.status(400).json({ error: fallbackError || parallelError });
+      }
+      await updateGlobalModelConfig(modelConfig);
+    }
+    const updated = Object.keys(data).length ? await updateProviderCompat(controller.id, data) : await findProviderByIdCompat(controller.id);
+    const latest = await findProviderByIdCompat(controller.id);
+    const modelConfig = sanitizeGlobalModelConfigForResponse(latest?.stats?.modelConfig || {});
     res.json({
       id: updated.id,
       rule: normalizeRoutingRule(updated.rule),
       enabled: updated.enabled,
       priority: updated.priority,
+      modelConfig,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

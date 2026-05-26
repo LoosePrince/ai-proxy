@@ -192,7 +192,23 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
                 <option value="random">随机</option>
                 <option value="average">平均</option>
               </select>
-              <button class="btn btn-primary" id="save-global-route-btn" type="button" onclick="saveGlobalRoute()" style="width:100%">保存全局路由</button>
+              <div style="display:grid;gap:.7rem;padding:.85rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong)">
+                <label style="display:flex;align-items:center;gap:.5rem;color:var(--text-muted);font-size:.82rem;font-weight:800"><input id="global-fallback-enabled" type="checkbox">启用保底 Provider</label>
+                <input id="global-fallback-name" placeholder="保底 Provider 名称" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-fallback-baseUrl" placeholder="https://fallback.example.com/v1" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-fallback-apiKey" type="password" placeholder="API Key，留空则保持不变" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-fallback-models" placeholder="模型列表，逗号或换行分隔；留空则跟随请求模型" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <div style="color:var(--text-soft);font-size:.76rem;font-weight:700">主路由三次尝试均失败后才调用，不参与普通路由。</div>
+              </div>
+              <div style="display:grid;gap:.7rem;padding:.85rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong)">
+                <label style="display:flex;align-items:center;gap:.5rem;color:var(--text-muted);font-size:.82rem;font-weight:800"><input id="global-parallel-enabled" type="checkbox">启用并行 Provider</label>
+                <input id="global-parallel-name" placeholder="并行 Provider 名称" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-parallel-baseUrl" placeholder="https://parallel.example.com/v1" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-parallel-apiKey" type="password" placeholder="API Key，留空则保持不变" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <input id="global-parallel-models" placeholder="模型列表，逗号或换行分隔；留空则跟随请求模型" style="width:100%;height:2.6rem;border:1px solid var(--border);border-radius:.8rem;background:var(--surface);color:var(--text);padding:.55rem .75rem;outline:none">
+                <div style="color:var(--text-soft);font-size:.76rem;font-weight:700">第一次尝试同时请求；14 秒内它更快则采用它的响应，不参与普通路由。</div>
+              </div>
+              <button class="btn btn-primary" id="save-global-route-btn" type="button" onclick="saveGlobalRoute()" style="width:100%">保存全局配置</button>
             </div>
           </div>
         </div>
@@ -249,6 +265,7 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
 <script>
 let currentPage = 'dashboard';
 let authChecked = false;
+let currentGlobalRoute = null;
 const pageTitles = { dashboard: '仪表盘', providers: 'Provider 管理', models: '模型统计', ips: 'IP 统计', logs: '请求日志' };
 const numberFormatter = new Intl.NumberFormat('zh-CN');
 const ruleLabels = { priority: '遵循优先级', random: '随机', average: '平均', balanced: '平均', single: '遵循优先级' };
@@ -288,6 +305,9 @@ function ruleLabel(rule) {
 
 function providerSourceTags(provider) {
   const tags = [];
+  if (provider.isSpecialProvider || provider.routeScope === 'special') tags.push('<span class="tag tag-rule">特殊</span>');
+  if (provider.role === 'fallback') tags.push('<span class="tag tag-warning">保底</span>');
+  if (provider.role === 'parallel') tags.push('<span class="tag tag-success">并行</span>');
   if (provider.isEnv) tags.push('<span class="tag tag-env">ENV</span>');
   if (provider.isContributed) tags.push('<span class="tag tag-contributed">贡献</span>');
   return tags.join(' ');
@@ -536,7 +556,7 @@ async function loadDashboard() {
   const providers = await apiFetchJson('/admin/api/providers');
   const providerMap = new Map(providers.map(provider => [provider.name, provider]));
   const summaryRows = Object.entries(s.providers || {})
-    .filter(([name]) => providerMap.has(name))
+    .map(([name, data]) => [name, { name, ...(data || {}) }])
     .sort((a, b) => (b[1].totalRequests || 0) - (a[1].totalRequests || 0));
   const rate = s.totalRequests ? ((s.successRequests / s.totalRequests) * 100).toFixed(1) : '0.0';
 
@@ -552,7 +572,7 @@ async function loadDashboard() {
   if (summaryRows.length) {
     const maxRequests = Math.max(...summaryRows.map(([, data]) => data.totalRequests || 0), 1);
     const cards = summaryRows.map(([name, data]) => {
-      const provider = providerMap.get(name);
+      const provider = providerMap.get(name) || data;
       const tags = providerSourceTags(provider);
       const successRate = data.totalRequests ? (((data.successRequests || 0) / data.totalRequests) * 100).toFixed(1) : '0.0';
       const width = Math.max(8, Math.round(((data.totalRequests || 0) / maxRequests) * 100));
@@ -583,16 +603,49 @@ async function loadDashboard() {
   }
 }
 
+function parseModelList(value) {
+  return String(value || '')
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, items) => items.indexOf(item) === index);
+}
+
+function setSpecialProviderForm(prefix, provider) {
+  document.getElementById(`global-${prefix}-enabled`).checked = !!provider?.enabled;
+  document.getElementById(`global-${prefix}-name`).value = provider?.name || '';
+  document.getElementById(`global-${prefix}-baseUrl`).value = provider?.baseUrl || '';
+  const apiKeyInput = document.getElementById(`global-${prefix}-apiKey`);
+  apiKeyInput.value = '';
+  apiKeyInput.placeholder = provider?.hasApiKey ? 'API Key 已保存，留空则保持不变' : 'API Key，启用时必填';
+  document.getElementById(`global-${prefix}-models`).value = Array.isArray(provider?.models) ? provider.models.join(', ') : '';
+}
+
+function getSpecialProviderForm(prefix) {
+  const current = currentGlobalRoute?.modelConfig?.[`${prefix}Provider`] || {};
+  const apiKey = document.getElementById(`global-${prefix}-apiKey`).value.trim();
+  return {
+    enabled: document.getElementById(`global-${prefix}-enabled`).checked,
+    name: document.getElementById(`global-${prefix}-name`).value.trim(),
+    baseUrl: document.getElementById(`global-${prefix}-baseUrl`).value.trim(),
+    apiKey: apiKey || current.apiKey || '',
+    models: parseModelList(document.getElementById(`global-${prefix}-models`).value),
+  };
+}
+
 async function loadGlobalRoute() {
   try {
     setGlobalRouteStatus('正在读取当前配置');
     const globalRoute = await apiFetchJson('/admin/api/global-route');
+    currentGlobalRoute = globalRoute;
     document.getElementById('global-rule-badge').textContent = ruleLabel(globalRoute.rule);
     document.getElementById('global-route-rule').value = normalizeRule(globalRoute.rule);
-    setGlobalRouteStatus('已同步当前全局组间路由', 'success');
+    setSpecialProviderForm('fallback', globalRoute.modelConfig?.fallbackProvider);
+    setSpecialProviderForm('parallel', globalRoute.modelConfig?.parallelProvider);
+    setGlobalRouteStatus('已同步当前全局配置', 'success');
     return globalRoute;
   } catch (error) {
-    setGlobalRouteStatus(error.message || '全局路由读取失败', 'error');
+    setGlobalRouteStatus(error.message || '全局配置读取失败', 'error');
     throw error;
   }
 }
@@ -601,15 +654,24 @@ async function saveGlobalRoute() {
   const button = document.getElementById('save-global-route-btn');
   button.disabled = true;
   try {
-    setGlobalRouteStatus('正在保存全局路由');
+    setGlobalRouteStatus('正在保存全局配置');
     const data = await apiFetchJson('/admin/api/global-route', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rule: document.getElementById('global-route-rule').value }),
+      body: JSON.stringify({
+        rule: document.getElementById('global-route-rule').value,
+        modelConfig: {
+          fallbackProvider: getSpecialProviderForm('fallback'),
+          parallelProvider: getSpecialProviderForm('parallel'),
+        },
+      }),
     });
+    currentGlobalRoute = data;
     document.getElementById('global-rule-badge').textContent = ruleLabel(data.rule);
-    setGlobalRouteStatus('全局路由已更新', 'success');
-    showToast('全局路由已更新');
+    setSpecialProviderForm('fallback', data.modelConfig?.fallbackProvider);
+    setSpecialProviderForm('parallel', data.modelConfig?.parallelProvider);
+    setGlobalRouteStatus('全局配置已更新', 'success');
+    showToast('全局配置已更新');
   } catch (error) {
     setGlobalRouteStatus(error.message || '保存失败', 'error');
     showToast(error.message || '保存失败', 'error');
