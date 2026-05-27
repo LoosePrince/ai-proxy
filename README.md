@@ -8,10 +8,11 @@
 - 支持流式和非流式响应
 - 多 Provider 动态管理（通过数据库配置，无需重启）
 - 三种全局路由规则：遵循优先级 / 随机 / 平均
+- 支持全局默认超时、按 priority 单独覆盖超时、并行竞速窗口、保底超时
 - 首页支持公开贡献 OpenAI 兼容 API，后端逐模型验证后保存为待启用 Provider
 - 按 model 名匹配 Provider，自动回退
 - PostgreSQL 数据库记录请求数、Token 用量、IP 统计、模型映射（请求模型 vs 真实模型）
-- 管理后台：Provider 增删改查、启用禁用、统计查看、实时日志
+- 管理后台：Provider 增删改查、全局路由 / 超时配置、统计查看、全链路请求日志
 - 环境变量保底 Provider 可在后台关闭，但不可删除
 - Docker 部署支持
 
@@ -43,6 +44,12 @@ PORT=3000
 # 可选：管理后台登录（不设则无需登录）
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_password
+
+# 可选：超时配置（管理后台中的全局配置会覆盖这里）
+DEFAULT_RESPONSE_TIMEOUT_MS=30000
+PARALLEL_RESPONSE_TIMEOUT_MS=14000
+FALLBACK_RESPONSE_TIMEOUT_MS=30000
+PRIORITY_RESPONSE_TIMEOUTS={"0":20000,"1":35000}
 
 # 可选：保底 Provider（JSON 数组，可在后台关闭但不可删除）
 FALLBACK_PROVIDERS=[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"],"rule":"priority","priority":0}]
@@ -107,6 +114,24 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 兼容旧配置：`balanced` 会按 `average` 处理，`single` 会按 `priority` 处理。优先级数字越小越优先。
 
+## 超时与特殊 Provider
+
+全局路由控制条目除了决定普通 Provider 的组间顺序，还负责存储下面这组运行参数：
+
+- `defaultResponseTimeoutMs`：普通主路由默认超时。
+- `priorityTimeouts`：按普通 Provider 的 `priority` 单独覆盖超时，未命中的优先级继承默认超时。
+- `parallelTimeoutMs`：并行 Provider 的竞速窗口；超过窗口后它不能再抢占响应。
+- `fallbackResponseTimeoutMs`：保底 Provider 的独立超时。
+- `fallbackProvider`：三次主路由失败后才会调用。
+- `parallelProvider`：首轮请求时可并行竞速，更快首包时直接采用其结果。
+
+这些参数既可以通过管理后台维护，也可以通过环境变量提供默认值：
+
+- `DEFAULT_RESPONSE_TIMEOUT_MS`
+- `PARALLEL_RESPONSE_TIMEOUT_MS`
+- `FALLBACK_RESPONSE_TIMEOUT_MS`
+- `PRIORITY_RESPONSE_TIMEOUTS`
+
 ## 贡献 API 服务
 
 首页提供公开贡献入口，也可以直接调用接口：
@@ -146,10 +171,11 @@ curl -X POST http://localhost:3000/api/contributions \
 
 功能：
 - 仪表盘：总请求数、Token 统计、成功率
-- Provider 管理：添加 / 编辑 / 启用禁用 / 删除，普通 Provider 只展示组内路由；全局路由通过独立切换入口控制
+- Provider 管理：添加 / 编辑 / 启停 / 删除，普通 Provider 只展示组内路由；全局路由通过独立切换入口控制
+- 全局配置：统一维护组间路由、主路由默认超时、按 priority 覆盖超时、并行竞速窗口、保底超时
 - 模型统计：请求模型 vs 真实模型映射（如 `kilo-auto/free` -> `gpt-4o-mini`）
 - IP 统计
-- 最近请求日志（内存中，重启清空）
+- 最近请求日志：直接显示请求模型、最终 Provider / 模型、主链路尝试明细、并行 / 保底链路状态
 
 ## 数据库
 

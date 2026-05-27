@@ -183,16 +183,55 @@ function mergeGlobalModelConfigInput(currentConfig, inputConfig) {
   const current = normalizeGlobalModelConfig(currentConfig || {});
   const input = inputConfig || {};
   return normalizeGlobalModelConfig({
+    ...current,
     ...input,
     fallbackProvider: {
+      ...current.fallbackProvider,
       ...(input.fallbackProvider || {}),
       apiKey: input.fallbackProvider?.apiKey || current.fallbackProvider.apiKey,
     },
     parallelProvider: {
+      ...current.parallelProvider,
       ...(input.parallelProvider || {}),
       apiKey: input.parallelProvider?.apiKey || current.parallelProvider.apiKey,
     },
+    priorityTimeouts: input.priorityTimeouts !== undefined ? input.priorityTimeouts : current.priorityTimeouts,
   });
+}
+
+function validateTimeoutValue(value, label) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return `${label} 必须是大于 0 的毫秒数`;
+  return null;
+}
+
+function validatePriorityTimeouts(priorityTimeouts) {
+  if (priorityTimeouts === undefined || priorityTimeouts === null) return null;
+  if (typeof priorityTimeouts !== 'object' || Array.isArray(priorityTimeouts)) {
+    return 'priority 超时配置必须是对象';
+  }
+
+  for (const [priority, timeoutMs] of Object.entries(priorityTimeouts)) {
+    const priorityNumber = Number(priority);
+    if (!Number.isInteger(priorityNumber) || priorityNumber < 0) {
+      return `priority 超时配置中的优先级「${priority}」无效，只允许大于等于 0 的整数`;
+    }
+    const timeoutError = validateTimeoutValue(timeoutMs, `priority ${priorityNumber} 的超时`);
+    if (timeoutError) return timeoutError;
+  }
+
+  return null;
+}
+
+function validateGlobalModelConfigInput(inputConfig = {}) {
+  const defaultTimeoutError = validateTimeoutValue(inputConfig.defaultResponseTimeoutMs, '主路由默认超时');
+  if (defaultTimeoutError) return defaultTimeoutError;
+  const fallbackTimeoutError = validateTimeoutValue(inputConfig.fallbackResponseTimeoutMs, '保底超时');
+  if (fallbackTimeoutError) return fallbackTimeoutError;
+  const parallelTimeoutError = validateTimeoutValue(inputConfig.parallelTimeoutMs, '并行竞速窗口');
+  if (parallelTimeoutError) return parallelTimeoutError;
+  return validatePriorityTimeouts(inputConfig.priorityTimeouts);
 }
 
 function validateSpecialProviderConfig(provider, label) {
@@ -225,8 +264,13 @@ router.put('/api/global-route', requireAuth, async (req, res) => {
     if (req.body.rule !== undefined) data.rule = normalizeRoutingRule(req.body.rule);
     if (req.body.enabled !== undefined) data.enabled = !!req.body.enabled;
     if (req.body.modelConfig !== undefined) {
+      const inputModelConfig = req.body.modelConfig || {};
+      const modelConfigError = validateGlobalModelConfigInput(inputModelConfig);
+      if (modelConfigError) {
+        return res.status(400).json({ error: modelConfigError });
+      }
       const current = await findProviderByIdCompat(controller.id);
-      const modelConfig = mergeGlobalModelConfigInput(current?.stats?.modelConfig || {}, req.body.modelConfig || {});
+      const modelConfig = mergeGlobalModelConfigInput(current?.stats?.modelConfig || {}, inputModelConfig);
       const fallbackError = validateSpecialProviderConfig(modelConfig.fallbackProvider, '保底 Provider');
       const parallelError = validateSpecialProviderConfig(modelConfig.parallelProvider, '并行 Provider');
       if (fallbackError || parallelError) {

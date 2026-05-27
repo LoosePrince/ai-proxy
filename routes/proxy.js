@@ -13,8 +13,13 @@ const router = express.Router();
 const clientCache = new Map();
 const modelRRCounters = new Map();
 const MAX_MODEL_RETRY_COUNT = 3;
-const MODEL_RESPONSE_TIMEOUT_MS = 5000;
+const DEFAULT_MODEL_RESPONSE_TIMEOUT_MS = 30_000;
 const PARALLEL_PROVIDER_TIMEOUT_MS = 14_000;
+
+function normalizePositiveMs(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : fallback;
+}
 
 function getClient(provider) {
   const key = `${provider.baseUrl}::${provider.apiKey}`;
@@ -217,6 +222,96 @@ function createResponseClaimError() {
   return error;
 }
 
+function createRouteTraceEntry({ provider, model, requestedModel, actualModel, role, timeoutMs, status, error, startedAtMs }) {
+  const completedAtMs = Date.now();
+  return {
+    role: role || provider.specialRole || 'primary',
+    providerName: provider.name,
+    providerId: provider.id,
+    priority: provider.priority,
+    requestedModel: requestedModel || model,
+    actualModel: status === 'success' ? (actualModel || model) : null,
+    attemptedModel: model,
+    timeoutMs,
+    status,
+    error: error ? (error.message || String(error)) : null,
+    startedAt: startedAtMs ? new Date(startedAtMs).toISOString() : null,
+    completedAt: new Date(completedAtMs).toISOString(),
+    durationMs: startedAtMs ? completedAtMs - startedAtMs : null,
+  };
+}
+
+function summarizeProvider(provider, role) {
+  if (!provider) return null;
+  return {
+    role: role || provider.specialRole || 'primary',
+    providerName: provider.name,
+    providerId: provider.id,
+    priority: provider.priority,
+    models: Array.isArray(provider.models) ? provider.models : [],
+  };
+}
+
+function createRouteTrace({ requestedModel, primaryProviders, parallelProvider, fallbackProvider, config }) {
+  return {
+    requestedModel: requestedModel || null,
+    config: {
+      defaultResponseTimeoutMs: config.defaultResponseTimeoutMs,
+      fallbackResponseTimeoutMs: config.fallbackResponseTimeoutMs,
+      parallelTimeoutMs: config.parallelTimeoutMs,
+      priorityTimeouts: config.priorityTimeouts || {},
+    },
+    plannedChain: {
+      primary: primaryProviders.map((provider) => summarizeProvider(provider, 'primary')),
+      parallel: summarizeProvider(parallelProvider, 'parallel'),
+      fallback: summarizeProvider(fallbackProvider, 'fallback'),
+    },
+    attempts: [],
+    finalProviderName: null,
+    finalProviderRole: null,
+    finalModel: null,
+    fallbackTriggered: false,
+  };
+}
+
+function getProviderTimeoutMs(provider, config) {
+  if (provider?.specialRole === 'fallback') {
+    return normalizePositiveMs(config.fallbackResponseTimeoutMs, config.defaultResponseTimeoutMs || DEFAULT_MODEL_RESPONSE_TIMEOUT_MS);
+  }
+  if (provider?.specialRole === 'parallel') {
+    return normalizePositiveMs(config.parallelTimeoutMs, PARALLEL_PROVIDER_TIMEOUT_MS);
+  }
+  const priorityKey = String(Number(provider?.priority ?? 0));
+  return normalizePositiveMs(
+    config.priorityTimeouts?.[priorityKey],
+    config.defaultResponseTimeoutMs || DEFAULT_MODEL_RESPONSE_TIMEOUT_MS,
+  );
+}
+
+function completeRouteTrace(routeTrace, result, role) {
+  if (!routeTrace || !result?.ok) return;
+  routeTrace.finalProviderName = result.provider?.name || null;
+  routeTrace.finalProviderRole = role || result.provider?.specialRole || 'primary';
+  routeTrace.finalModel = result.model || null;
+}
+
+function cloneRouteTrace(routeTrace) {
+  if (!routeTrace) return null;
+  return JSON.parse(JSON.stringify(routeTrace));
+}
+
+function createLogEntry(base, routeTrace) {
+  const traceRef = routeTrace || null;
+  return {
+    ...base,
+    finalProviderName: traceRef?.finalProviderName || base.providerName || null,
+    finalProviderRole: traceRef?.finalProviderRole || null,
+    finalModel: traceRef?.finalModel || base.actualModel || null,
+    fallbackTriggered: !!traceRef?.fallbackTriggered,
+    routeTrace: traceRef,
+  };
+}
+
 function claimResponse(responseGate, res, owner, canClaimResponse) {
   if (res.headersSent || res.writableEnded) return false;
   if (!responseGate) return true;
@@ -246,7 +341,7 @@ function updateProviderStats(provider, fields) {
   return Promise.resolve();
 }
 
-async function attemptProvider({ provider, requestedModel, stream, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse }) {
+async function attemptProvider({ provider, requestedModel, stream, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse, timeoutMs, routeTrace, role }) {
   const client = getClient(provider);
   const modelCandidates = buildModelCandidates(provider, requestedModel);
   let lastError = null;
@@ -254,23 +349,70 @@ async function attemptProvider({ provider, requestedModel, stream, ip, req, res,
 
   for (const model of modelCandidates) {
     const payload = { ...req.body, model };
+    const startedAtMs = Date.now();
     lastAttempt = { provider, model, requestedModel: requestedModel || model };
 
     try {
+      let resultMeta = null;
       if (stream) {
-        await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse);
+        resultMeta = await handleStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse, timeoutMs, routeTrace);
       } else {
-        await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse);
+        resultMeta = await handleNonStream(client, payload, provider, model, requestedModel || model, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse, timeoutMs, routeTrace);
       }
-      return { ok: true, provider, model, requestedModel: requestedModel || model };
+      const actualModel = resultMeta?.actualModel || model;
+      const promptTokens = resultMeta?.promptTokens || 0;
+      const completionTokens = resultMeta?.completionTokens || 0;
+      const successResult = { ok: true, provider, model: actualModel, requestedModel: requestedModel || model };
+      routeTrace?.attempts.push(createRouteTraceEntry({
+        provider,
+        model,
+        requestedModel: requestedModel || model,
+        actualModel,
+        role,
+        timeoutMs,
+        status: 'success',
+        startedAtMs,
+      }));
+      completeRouteTrace(routeTrace, successResult, role);
+      addLog(createLogEntry({
+        providerName: provider.name,
+        requestedModel: requestedModel || model,
+        actualModel,
+        ip,
+        promptTokens,
+        completionTokens,
+        success: true,
+        ...buildTimingFields(requestTrace),
+      }, routeTrace));
+      return successResult;
     } catch (err) {
       lastError = err;
       if (err?.code === 'RESPONSE_CLAIMED') {
+        routeTrace?.attempts.push(createRouteTraceEntry({
+          provider,
+          model,
+          requestedModel: requestedModel || model,
+          role,
+          timeoutMs,
+          status: 'claimed-by-other',
+          error: err,
+          startedAtMs,
+        }));
         return { ok: false, provider, error: err, attempt: lastAttempt, responseEnded: res.headersSent || res.writableEnded };
       }
       const status = err.status || (err.response && err.response.status) || 'NO_STATUS';
       const message = err.message || 'Unknown error';
-      console.warn(`[Proxy] ${provider.name} (${model}) failed: status=${status}, ${message}`);
+      routeTrace?.attempts.push(createRouteTraceEntry({
+        provider,
+        model,
+        requestedModel: requestedModel || model,
+        role,
+        timeoutMs,
+        status: 'failed',
+        error: err,
+        startedAtMs,
+      }));
+      console.warn(`[Proxy] ${provider.name} (${model}) failed: status=${status}, timeoutMs=${timeoutMs}, ${message}`);
 
       if (res.headersSent) {
         if (!res.writableEnded && canWriteClaimedResponse(responseGate, responseOwner)) {
@@ -282,7 +424,7 @@ async function attemptProvider({ provider, requestedModel, stream, ip, req, res,
             completionTokens: 0,
             success: false,
           }).catch(() => {});
-          addLog({
+          addLog(createLogEntry({
             providerName: provider.name,
             requestedModel: requestedModel || model,
             actualModel: null,
@@ -292,7 +434,7 @@ async function attemptProvider({ provider, requestedModel, stream, ip, req, res,
             success: false,
             error: message,
             ...buildTimingFields(requestTrace),
-          });
+          }, routeTrace));
           writeSSE(res, formatSSE({ error: { message } }));
           writeSSE(res, 'data: [DONE]\n\n');
           res.end();
@@ -323,9 +465,22 @@ router.post('/v1/chat/completions', async (req, res) => {
   let lastError = null;
   let lastAttempt = null;
   const responseGate = createResponseGate();
-  const maxPrimaryAttempts = 3;
+  const maxPrimaryAttempts = MAX_MODEL_RETRY_COUNT;
+  const primaryProviders = providers.slice(0, maxPrimaryAttempts);
 
-  const runAttempt = async (provider, canClaimResponse = () => true, responseOwner = provider) => {
+  const parallelProvider = globalModelProviders.parallelProvider;
+  const fallbackProvider = globalModelProviders.fallbackProvider;
+  const routeTrace = createRouteTrace({
+    requestedModel,
+    primaryProviders,
+    parallelProvider,
+    fallbackProvider,
+    config: globalModelProviders.config,
+  });
+  const shouldRaceParallel = !!parallelProvider && primaryProviders.length > 0;
+
+  const runAttempt = async (provider, canClaimResponse = () => true, responseOwner = provider, role = provider?.specialRole || 'primary') => {
+    const timeoutMs = getProviderTimeoutMs(provider, globalModelProviders.config);
     const result = await attemptProvider({
       provider,
       requestedModel,
@@ -337,6 +492,9 @@ router.post('/v1/chat/completions', async (req, res) => {
       responseGate,
       responseOwner,
       canClaimResponse,
+      timeoutMs,
+      routeTrace,
+      role,
     });
     if (!result.ok) {
       lastError = result.error || lastError;
@@ -345,15 +503,11 @@ router.post('/v1/chat/completions', async (req, res) => {
     return result;
   };
 
-  const primaryProviders = providers.slice(0, maxPrimaryAttempts);
-  const parallelProvider = globalModelProviders.parallelProvider;
-  const shouldRaceParallel = !!parallelProvider && primaryProviders.length > 0;
-
   if (stream) {
     if (shouldRaceParallel) {
       const raceStartedAt = Date.now();
       const canClaimParallelResponse = () => Date.now() - raceStartedAt <= (globalModelProviders.config.parallelTimeoutMs || PARALLEL_PROVIDER_TIMEOUT_MS);
-      runAttempt(parallelProvider, canClaimParallelResponse)
+      runAttempt(parallelProvider, canClaimParallelResponse, parallelProvider, 'parallel')
         .then((result) => {
           if (!result.ok && !res.headersSent) {
             lastError = result.error || lastError;
@@ -374,10 +528,10 @@ router.post('/v1/chat/completions', async (req, res) => {
     const parallelTimeoutMs = globalModelProviders.config.parallelTimeoutMs || PARALLEL_PROVIDER_TIMEOUT_MS;
     const raceStartedAt = Date.now();
     const canClaimParallelResponse = () => Date.now() - raceStartedAt <= parallelTimeoutMs;
-    const parallelAttempt = runAttempt(parallelProvider, canClaimParallelResponse, parallelProvider)
+    const parallelAttempt = runAttempt(parallelProvider, canClaimParallelResponse, parallelProvider, 'parallel')
       .then((result) => ({ ...result, role: 'parallel' }))
       .catch((error) => ({ ok: false, role: 'parallel', error }));
-    const primaryAttempt = runAttempt(primaryProviders[0], () => true, primaryProviders[0])
+    const primaryAttempt = runAttempt(primaryProviders[0], () => true, primaryProviders[0], 'primary')
       .then((result) => ({ ...result, role: 'primary' }));
     const firstResult = await Promise.race([
       primaryAttempt,
@@ -408,9 +562,9 @@ router.post('/v1/chat/completions', async (req, res) => {
     }
   }
 
-  const fallbackProvider = globalModelProviders.fallbackProvider;
   if (fallbackProvider && !res.headersSent) {
-    const result = await runAttempt(fallbackProvider);
+    routeTrace.fallbackTriggered = true;
+    const result = await runAttempt(fallbackProvider, () => true, fallbackProvider, 'fallback');
     if (result.ok || (result.responseEnded && res.headersSent) || res.headersSent) return;
   }
 
@@ -426,7 +580,7 @@ router.post('/v1/chat/completions', async (req, res) => {
       completionTokens: 0,
       success: false,
     }).catch(() => {});
-    addLog({
+    addLog(createLogEntry({
       providerName: lastAttempt.provider.name,
       requestedModel: lastAttempt.requestedModel,
       actualModel: null,
@@ -436,16 +590,16 @@ router.post('/v1/chat/completions', async (req, res) => {
       success: false,
       error: message,
       ...buildTimingFields(requestTrace),
-    });
+    }, routeTrace));
   }
   res.status(status).json({ error: { message, providerErrors: [] } });
 });
 
-async function handleNonStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse) {
+async function handleNonStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse, timeoutMs, routeTrace) {
   const response = await runWithTimeout(
     (signal) => client.chat.completions.create(payload, { signal }),
-    MODEL_RESPONSE_TIMEOUT_MS,
-    `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+    timeoutMs,
+    `Model ${model} timed out after ${timeoutMs}ms`,
   );
 
   if (!claimResponse(responseGate, res, responseOwner, canClaimResponse)) {
@@ -456,7 +610,6 @@ async function handleNonStream(client, payload, provider, model, requestedModel,
   const actualModel = response.model || model;
   const usage = response.usage || {};
 
-  // 统计
   updateProviderStats(provider, {
     requestedModel,
     actualModel,
@@ -465,28 +618,16 @@ async function handleNonStream(client, payload, provider, model, requestedModel,
     completionTokens: usage.completion_tokens || 0,
     success: true,
   }).catch(() => {});
-  addLog({
-    providerName: provider.name,
-    requestedModel,
-    actualModel,
-    ip,
-    promptTokens: usage.prompt_tokens || 0,
-    completionTokens: usage.completion_tokens || 0,
-    success: true,
-    ...buildTimingFields(requestTrace),
-  });
 
   res.json(response);
+  return {
+    actualModel,
+    promptTokens: usage.prompt_tokens || 0,
+    completionTokens: usage.completion_tokens || 0,
+  };
 }
 
-async function handleStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse) {
-  const streamPayload = { ...payload, stream: true, stream_options: { include_usage: true } };
-  const stream = await runWithTimeout(
-    (signal) => client.chat.completions.create(streamPayload, { signal }),
-    MODEL_RESPONSE_TIMEOUT_MS,
-    `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
-  );
-
+async function handleStream(client, payload, provider, model, requestedModel, ip, req, res, requestTrace, responseGate, responseOwner, canClaimResponse, timeoutMs, routeTrace) {
   let actualModel = model;
   let promptTokens = 0;
   let completionTokens = 0;
@@ -512,17 +653,36 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
       completionTokens,
       success: true,
     }).catch(() => {});
-    addLog({
-      providerName: provider.name,
-      requestedModel,
-      actualModel,
-      ip,
-      promptTokens,
-      completionTokens,
-      success: true,
-      ...buildTimingFields(requestTrace),
-    });
   };
+
+  const createStream = (streamPayload) => runWithTimeout(
+    (signal) => client.chat.completions.create(streamPayload, { signal }),
+    timeoutMs,
+    `Model ${model} timed out after ${timeoutMs}ms`,
+  );
+
+  const supportsRetryWithoutUsage = (error) => /stream_options|include_usage|unknown parameter|unsupported parameter|extra fields/i.test(error?.message || '');
+  const shouldOpenEarly = provider?.specialRole === 'fallback';
+
+  if (shouldOpenEarly) {
+    ensureStreamStarted();
+    writeSSE(res, formatSSE({
+      id: 'ai-proxy-fallback-warmup',
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+    }));
+  }
+
+  let stream;
+  const streamPayload = { ...payload, stream: true, stream_options: { include_usage: true } };
+  try {
+    stream = await createStream(streamPayload);
+  } catch (error) {
+    if (!supportsRetryWithoutUsage(error)) throw error;
+    stream = await createStream({ ...payload, stream: true });
+  }
 
   const rawStream = extractRawStream(stream);
   if (rawStream) {
@@ -532,8 +692,8 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
     while (true) {
       const { value, done } = await readNextChunkWithTimeout(
         iterator,
-        MODEL_RESPONSE_TIMEOUT_MS,
-        `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+        timeoutMs,
+        `Model ${model} timed out after ${timeoutMs}ms`,
       );
       if (done) break;
 
@@ -564,8 +724,8 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
     while (true) {
       const { value: chunk, done } = await readNextChunkWithTimeout(
         iterator,
-        MODEL_RESPONSE_TIMEOUT_MS,
-        `Model ${model} timed out after ${MODEL_RESPONSE_TIMEOUT_MS}ms`,
+        timeoutMs,
+        `Model ${model} timed out after ${timeoutMs}ms`,
       );
       if (done) break;
 
@@ -587,6 +747,7 @@ async function handleStream(client, payload, provider, model, requestedModel, ip
 
   if (headersOpened && !res.writableEnded) res.end();
   if (completed) recordSuccess();
+  return { actualModel, promptTokens, completionTokens };
 }
 
 module.exports = router;

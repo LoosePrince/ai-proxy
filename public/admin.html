@@ -101,9 +101,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;background-im
 button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-decoration:none}.app-shell{position:relative;z-index:1;min-height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr)}
 .sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:1rem;padding:1.2rem;border-right:1px solid var(--border);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(22px)}
 .brand{display:flex;align-items:center;gap:.75rem;padding:.45rem .35rem .9rem;font-weight:800;letter-spacing:-.04em}.brand-mark{width:2.45rem;height:2.45rem;border-radius:.9rem;display:grid;place-items:center;color:#fff7e8;background:linear-gradient(135deg,var(--primary-strong),var(--accent));box-shadow:var(--shadow-soft)}.brand small{display:block;color:var(--text-soft);font-size:.76rem;font-weight:700;letter-spacing:0}
-.nav-title{padding:.75rem .55rem .15rem;color:var(--text-soft);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.13em}nav{display:grid;gap:.45rem}nav button,.side-action{width:100%;display:flex;align-items:center;justify-content:space-between;gap:.75rem;min-height:2.9rem;padding:.72rem .85rem;border:1px solid transparent;border-radius:1rem;background:transparent;color:var(--text-muted);font-weight:800;text-align:left;transition:.18s ease}.nav-label{display:flex;align-items:center;gap:.65rem}.nav-icon{width:1.65rem;height:1.65rem;border-radius:.65rem;display:grid;place-items:center;background:var(--surface-muted);color:var(--primary-strong);font-size:.85rem}nav button:hover,.side-action:hover,nav button.active{color:var(--primary-strong);border-color:var(--border);background:var(--surface);box-shadow:var(--shadow-soft)}nav button.active .nav-icon{color:#fff7e8;background:linear-gradient(135deg,var(--primary-strong),var(--accent))}.sidebar-footer{margin-top:auto;display:grid;gap:.55rem}.side-action{justify-content:center;background:var(--surface);border-color:var(--border)}#logout-btn{display:none}.content{min-width:0;padding:1.3rem clamp(1rem,3vw,2.4rem) 2.4rem}.topbar{position:sticky;top:0;z-index:10;margin:-1.3rem calc(clamp(1rem,3vw,2.4rem) * -1) 1.4rem;padding:1rem clamp(1rem,3vw,2.4rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(22px)}.page-kicker{color:var(--text-soft);font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.page-title{font-size:clamp(1.6rem,3vw,2.4rem);line-height:1.1;letter-spacing:-.055em}.top-actions{display:flex;align-items:center;gap:.65rem}.pill{display:inline-flex;align-items:center;gap:.48rem;min-height:2.45rem;padding:.55rem .8rem;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-muted);font-size:.88rem;font-weight:700}.status-dot{width:.55rem;height:.55rem;border-radius:999px;background:var(--success);box-shadow:0 0 0 .35rem color-mix(in srgb,var(--success) 14%,transparent)}.theme-toggle{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:999px;padding:.58rem .82rem;font-weight:800}.theme-toggle:hover{color:var(--primary-strong);border-color:var(--primary)}.page{display:none}.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1rem}.section-head h2{font-size:1.25rem;letter-spacing:-.035em}.section-head p{margin-top:.25rem;color:var(--text-muted);font-size:.92rem}.card{border:1px solid var(--border);border-radius:1.35rem;background:var(--surface);box-shadow:var(--shadow-soft);overflow:hidden}.card-pad{padding:1.1rem}.stats-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:.85rem;margin-bottom:1rem}.stat-item{position:relative;min-height:8rem;padding:1rem;border:1px solid var(--border);border-radius:1.25rem;background:linear-gradient(180deg,var(--surface-strong),var(--surface));box-shadow:var(--shadow-soft);overflow:hidden}.stat-item::after{content:'';position:absolute;right:-2rem;top:-2rem;width:5rem;height:5rem;border-radius:999px;background:var(--accent-soft)}.stat-item .value{position:relative;color:var(--primary-strong);font-size:clamp(1.45rem,2.6vw,2.15rem);line-height:1;font-weight:800;letter-spacing:-.055em}.stat-item .label{position:relative;margin-top:.7rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.table-wrap{width:100%;overflow:auto}.table-empty{padding:1.4rem;color:var(--text-soft);text-align:center}table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem}th,td{padding:.86rem .9rem;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}th{position:sticky;top:0;background:var(--surface-strong);color:var(--text-soft);font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}tbody tr:hover td{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}td code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--code)}.tag{display:inline-flex;align-items:center;gap:.3rem;padding:.22rem .55rem;border-radius:999px;font-size:.74rem;font-weight:800;white-space:nowrap}.tag-env{background:var(--warning-soft);color:var(--warning)}.tag-contributed{background:var(--accent-soft);color:var(--primary-strong)}.tag-enabled{background:var(--success-soft);color:var(--success)}.tag-disabled{background:var(--danger-soft);color:var(--danger)}.tag-rule{background:var(--accent-soft);color:var(--primary-strong)}.actions{display:flex;flex-wrap:wrap;gap:.42rem}.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.4rem;padding:.55rem .82rem;border-radius:.82rem;border:1px solid transparent;font-weight:800;font-size:.84rem;transition:.18s ease}.btn:hover{transform:translateY(-1px)}.btn-sm{min-height:2rem;padding:.38rem .62rem;font-size:.76rem}.btn-primary{background:linear-gradient(135deg,var(--primary-strong),var(--accent));color:#fff7e8;box-shadow:0 14px 28px rgba(111,71,36,.18)}.btn-outline{background:var(--surface);border-color:var(--border);color:var(--text-muted)}.btn-outline:hover{color:var(--primary-strong);border-color:var(--primary)}.btn-danger{background:var(--danger);color:#fff7e8}.btn-success{background:var(--success);color:#fff7e8}.login-wrap{display:flex;justify-content:center;align-items:center;min-height:calc(100vh - 7rem)}.login-box{width:min(420px,100%);padding:1.4rem;border:1px solid var(--border);border-radius:1.6rem;background:var(--surface);box-shadow:var(--shadow)}.login-box h1{font-size:2rem;letter-spacing:-.055em;margin-bottom:.35rem}.login-box p{color:var(--text-muted);margin-bottom:1.2rem}.login-box input,.form-group input,.form-group select{width:100%;height:2.9rem;border:1px solid var(--border);border-radius:.9rem;background:var(--surface-strong);color:var(--text);padding:.65rem .85rem;outline:none}.login-box input{margin-bottom:.75rem}.login-box input:focus,.form-group input:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.login-error{display:none;margin-bottom:.75rem;padding:.65rem .8rem;border-radius:.8rem;background:var(--danger-soft);color:var(--danger);font-size:.88rem;font-weight:700}.modal-overlay{position:fixed;inset:0;z-index:100;display:none;justify-content:center;align-items:center;padding:1rem;background:rgba(28,20,12,.58);backdrop-filter:blur(10px)}.modal{width:min(560px,100%);max-height:92vh;overflow:auto;padding:1.25rem;border:1px solid var(--border);border-radius:1.5rem;background:var(--surface-strong);box-shadow:var(--shadow)}.modal h2{font-size:1.45rem;letter-spacing:-.04em;margin-bottom:1rem}.form-grid{display:grid;gap:.82rem}.form-group label{display:block;margin-bottom:.34rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.form-group .hint{margin-top:.25rem;color:var(--text-soft);font-size:.76rem}.modal-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.1rem}.log-list{max-height:620px;overflow:auto}.log-entry{display:grid;grid-template-columns:90px 56px minmax(120px,1fr) minmax(120px,1fr) minmax(150px,1.2fr);gap:.8rem;align-items:center;padding:.75rem .9rem;border-bottom:1px solid var(--border);font-size:.82rem}.log-entry:hover{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}.log-entry .time,.log-entry .muted{color:var(--text-soft)}.ok{color:var(--success);font-weight:800}.fail{color:var(--danger);font-weight:800}.model{color:var(--primary-strong);font-weight:800}.stats-table td:nth-child(n+2){text-align:right}.toast{position:fixed;right:1rem;bottom:1rem;z-index:200;max-width:min(420px,calc(100vw - 2rem));display:none;padding:.85rem 1rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow);color:var(--text);font-weight:800}.toast.show{display:block}.toast.error{color:var(--danger)}.model-editor{display:grid;gap:.75rem;padding:.9rem;border:1px solid var(--border);border-radius:1rem;background:color-mix(in srgb,var(--surface) 90%,transparent)}.model-editor-toolbar{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap}.model-editor-count{color:var(--text-muted);font-size:.82rem;font-weight:800}.model-editor-actions{display:flex;gap:.45rem;flex-wrap:wrap}.model-chip-list{display:flex;flex-wrap:wrap;gap:.55rem;min-height:3.1rem;padding:.25rem}.model-chip{display:inline-flex;align-items:center;gap:.45rem;max-width:100%;padding:.55rem .7rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow-soft)}.model-chip-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--primary-strong);font-weight:700}.model-chip-actions{display:flex;gap:.3rem}.chip-action{display:inline-flex;align-items:center;justify-content:center;min-width:1.8rem;height:1.8rem;border:1px solid var(--border);border-radius:.7rem;background:var(--surface);color:var(--text-muted);font-size:.8rem;font-weight:800}.chip-action:hover{color:var(--primary-strong);border-color:var(--primary)}.chip-action.delete:hover{color:var(--danger);border-color:var(--danger)}.model-editor-inputs{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:center}.model-preview{display:flex;flex-wrap:wrap;gap:.35rem}.model-preview-chip{display:inline-flex;align-items:center;max-width:100%;padding:.2rem .48rem;border-radius:999px;background:var(--accent-soft);color:var(--primary-strong);font-size:.72rem;font-weight:800}.model-preview-more{color:var(--text-soft);font-size:.76rem;font-weight:700}.global-route-card{margin-bottom:1rem;background:linear-gradient(135deg,color-mix(in srgb,var(--surface-strong) 88%,transparent),color-mix(in srgb,var(--accent-soft) 68%,transparent));border-color:color-mix(in srgb,var(--primary) 22%,var(--border))}.global-route-layout{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.6fr);gap:1rem;align-items:stretch}.global-route-overview{display:flex;flex-direction:column;justify-content:space-between;gap:1rem;padding:.1rem}.global-route-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}.global-route-title-row h2{font-size:1.35rem;letter-spacing:-.045em}.global-route-title-row p{margin-top:.35rem;color:var(--text-muted);font-size:.92rem}.global-route-facts{display:grid;gap:.55rem;margin-top:.95rem}.global-route-form{display:grid;gap:.85rem}.global-route-mode{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.85rem;align-items:end;padding:1rem;border:1px solid var(--border);border-radius:1.1rem;background:color-mix(in srgb,var(--surface) 92%,transparent)}.global-field{display:grid;gap:.38rem}.global-field label,.special-provider-card label{color:var(--text-muted);font-size:.82rem;font-weight:800}.global-field select,.special-provider-card input{width:100%;height:2.75rem;border:1px solid var(--border);border-radius:.85rem;background:var(--surface-strong);color:var(--text);padding:.62rem .78rem;outline:none}.global-field select:focus,.special-provider-card input:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.special-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}.special-provider-card{display:grid;gap:.72rem;padding:1rem;border:1px solid var(--border);border-radius:1.15rem;background:var(--surface-strong)}.special-provider-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}.special-provider-title{display:grid;gap:.2rem}.special-provider-title strong{letter-spacing:-.02em}.special-provider-title span,.special-provider-hint{color:var(--text-soft);font-size:.76rem;font-weight:700}.switch-label{display:inline-flex;align-items:center;gap:.45rem;color:var(--text-muted);font-size:.82rem;font-weight:800;white-space:nowrap}.special-provider-fields{display:grid;gap:.58rem}.global-route-actions{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.provider-name-cell{min-width:180px}.provider-url-cell{word-break:break-all;min-width:220px}.provider-model-cell{min-width:220px}
-@media(max-width:1180px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.content{padding-top:1rem}.topbar{position:relative;margin:0 0 1rem;padding:0 0 1rem;background:transparent;backdrop-filter:none}.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.global-route-layout{grid-template-columns:1fr}}
-@media(max-width:760px){.sidebar,.content{padding:1rem}.sidebar{gap:.75rem}.brand{padding-bottom:.2rem}.nav-title{display:none}nav{grid-template-columns:repeat(5,minmax(8.5rem,1fr));overflow-x:auto;padding-bottom:.2rem}nav button{min-width:8.5rem}.sidebar-footer{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}.topbar,.section-head{align-items:flex-start;flex-direction:column}.top-actions{width:100%;overflow:auto}.stats-grid,.special-provider-grid,.global-route-mode{grid-template-columns:1fr}.global-route-card{border-radius:1.1rem}.global-route-actions .btn,.section-head .btn{width:100%}.model-editor-inputs{grid-template-columns:1fr}.model-editor-inputs .btn{width:100%}.modal{border-radius:1.15rem;padding:1rem}.modal-actions{flex-direction:column-reverse}.modal-actions .btn{width:100%}.log-entry{grid-template-columns:1fr;gap:.25rem}th,td{padding:.72rem}.provider-name-cell,.provider-url-cell,.provider-model-cell{min-width:unset}#providers-table{border-spacing:0 .75rem}#providers-table thead{display:none}#providers-table,#providers-table tbody,#providers-table tr,#providers-table td{display:block;width:100%}#providers-table tr{padding:.85rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow-soft)}#providers-table td{padding:.55rem 0;border-bottom:0}#providers-table td::before{content:attr(data-label);display:block;margin-bottom:.25rem;color:var(--text-soft);font-size:.72rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}#providers-table td:last-child{padding-bottom:0}.actions .btn{flex:1 1 5rem}}
+.nav-title{padding:.75rem .55rem .15rem;color:var(--text-soft);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.13em}nav{display:grid;gap:.45rem}nav button,.side-action{width:100%;display:flex;align-items:center;justify-content:space-between;gap:.75rem;min-height:2.9rem;padding:.72rem .85rem;border:1px solid transparent;border-radius:1rem;background:transparent;color:var(--text-muted);font-weight:800;text-align:left;transition:.18s ease}.nav-label{display:flex;align-items:center;gap:.65rem}.nav-icon{width:1.65rem;height:1.65rem;border-radius:.65rem;display:grid;place-items:center;background:var(--surface-muted);color:var(--primary-strong);font-size:.85rem}nav button:hover,.side-action:hover,nav button.active{color:var(--primary-strong);border-color:var(--border);background:var(--surface);box-shadow:var(--shadow-soft)}nav button.active .nav-icon{color:#fff7e8;background:linear-gradient(135deg,var(--primary-strong),var(--accent))}.sidebar-footer{margin-top:auto;display:grid;gap:.55rem}.side-action{justify-content:center;background:var(--surface);border-color:var(--border)}#logout-btn{display:none}.content{min-width:0;padding:1.3rem clamp(1rem,3vw,2.4rem) 2.4rem}.topbar{position:sticky;top:0;z-index:10;margin:-1.3rem calc(clamp(1rem,3vw,2.4rem) * -1) 1.4rem;padding:1rem clamp(1rem,3vw,2.4rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(22px)}.page-kicker{color:var(--text-soft);font-size:.78rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.page-title{font-size:clamp(1.6rem,3vw,2.4rem);line-height:1.1;letter-spacing:-.055em}.top-actions{display:flex;align-items:center;gap:.65rem}.pill{display:inline-flex;align-items:center;gap:.48rem;min-height:2.45rem;padding:.55rem .8rem;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-muted);font-size:.88rem;font-weight:700}.status-dot{width:.55rem;height:.55rem;border-radius:999px;background:var(--success);box-shadow:0 0 0 .35rem color-mix(in srgb,var(--success) 14%,transparent)}.theme-toggle{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:999px;padding:.58rem .82rem;font-weight:800}.theme-toggle:hover{color:var(--primary-strong);border-color:var(--primary)}.page{display:none}.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin-bottom:1rem}.section-head h2{font-size:1.25rem;letter-spacing:-.035em}.section-head p{margin-top:.25rem;color:var(--text-muted);font-size:.92rem}.card{border:1px solid var(--border);border-radius:1.35rem;background:var(--surface);box-shadow:var(--shadow-soft);overflow:hidden}.card-pad{padding:1.1rem}.stats-grid{display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:.85rem;margin-bottom:1rem}.stat-item{position:relative;min-height:8rem;padding:1rem;border:1px solid var(--border);border-radius:1.25rem;background:linear-gradient(180deg,var(--surface-strong),var(--surface));box-shadow:var(--shadow-soft);overflow:hidden}.stat-item::after{content:'';position:absolute;right:-2rem;top:-2rem;width:5rem;height:5rem;border-radius:999px;background:var(--accent-soft)}.stat-item .value{position:relative;color:var(--primary-strong);font-size:clamp(1.45rem,2.6vw,2.15rem);line-height:1;font-weight:800;letter-spacing:-.055em}.stat-item .label{position:relative;margin-top:.7rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.table-wrap{width:100%;overflow:auto}.table-empty{padding:1.4rem;color:var(--text-soft);text-align:center}table{width:100%;border-collapse:separate;border-spacing:0;font-size:.88rem}th,td{padding:.86rem .9rem;text-align:left;border-bottom:1px solid var(--border);vertical-align:middle}th{position:sticky;top:0;background:var(--surface-strong);color:var(--text-soft);font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}tbody tr:hover td{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}td code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--code)}.tag{display:inline-flex;align-items:center;gap:.3rem;padding:.22rem .55rem;border-radius:999px;font-size:.74rem;font-weight:800;white-space:nowrap}.tag-env{background:var(--warning-soft);color:var(--warning)}.tag-contributed{background:var(--accent-soft);color:var(--primary-strong)}.tag-enabled{background:var(--success-soft);color:var(--success)}.tag-disabled{background:var(--danger-soft);color:var(--danger)}.tag-rule{background:var(--accent-soft);color:var(--primary-strong)}.actions{display:flex;flex-wrap:wrap;gap:.42rem}.btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:2.4rem;padding:.55rem .82rem;border-radius:.82rem;border:1px solid transparent;font-weight:800;font-size:.84rem;transition:.18s ease}.btn:hover{transform:translateY(-1px)}.btn-sm{min-height:2rem;padding:.38rem .62rem;font-size:.76rem}.btn-primary{background:linear-gradient(135deg,var(--primary-strong),var(--accent));color:#fff7e8;box-shadow:0 14px 28px rgba(111,71,36,.18)}.btn-outline{background:var(--surface);border-color:var(--border);color:var(--text-muted)}.btn-outline:hover{color:var(--primary-strong);border-color:var(--primary)}.btn-danger{background:var(--danger);color:#fff7e8}.btn-success{background:var(--success);color:#fff7e8}.login-wrap{display:flex;justify-content:center;align-items:center;min-height:calc(100vh - 7rem)}.login-box{width:min(420px,100%);padding:1.4rem;border:1px solid var(--border);border-radius:1.6rem;background:var(--surface);box-shadow:var(--shadow)}.login-box h1{font-size:2rem;letter-spacing:-.055em;margin-bottom:.35rem}.login-box p{color:var(--text-muted);margin-bottom:1.2rem}.login-box input,.form-group input,.form-group select{width:100%;height:2.9rem;border:1px solid var(--border);border-radius:.9rem;background:var(--surface-strong);color:var(--text);padding:.65rem .85rem;outline:none}.login-box input{margin-bottom:.75rem}.login-box input:focus,.form-group input:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.login-error{display:none;margin-bottom:.75rem;padding:.65rem .8rem;border-radius:.8rem;background:var(--danger-soft);color:var(--danger);font-size:.88rem;font-weight:700}.modal-overlay{position:fixed;inset:0;z-index:100;display:none;justify-content:center;align-items:center;padding:1rem;background:rgba(28,20,12,.58);backdrop-filter:blur(10px)}.modal{width:min(560px,100%);max-height:92vh;overflow:auto;padding:1.25rem;border:1px solid var(--border);border-radius:1.5rem;background:var(--surface-strong);box-shadow:var(--shadow)}.modal h2{font-size:1.45rem;letter-spacing:-.04em;margin-bottom:1rem}.form-grid{display:grid;gap:.82rem}.form-group label{display:block;margin-bottom:.34rem;color:var(--text-muted);font-size:.82rem;font-weight:800}.form-group .hint{margin-top:.25rem;color:var(--text-soft);font-size:.76rem}.modal-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.1rem}.log-list{max-height:620px;overflow:auto}.log-entry{display:grid;grid-template-columns:90px 56px minmax(120px,1fr) minmax(120px,1fr) minmax(150px,1.2fr);gap:.8rem;align-items:center;padding:.75rem .9rem;border-bottom:1px solid var(--border);font-size:.82rem}.log-entry:hover{background:color-mix(in srgb,var(--accent-soft) 42%,transparent)}.log-entry .time,.log-entry .muted{color:var(--text-soft)}.ok{color:var(--success);font-weight:800}.fail{color:var(--danger);font-weight:800}.model{color:var(--primary-strong);font-weight:800}.stats-table td:nth-child(n+2){text-align:right}.toast{position:fixed;right:1rem;bottom:1rem;z-index:200;max-width:min(420px,calc(100vw - 2rem));display:none;padding:.85rem 1rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow);color:var(--text);font-weight:800}.toast.show{display:block}.toast.error{color:var(--danger)}.model-editor{display:grid;gap:.75rem;padding:.9rem;border:1px solid var(--border);border-radius:1rem;background:color-mix(in srgb,var(--surface) 90%,transparent)}.model-editor-toolbar{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap}.model-editor-count{color:var(--text-muted);font-size:.82rem;font-weight:800}.model-editor-actions{display:flex;gap:.45rem;flex-wrap:wrap}.model-chip-list{display:flex;flex-wrap:wrap;gap:.55rem;min-height:3.1rem;padding:.25rem}.model-chip{display:inline-flex;align-items:center;gap:.45rem;max-width:100%;padding:.55rem .7rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow-soft)}.model-chip-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--primary-strong);font-weight:700}.model-chip-actions{display:flex;gap:.3rem}.chip-action{display:inline-flex;align-items:center;justify-content:center;min-width:1.8rem;height:1.8rem;border:1px solid var(--border);border-radius:.7rem;background:var(--surface);color:var(--text-muted);font-size:.8rem;font-weight:800}.chip-action:hover{color:var(--primary-strong);border-color:var(--primary)}.chip-action.delete:hover{color:var(--danger);border-color:var(--danger)}.model-editor-inputs{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:center}.model-preview{display:flex;flex-wrap:wrap;gap:.35rem}.model-preview-chip{display:inline-flex;align-items:center;max-width:100%;padding:.2rem .48rem;border-radius:999px;background:var(--accent-soft);color:var(--primary-strong);font-size:.72rem;font-weight:800}.model-preview-more{color:var(--text-soft);font-size:.76rem;font-weight:700}.global-route-card{margin-bottom:1rem;background:linear-gradient(135deg,color-mix(in srgb,var(--surface-strong) 88%,transparent),color-mix(in srgb,var(--accent-soft) 68%,transparent));border-color:color-mix(in srgb,var(--primary) 22%,var(--border))}.global-route-layout{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.6fr);gap:1rem;align-items:stretch}.global-route-overview{display:flex;flex-direction:column;justify-content:space-between;gap:1rem;padding:.1rem}.global-route-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}.global-route-title-row h2{font-size:1.35rem;letter-spacing:-.045em}.global-route-title-row p{margin-top:.35rem;color:var(--text-muted);font-size:.92rem}.global-route-facts{display:grid;gap:.55rem;margin-top:.95rem}.global-route-form{display:grid;gap:.85rem}.global-route-mode{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.85rem;align-items:end;padding:1rem;border:1px solid var(--border);border-radius:1.1rem;background:color-mix(in srgb,var(--surface) 92%,transparent)}.timeout-config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem}.timeout-config-card{display:grid;gap:.55rem;padding:1rem;border:1px solid var(--border);border-radius:1.1rem;background:color-mix(in srgb,var(--surface) 92%,transparent)}.priority-timeout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.priority-timeout-row{display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr) auto;gap:.5rem;align-items:end}.priority-timeout-actions{display:flex;gap:.45rem;flex-wrap:wrap}.global-field{display:grid;gap:.38rem}.global-field label,.special-provider-card label{color:var(--text-muted);font-size:.82rem;font-weight:800}.global-field select,.special-provider-card input{width:100%;height:2.75rem;border:1px solid var(--border);border-radius:.85rem;background:var(--surface-strong);color:var(--text);padding:.62rem .78rem;outline:none}.global-field select:focus,.special-provider-card input:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.special-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}.special-provider-card{display:grid;gap:.72rem;padding:1rem;border:1px solid var(--border);border-radius:1.15rem;background:var(--surface-strong)}.special-provider-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}.special-provider-title{display:grid;gap:.2rem}.special-provider-title strong{letter-spacing:-.02em}.special-provider-title span,.special-provider-hint{color:var(--text-soft);font-size:.76rem;font-weight:700}.switch-label{display:inline-flex;align-items:center;gap:.45rem;color:var(--text-muted);font-size:.82rem;font-weight:800;white-space:nowrap}.special-provider-fields{display:grid;gap:.58rem}.global-route-actions{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.timeout-config-card{display:grid;gap:.8rem;padding:1rem;border:1px solid var(--border);border-radius:1.15rem;background:var(--surface-strong)}.timeout-config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}.timeout-config-card input{width:100%;height:2.75rem;border:1px solid var(--border);border-radius:.85rem;background:var(--surface-strong);color:var(--text);padding:.62rem .78rem;outline:none}.timeout-config-card input:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--ring)}.priority-timeout-list{display:grid;gap:.55rem}.priority-timeout-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.55rem;align-items:center}.provider-name-cell{min-width:180px}.provider-url-cell{word-break:break-all;min-width:220px}.provider-model-cell{min-width:220px}
+@media(max-width:1180px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.content{padding-top:1rem}.topbar{position:relative;margin:0 0 1rem;padding:0 0 1rem;background:transparent;backdrop-filter:none}.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.global-route-layout{grid-template-columns:1fr}.timeout-config-grid{grid-template-columns:1fr}.priority-timeout-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.sidebar,.content{padding:.75rem}.sidebar{gap:.65rem}.brand{padding-bottom:.1rem}.brand-mark{width:2.15rem;height:2.15rem;border-radius:.75rem}.nav-title{display:none}nav{grid-template-columns:repeat(5,minmax(7.6rem,1fr));overflow-x:auto;padding-bottom:.2rem}nav button{min-width:7.6rem;min-height:2.55rem;padding:.58rem .65rem;border-radius:.85rem}.nav-icon{width:1.45rem;height:1.45rem}.sidebar-footer{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}.topbar,.section-head{align-items:flex-start;flex-direction:column}.topbar{gap:.7rem}.top-actions{width:100%;overflow:auto}.pill{min-height:2.2rem;padding:.48rem .68rem;font-size:.8rem}.stats-grid,.special-provider-grid,.global-route-mode{grid-template-columns:1fr}.stat-item{min-height:6.7rem;padding:.85rem;border-radius:1rem}.card-pad{padding:.85rem}.global-route-card{border-radius:1rem}.global-route-mode,.timeout-config-card,.special-provider-card{padding:.82rem;border-radius:.95rem}.priority-timeout-row{grid-template-columns:1fr}.priority-timeout-row .btn{width:100%}.global-route-actions .btn,.section-head .btn{width:100%}.model-editor{padding:.75rem}.model-chip{padding:.45rem .55rem;border-radius:.82rem}.model-chip-name{max-width:190px}.model-editor-inputs{grid-template-columns:1fr}.model-editor-inputs .btn{width:100%}.modal{border-radius:1.05rem;padding:.9rem}.modal-actions{flex-direction:column-reverse}.modal-actions .btn{width:100%}.log-list{max-height:none}.log-entry{grid-template-columns:1fr;gap:.25rem;padding:.78rem .85rem}th,td{padding:.72rem}.provider-name-cell,.provider-url-cell,.provider-model-cell{min-width:unset}#providers-table{border-spacing:0 .75rem}#providers-table thead{display:none}#providers-table,#providers-table tbody,#providers-table tr,#providers-table td{display:block;width:100%}#providers-table tr{padding:.85rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong);box-shadow:var(--shadow-soft)}#providers-table td{padding:.55rem 0;border-bottom:0}#providers-table td::before{content:attr(data-label);display:block;margin-bottom:.25rem;color:var(--text-soft);font-size:.72rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}#providers-table td:last-child{padding-bottom:0}.actions .btn{flex:1 1 5rem}}
 </style>
 </head>
 <body>
@@ -198,6 +198,36 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
                 </div>
                 <button class="btn btn-primary" id="save-global-route-btn" type="button" onclick="saveGlobalRoute()">保存全局配置</button>
               </div>
+              <section class="timeout-config-card">
+                <div class="section-head" style="margin-bottom:0">
+                  <div>
+                    <h2 style="font-size:1.02rem">超时配置</h2>
+                    <p>统一控制主路由默认超时，并允许按 priority 单独覆盖。</p>
+                  </div>
+                  <div class="priority-timeout-actions">
+                    <button class="btn btn-sm btn-outline" type="button" onclick="addPriorityTimeoutRow()">添加 priority 超时</button>
+                  </div>
+                </div>
+                <div class="timeout-config-grid">
+                  <div class="global-field">
+                    <label for="global-default-timeout">主路由默认超时（ms）</label>
+                    <input id="global-default-timeout" type="number" min="1" placeholder="30000">
+                  </div>
+                  <div class="global-field">
+                    <label for="global-fallback-timeout">保底超时（ms）</label>
+                    <input id="global-fallback-timeout" type="number" min="1" placeholder="30000">
+                  </div>
+                  <div class="global-field">
+                    <label for="global-parallel-timeout">并行竞速窗口（ms）</label>
+                    <input id="global-parallel-timeout" type="number" min="1" placeholder="14000">
+                  </div>
+                </div>
+                <div class="global-field">
+                  <label>按 priority 覆盖超时</label>
+                  <div class="priority-timeout-list" id="priority-timeout-list"></div>
+                  <div class="special-provider-hint">未配置的 priority 会继承主路由默认超时，只支持普通 Provider 的 priority。</div>
+                </div>
+              </section>
               <div class="special-provider-grid">
                 <section class="special-provider-card">
                   <div class="special-provider-head">
@@ -329,14 +359,15 @@ function ruleLabel(rule) {
 function providerSourceTags(provider) {
   const tags = [];
   if (provider.isSpecialProvider || provider.routeScope === 'special') tags.push('<span class="tag tag-rule">特殊</span>');
-  if (provider.role === 'fallback') tags.push('<span class="tag tag-warning">保底</span>');
-  if (provider.role === 'parallel') tags.push('<span class="tag tag-success">并行</span>');
+  if (provider.role === 'fallback') tags.push('<span class="tag tag-disabled">保底</span>');
+  if (provider.role === 'parallel') tags.push('<span class="tag tag-enabled">并行</span>');
   if (provider.isEnv) tags.push('<span class="tag tag-env">ENV</span>');
   if (provider.isContributed) tags.push('<span class="tag tag-contributed">贡献</span>');
   return tags.join(' ');
 }
 
 let currentModelItems = [];
+let currentPriorityTimeoutItems = [];
 
 function normalizeModelItems(items) {
   const rawItems = Array.isArray(items)
@@ -445,8 +476,122 @@ function copyModelItems() {
   writeByLegacy();
 }
 
-function setGlobalRouteStatus(message, type = 'muted') {
-  const el = document.getElementById('global-route-status');
+function normalizePriorityTimeoutItems(source) {
+  if (Array.isArray(source)) {
+    return source.map((item) => ({
+      priority: item?.priority == null ? '' : String(item.priority).trim(),
+      timeoutMs: item?.timeoutMs == null ? '' : String(item.timeoutMs).trim(),
+    }));
+  }
+
+  return Object.entries(source || {})
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([priority, timeoutMs]) => ({
+      priority: String(priority),
+      timeoutMs: String(timeoutMs),
+    }));
+}
+
+function renderPriorityTimeoutItems() {
+  const list = document.getElementById('priority-timeout-list');
+  if (!list) return;
+
+  if (!currentPriorityTimeoutItems.length) {
+    list.innerHTML = '<div class="table-empty" style="padding:.9rem 0">当前没有单独覆盖的 priority 超时</div>';
+    return;
+  }
+
+  list.innerHTML = currentPriorityTimeoutItems.map((item, index) => `
+    <div class="priority-timeout-row">
+      <input type="number" min="0" placeholder="priority" value="${escapeHtml(item.priority || '')}" oninput="updatePriorityTimeoutItem(${index}, 'priority', this.value)">
+      <input type="number" min="1" placeholder="超时 ms" value="${escapeHtml(item.timeoutMs || '')}" oninput="updatePriorityTimeoutItem(${index}, 'timeoutMs', this.value)">
+      <button class="btn btn-sm btn-outline" type="button" onclick="removePriorityTimeoutItem(${index})">删除</button>
+    </div>
+  `).join('');
+}
+
+function setPriorityTimeoutItems(source) {
+  currentPriorityTimeoutItems = normalizePriorityTimeoutItems(source);
+  renderPriorityTimeoutItems();
+}
+
+function addPriorityTimeoutRow() {
+  currentPriorityTimeoutItems = [...currentPriorityTimeoutItems, { priority: '', timeoutMs: '' }];
+  renderPriorityTimeoutItems();
+}
+
+function updatePriorityTimeoutItem(index, key, value) {
+  currentPriorityTimeoutItems = currentPriorityTimeoutItems.map((item, currentIndex) => currentIndex === index
+    ? { ...item, [key]: String(value || '').trim() }
+    : item);
+}
+
+function removePriorityTimeoutItem(index) {
+  currentPriorityTimeoutItems = currentPriorityTimeoutItems.filter((_, currentIndex) => currentIndex !== index);
+  renderPriorityTimeoutItems();
+}
+
+function readOptionalPositiveMsInput(id, label) {
+  const raw = String(document.getElementById(id)?.value || '').trim();
+  if (!raw) return undefined;
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`${label} 必须是大于 0 的毫秒数`);
+  }
+  return Math.round(number);
+}
+
+function buildPriorityTimeoutPayload() {
+  const payload = {};
+  const seen = new Set();
+
+  currentPriorityTimeoutItems.forEach((item, index) => {
+    const rowNumber = index + 1;
+    const priorityRaw = String(item?.priority || '').trim();
+    const timeoutRaw = String(item?.timeoutMs || '').trim();
+
+    if (!priorityRaw && !timeoutRaw) return;
+    if (!priorityRaw || !timeoutRaw) {
+      throw new Error(`第 ${rowNumber} 条 priority 超时配置未填写完整`);
+    }
+
+    const priority = Number(priorityRaw);
+    if (!Number.isInteger(priority) || priority < 0) {
+      throw new Error(`第 ${rowNumber} 条 priority 必须是大于等于 0 的整数`);
+    }
+
+    const timeoutMs = Number(timeoutRaw);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(`第 ${rowNumber} 条超时必须是大于 0 的毫秒数`);
+    }
+
+    if (seen.has(priority)) {
+      throw new Error(`priority ${priority} 的超时配置重复了`);
+    }
+    seen.add(priority);
+    payload[String(priority)] = Math.round(timeoutMs);
+  });
+
+  return payload;
+}
+
+function setTimeoutConfigForm(config = {}) {
+  document.getElementById('global-default-timeout').value = config.defaultResponseTimeoutMs || '';
+  document.getElementById('global-fallback-timeout').value = config.fallbackResponseTimeoutMs || '';
+  document.getElementById('global-parallel-timeout').value = config.parallelTimeoutMs || '';
+  setPriorityTimeoutItems(config.priorityTimeouts || {});
+}
+
+function buildGlobalTimeoutConfigPayload() {
+  return {
+    defaultResponseTimeoutMs: readOptionalPositiveMsInput('global-default-timeout', '主路由默认超时'),
+    fallbackResponseTimeoutMs: readOptionalPositiveMsInput('global-fallback-timeout', '保底超时'),
+    parallelTimeoutMs: readOptionalPositiveMsInput('global-parallel-timeout', '并行竞速窗口'),
+    priorityTimeouts: buildPriorityTimeoutPayload(),
+  };
+}
+
+function setGlobalRouteStatus(message, type = 'muted') {  const el = document.getElementById('global-route-status');
   if (!el) return;
   el.textContent = message;
   el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
@@ -663,6 +808,7 @@ async function loadGlobalRoute() {
     currentGlobalRoute = globalRoute;
     document.getElementById('global-rule-badge').textContent = ruleLabel(globalRoute.rule);
     document.getElementById('global-route-rule').value = normalizeRule(globalRoute.rule);
+    setTimeoutConfigForm(globalRoute.modelConfig || {});
     setSpecialProviderForm('fallback', globalRoute.modelConfig?.fallbackProvider);
     setSpecialProviderForm('parallel', globalRoute.modelConfig?.parallelProvider);
     setGlobalRouteStatus('已同步当前全局配置', 'success');
@@ -678,12 +824,14 @@ async function saveGlobalRoute() {
   button.disabled = true;
   try {
     setGlobalRouteStatus('正在保存全局配置');
+    const timeoutConfig = buildGlobalTimeoutConfigPayload();
     const data = await apiFetchJson('/admin/api/global-route', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         rule: document.getElementById('global-route-rule').value,
         modelConfig: {
+          ...timeoutConfig,
           fallbackProvider: getSpecialProviderForm('fallback'),
           parallelProvider: getSpecialProviderForm('parallel'),
         },
@@ -691,6 +839,7 @@ async function saveGlobalRoute() {
     });
     currentGlobalRoute = data;
     document.getElementById('global-rule-badge').textContent = ruleLabel(data.rule);
+    setTimeoutConfigForm(data.modelConfig || {});
     setSpecialProviderForm('fallback', data.modelConfig?.fallbackProvider);
     setSpecialProviderForm('parallel', data.modelConfig?.parallelProvider);
     setGlobalRouteStatus('全局配置已更新', 'success');
@@ -865,15 +1014,131 @@ async function loadLogs() {
   const logs = await apiFetchJson('/admin/api/logs');
   const el = document.getElementById('log-list');
   if (!logs.length) { el.innerHTML='<div class="table-empty">暂无日志</div>'; return; }
-  el.innerHTML = logs.reverse().map(l => {
-    const cls = l.success ? 'ok' : 'fail';
-    const actual = l.actualModel ? ` → <span class="model">${escapeHtml(l.actualModel)}</span>` : '';
-    const err = l.error ? ` <span class="fail">${escapeHtml(l.error)}</span>` : '';
-    const started = l.requestStartedAt ? new Date(l.requestStartedAt).toLocaleTimeString() : new Date(l.timestamp).toLocaleTimeString();
-    const firstResponse = l.firstResponseAt ? new Date(l.firstResponseAt).toLocaleTimeString() : '-';
-    const firstLatency = l.firstResponseDurationMs != null ? `${numberFormatter.format(l.firstResponseDurationMs)}ms` : '-';
-    const totalDuration = l.totalDurationMs != null ? `${numberFormatter.format(l.totalDurationMs)}ms` : '-';
-    return `<div class="log-entry"><span class="time">${started}</span><span class="${cls}">${l.success?'OK':'FAIL'}</span><span>${escapeHtml(l.providerName||'-')}</span><span><span class="model">${escapeHtml(l.requestedModel||'-')}</span>${actual}</span><span class="muted">首包:${firstResponse} (${firstLatency}) · 总耗时:${totalDuration} · ip:${escapeHtml(l.ip||'-')} tok:${numberFormatter.format((l.promptTokens||0)+(l.completionTokens||0))}${err}</span></div>`;
+
+  const roleLabels = { primary: '主路由', parallel: '并行', fallback: '保底' };
+  const statusLabels = {
+    success: '成功',
+    failed: '失败',
+    'claimed-by-other': '被更快响应抢占',
+  };
+  const formatDuration = (value) => value != null ? `${numberFormatter.format(value)}ms` : '-';
+  const formatTime = (value, fallback = '-') => value ? new Date(value).toLocaleTimeString() : fallback;
+  const statusTone = (status) => {
+    if (status === 'success') return 'var(--success)';
+    if (status === 'claimed-by-other') return 'var(--warning)';
+    return 'var(--danger)';
+  };
+  const roleLabel = (role) => roleLabels[role] || role || '未知角色';
+  const statusLabel = (status) => statusLabels[status] || status || '未知状态';
+
+  const renderChainChips = (log) => {
+    const trace = log.routeTrace || {};
+    const attempts = Array.isArray(trace.attempts) ? trace.attempts : [];
+    const chips = [];
+    const requestedModel = log.requestedModel || trace.requestedModel || '-';
+
+    chips.push(`<span class="pill" style="justify-content:flex-start">请求 <span class="model">${escapeHtml(requestedModel)}</span></span>`);
+    attempts.forEach((attempt, index) => {
+      const actualSuffix = attempt.actualModel && attempt.actualModel !== attempt.attemptedModel
+        ? ` → ${escapeHtml(attempt.actualModel)}`
+        : '';
+      const providerName = escapeHtml(attempt.providerName || '-');
+      chips.push(`<span class="pill" style="justify-content:flex-start">${index + 1}. ${escapeHtml(roleLabel(attempt.role))} · ${providerName} / <span class="model">${escapeHtml(attempt.attemptedModel || '-')}</span>${actualSuffix}</span>`);
+    });
+    if (trace.finalProviderName) {
+      chips.push(`<span class="pill" style="justify-content:flex-start">最终 AI ${escapeHtml(trace.finalProviderName)}</span>`);
+    }
+    if (trace.finalModel) {
+      chips.push(`<span class="pill" style="justify-content:flex-start">最终 <span class="model">${escapeHtml(trace.finalModel)}</span></span>`);
+    }
+    return chips.join('');
+  };
+
+  const renderAttemptCards = (log) => {
+    const trace = log.routeTrace || {};
+    const attempts = Array.isArray(trace.attempts) ? trace.attempts : [];
+    if (!attempts.length) {
+      return '<div class="table-empty" style="padding:.9rem 0">当前日志没有记录到尝试明细</div>';
+    }
+
+    return attempts.map((attempt, index) => {
+      const actualSuffix = attempt.actualModel && attempt.actualModel !== attempt.attemptedModel
+        ? ` → <span class="model">${escapeHtml(attempt.actualModel)}</span>`
+        : '';
+      const errorLine = attempt.error
+        ? `<div style="margin-top:.45rem;color:var(--danger);font-size:.8rem;word-break:break-word">${escapeHtml(attempt.error)}</div>`
+        : '';
+      return `
+        <div style="padding:.78rem .85rem;border:1px solid var(--border);border-radius:1rem;background:var(--surface-strong)">
+          <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap">
+              <strong>${index + 1}. ${escapeHtml(roleLabel(attempt.role))}</strong>
+              <span class="tag tag-rule">${escapeHtml(attempt.providerName || '-')}</span>
+              <span style="color:${statusTone(attempt.status)};font-weight:800">${escapeHtml(statusLabel(attempt.status))}</span>
+            </div>
+            <div style="color:var(--text-soft);font-size:.78rem">耗时 ${formatDuration(attempt.durationMs)} / 超时 ${formatDuration(attempt.timeoutMs)}</div>
+          </div>
+          <div style="margin-top:.45rem;color:var(--text-muted);font-size:.84rem;word-break:break-word">
+            模型 <span class="model">${escapeHtml(attempt.attemptedModel || '-')}</span>${actualSuffix}
+          </div>
+          ${errorLine}
+        </div>
+      `;
+    }).join('');
+  };
+
+  el.innerHTML = logs.reverse().map((log) => {
+    const trace = log.routeTrace || {};
+    const finalProviderName = trace.finalProviderName || log.finalProviderName || log.providerName || '-';
+    const finalProviderRole = trace.finalProviderRole || log.finalProviderRole || null;
+    const finalModel = trace.finalModel || log.finalModel || log.actualModel || null;
+    const started = formatTime(log.requestStartedAt, formatTime(log.timestamp));
+    const firstResponse = formatTime(log.firstResponseAt);
+    const firstLatency = formatDuration(log.firstResponseDurationMs);
+    const totalDuration = formatDuration(log.totalDurationMs);
+    const tokens = numberFormatter.format((log.promptTokens || 0) + (log.completionTokens || 0));
+    const providerError = log.error
+      ? `<div style="margin-top:.7rem;color:var(--danger);font-size:.82rem;word-break:break-word">错误：${escapeHtml(log.error)}</div>`
+      : '';
+
+    return `
+      <div style="padding:1rem;border-bottom:1px solid var(--border);display:grid;gap:.8rem;background:var(--surface)">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+          <div style="display:grid;gap:.45rem">
+            <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap">
+              <span class="${log.success ? 'ok' : 'fail'}">${log.success ? 'OK' : 'FAIL'}</span>
+              <strong>最终 AI：${escapeHtml(finalProviderName)}</strong>
+              ${finalProviderRole ? `<span class="tag tag-rule">${escapeHtml(roleLabel(finalProviderRole))}</span>` : ''}
+              ${trace.fallbackTriggered ? '<span class="tag tag-disabled">已触发保底</span>' : ''}
+            </div>
+            <div style="color:var(--text-muted);font-size:.84rem;word-break:break-word">
+              请求模型 <span class="model">${escapeHtml(log.requestedModel || trace.requestedModel || '-')}</span>
+              ${finalModel ? ` → 最终模型 <span class="model">${escapeHtml(finalModel)}</span>` : ''}
+            </div>
+          </div>
+          <div class="time" style="font-size:.82rem">${started}</div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;color:var(--text-muted);font-size:.82rem">
+          <span class="pill">首包 ${escapeHtml(firstResponse)} (${firstLatency})</span>
+          <span class="pill">总耗时 ${totalDuration}</span>
+          <span class="pill">IP ${escapeHtml(log.ip || '-')}</span>
+          <span class="pill">Token ${tokens}</span>
+        </div>
+
+        <div style="display:grid;gap:.5rem">
+          <div style="color:var(--text-soft);font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase">模型链路</div>
+          <div style="display:flex;flex-wrap:wrap;gap:.45rem">${renderChainChips(log)}</div>
+        </div>
+
+        <div style="display:grid;gap:.55rem">
+          <div style="color:var(--text-soft);font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase">尝试明细</div>
+          <div style="display:grid;gap:.55rem">${renderAttemptCards(log)}</div>
+        </div>
+
+        ${providerError}
+      </div>
+    `;
   }).join('');
 }
 
