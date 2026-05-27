@@ -625,22 +625,58 @@
         }
 
         .contribution-badges {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
+            position: relative;
+            width: fit-content;
+            max-width: 100%;
         }
 
         .contribution-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
             max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            padding: 0.24rem 0.55rem;
+            padding: 0.24rem 0.62rem;
             border-radius: 999px;
             background: var(--accent-soft);
             color: var(--primary-strong);
             font-size: 0.76rem;
             font-weight: 800;
+        }
+
+        .contribution-model-tooltip {
+            position: absolute;
+            left: 0;
+            bottom: calc(100% + 0.55rem);
+            z-index: 8;
+            width: max-content;
+            max-width: min(22rem, calc(100vw - 3rem));
+            max-height: 14rem;
+            overflow: auto;
+            display: grid;
+            gap: 0.38rem;
+            padding: 0.72rem;
+            border: 1px solid var(--border);
+            border-radius: 0.95rem;
+            background: var(--surface-strong);
+            box-shadow: var(--shadow);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(0.35rem);
+            transition: opacity 0.16s ease, transform 0.16s ease;
+        }
+
+        .contribution-badges:hover .contribution-model-tooltip,
+        .contribution-badges:focus-within .contribution-model-tooltip {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .contribution-model-tooltip span {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            white-space: nowrap;
         }
 
         .contribution-count {
@@ -1188,18 +1224,16 @@
                     }
                     list.innerHTML = contributions.map((item) => {
                         const models = Array.isArray(item.models) ? item.models : [];
-                        const visibleModels = models.slice(0, 3);
-                        const modelBadges = visibleModels.length
-                            ? visibleModels.map((model) => `<span class="contribution-badge" title="${escapeHtml(model)}">${escapeHtml(model)}</span>`).join('')
-                            : '<span class="contribution-badge contribution-count">未公开模型</span>';
-                        const countBadge = item.modelCount > visibleModels.length
-                            ? `<span class="contribution-badge contribution-count">+${formatter.format(item.modelCount - visibleModels.length)}</span>`
+                        const modelCount = Number(item.modelCount || models.length || 0);
+                        const tooltip = models.length
+                            ? `<div class="contribution-model-tooltip" role="tooltip">${models.map((model) => `<span>${escapeHtml(model)}</span>`).join('')}</div>`
                             : '';
                         return `
                         <div class="contribution-item">
                             ${renderContributionIdentity(item)}
-                            <div class="contribution-badges">
-                                ${modelBadges}${countBadge}
+                            <div class="contribution-badges" tabindex="0" aria-label="${modelCount ? `${formatter.format(modelCount)} 个模型` : '未公开模型'}">
+                                <span class="contribution-badge contribution-count">${modelCount ? `${formatter.format(modelCount)} 个模型` : '未公开模型'}</span>
+                                ${tooltip}
                             </div>
                         </div>
                     `;
