@@ -551,7 +551,13 @@
             padding-left: 1.1rem;
         }
 
+        .contribution-list {
+            align-content: start;
+        }
+
         .contribution-item {
+            display: grid;
+            gap: 0.75rem;
             padding: 1rem;
             border: 1px solid var(--border);
             border-radius: 1.1rem;
@@ -561,13 +567,20 @@
         .contribution-profile {
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+        }
+
+        .contribution-person {
+            min-width: 0;
+            display: flex;
+            align-items: center;
             gap: 0.72rem;
-            margin-bottom: 0.45rem;
         }
 
         .contribution-avatar {
-            width: 2.4rem;
-            height: 2.4rem;
+            width: 2.45rem;
+            height: 2.45rem;
             flex: 0 0 auto;
             border-radius: 999px;
             border: 1px solid var(--border);
@@ -583,39 +596,56 @@
             font-weight: 900;
         }
 
-        .contribution-profile-text {
+        .contribution-name {
             min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 900;
+            letter-spacing: -0.02em;
         }
 
-        .contribution-profile-text span {
-            overflow-wrap: anywhere;
+        .contribution-state {
+            flex: 0 0 auto;
+            padding: 0.26rem 0.62rem;
+            border-radius: 999px;
+            font-size: 0.74rem;
+            font-weight: 900;
+            white-space: nowrap;
         }
 
-        .contribution-item strong {
-            display: block;
-            margin-bottom: 0.2rem;
+        .contribution-state.enabled {
+            color: var(--success);
+            background: color-mix(in srgb, var(--success) 14%, transparent);
         }
 
-        .contribution-item span {
-            display: block;
-            color: var(--text-muted);
-            font-size: 0.88rem;
+        .contribution-state.pending {
+            color: var(--primary-strong);
+            background: var(--accent-soft);
         }
 
         .contribution-badges {
             display: flex;
             flex-wrap: wrap;
             gap: 0.4rem;
-            margin-top: 0.7rem;
         }
 
         .contribution-badge {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
             padding: 0.24rem 0.55rem;
             border-radius: 999px;
             background: var(--accent-soft);
             color: var(--primary-strong);
             font-size: 0.76rem;
             font-weight: 800;
+        }
+
+        .contribution-count {
+            color: var(--text-soft);
+            background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
         }
 
         .chat-card {
@@ -853,8 +883,24 @@
                 font-size: clamp(3.2rem, 18vw, 5.4rem);
             }
 
-            .chat-input-area {
+            .chat-input-area, .request-row {
                 flex-direction: column;
+            }
+
+            .request-row code {
+                text-align: left;
+            }
+
+            .contribution-profile {
+                align-items: flex-start;
+            }
+
+            .contribution-badge {
+                max-width: 100%;
+            }
+
+            .message {
+                max-width: 94%;
             }
 
             #send-btn {
@@ -1109,14 +1155,14 @@
             }
 
             function renderContributionIdentity(item) {
-                const typeLabel = item.contributorType === 'email' ? '邮箱贡献者' : item.contributorType === 'github' ? 'GitHub 贡献者' : '贡献者';
+                const name = item.displayName || item.name || '贡献者';
                 return `
                     <div class="contribution-profile">
-                        ${renderContributionAvatar(item)}
-                        <div class="contribution-profile-text">
-                            <strong>${escapeHtml(item.displayName || item.name)}</strong>
-                            <span>${typeLabel}</span>
+                        <div class="contribution-person">
+                            ${renderContributionAvatar(item)}
+                            <div class="contribution-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
                         </div>
+                        <span class="contribution-state ${item.enabled ? 'enabled' : 'pending'}">${item.enabled ? '已启用' : '待启用'}</span>
                     </div>
                 `;
             }
@@ -1137,21 +1183,29 @@
                     if (!response.ok) throw new Error('contributions unavailable');
                     const contributions = await response.json();
                     if (!contributions.length) {
-                        list.innerHTML = '<div class="contribution-item"><strong>暂无贡献记录</strong><span>提交通过验证的服务后，会显示在这里。</span></div>';
+                        list.innerHTML = '<div class="contribution-item"><div class="contribution-profile"><div class="contribution-person"><div class="contribution-avatar contribution-avatar-fallback" aria-hidden="true">?</div><div class="contribution-name">暂无贡献记录</div></div><span class="contribution-state pending">待提交</span></div><div class="contribution-badges"><span class="contribution-badge">提交通过验证的服务后显示</span></div></div>';
                         return;
                     }
-                    list.innerHTML = contributions.map((item) => `
+                    list.innerHTML = contributions.map((item) => {
+                        const models = Array.isArray(item.models) ? item.models : [];
+                        const visibleModels = models.slice(0, 3);
+                        const modelBadges = visibleModels.length
+                            ? visibleModels.map((model) => `<span class="contribution-badge" title="${escapeHtml(model)}">${escapeHtml(model)}</span>`).join('')
+                            : '<span class="contribution-badge contribution-count">未公开模型</span>';
+                        const countBadge = item.modelCount > visibleModels.length
+                            ? `<span class="contribution-badge contribution-count">+${formatter.format(item.modelCount - visibleModels.length)}</span>`
+                            : '';
+                        return `
                         <div class="contribution-item">
                             ${renderContributionIdentity(item)}
-                            <span>${escapeHtml(item.baseUrl)}</span>
-                            <span>${formatter.format(item.modelCount || 0)} 个模型 · ${item.enabled ? '已启用' : '待启用'}</span>
                             <div class="contribution-badges">
-                                ${(item.models || []).slice(0, 6).map((model) => `<span class="contribution-badge">${escapeHtml(model)}</span>`).join('')}
+                                ${modelBadges}${countBadge}
                             </div>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                 } catch (error) {
-                    list.innerHTML = '<div class="contribution-item"><strong>贡献记录加载失败</strong><span>请稍后刷新页面重试。</span></div>';
+                    list.innerHTML = '<div class="contribution-item"><div class="contribution-profile"><div class="contribution-person"><div class="contribution-avatar contribution-avatar-fallback" aria-hidden="true">!</div><div class="contribution-name">贡献记录加载失败</div></div><span class="contribution-state pending">重试</span></div><div class="contribution-badges"><span class="contribution-badge">请稍后刷新页面</span></div></div>';
                 }
             }
 
