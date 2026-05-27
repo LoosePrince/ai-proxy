@@ -1,6 +1,6 @@
 {
   "name": "ai-api",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "AI Proxy with OpenAI SDK, database management, and admin panel",
   "main": "server.js",
   "scripts": {
