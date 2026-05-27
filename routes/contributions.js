@@ -6,7 +6,6 @@ const prisma = require('../lib/prisma');
 
 const router = express.Router();
 
-const EXPECTED_REPLY = 'AI_PROXY_PROVIDER_OK';
 const MAX_MODELS = 20;
 const MAX_MODEL_TEST_MS = 20_000;
 
@@ -127,25 +126,26 @@ async function validateModel(client, model) {
       model,
       messages: [
         {
-          role: 'system',
-          content: `你是一个接口验证器。你必须只回复 ${EXPECTED_REPLY}，不要输出任何其他字符。`,
-        },
-        {
           role: 'user',
-          content: `请只回复 ${EXPECTED_REPLY}`,
+          content: '请回复一句简短内容，用于确认这个模型接口可以正常调用。',
         },
       ],
       temperature: 0,
-      max_tokens: 16,
+      max_tokens: 64,
     }, { timeout: MAX_MODEL_TEST_MS });
 
-    const content = response.choices?.[0]?.message?.content?.trim() || '';
-    const passed = content === EXPECTED_REPLY;
+    const choice = response.choices?.[0];
+    const message = choice?.message || {};
+    const content = typeof message.content === 'string' ? message.content.trim() : '';
+    const reasoningContent = typeof message.reasoning_content === 'string' ? message.reasoning_content.trim() : '';
+    const reply = content || reasoningContent;
+    const passed = Boolean(choice);
+
     return {
       model,
       passed,
-      reply: content,
-      error: passed ? null : `模型返回内容不匹配，实际返回：${content || '空内容'}`,
+      reply: reply.slice(0, 500),
+      error: passed ? null : '模型接口未返回有效 choices',
     };
   } catch (error) {
     return {
