@@ -1118,12 +1118,12 @@
         <div>API Base: <code id="api-base-footer"></code></div>
     </footer>
 
+    <script src="numbers.js"></script>
     <script src="chat.js"></script>
     <script>
         (function () {
             const origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
             const base = origin + '/v1';
-            const formatter = new Intl.NumberFormat('zh-CN');
             const themeButton = document.getElementById('theme-toggle');
             const themeLabels = { auto: '自动主题', light: '浅色主题', dark: '深色主题' };
 
@@ -1166,8 +1166,8 @@
                     const response = await fetch('/api/public-stats');
                     if (!response.ok) throw new Error('stats unavailable');
                     const stats = await response.json();
-                    document.getElementById('stat-requests').textContent = formatter.format(stats.totalRequests || 0);
-                    document.getElementById('stat-tokens').textContent = formatter.format(stats.totalTokens || 0);
+                    document.getElementById('stat-requests').textContent = formatCount(stats.totalRequests || 0);
+                    document.getElementById('stat-tokens').textContent = formatTokens(stats.totalTokens || 0);
                     document.getElementById('stat-success').textContent = `${Number(stats.successRate || 0).toFixed(1)}%`;
                 } catch (error) {
                     document.getElementById('stat-requests').textContent = '0';
@@ -1231,8 +1231,8 @@
                         return `
                         <div class="contribution-item">
                             ${renderContributionIdentity(item)}
-                            <div class="contribution-badges" tabindex="0" aria-label="${modelCount ? `${formatter.format(modelCount)} 个模型` : '未公开模型'}">
-                                <span class="contribution-badge contribution-count">${modelCount ? `${formatter.format(modelCount)} 个模型` : '未公开模型'}</span>
+                            <div class="contribution-badges" tabindex="0" aria-label="${modelCount ? `${formatCount(modelCount)} 个模型` : '未公开模型'}">
+                                <span class="contribution-badge contribution-count">${modelCount ? `${formatCount(modelCount)} 个模型` : '未公开模型'}</span>
                                 ${tooltip}
                             </div>
                         </div>

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const dns = require('dns').promises;
 const express = require('express');
 const net = require('net');
@@ -158,7 +159,12 @@ async function validateModel(client, model) {
 }
 
 function isMissingContributionColumn(error) {
-  return error.code === 'P2022' || /isContributed/i.test(error.message || '');
+  return error.code === 'P2022' || /isContributed|contributor/i.test(error.message || '');
+}
+
+function buildContributedProviderName(apiKey) {
+  const digest = crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 16);
+  return `contrib-${digest}`;
 }
 
 const migrationRequiredMessage = '贡献功能需要先应用数据库迁移：npx prisma migrate deploy';
@@ -172,10 +178,11 @@ router.get('/api/contributions', async (req, res) => {
     });
 
     res.json(providers.map((provider) => {
-      const publicProfile = createContributorPublicProfile(provider.name);
+      const publicProfile = createContributorPublicProfile(provider.contributor || provider.name);
       return {
         id: provider.id,
         name: provider.name,
+        contributor: provider.contributor || provider.name,
         ...publicProfile,
         baseUrl: maskBaseUrl(provider.baseUrl),
         modelCount: Array.isArray(provider.models) ? provider.models.length : 0,
@@ -218,10 +225,10 @@ router.post('/api/contributions', async (req, res) => {
       });
     }
 
-    const providerName = contributor.value;
     const existing = await prisma.provider.findFirst({ where: { isContributed: true, apiKey } });
     const data = {
-      name: providerName,
+      name: existing ? existing.name : buildContributedProviderName(apiKey),
+      contributor: contributor.value,
       baseUrl,
       apiKey,
       models,
@@ -256,7 +263,7 @@ router.post('/api/contributions', async (req, res) => {
       return res.status(503).json({ error: migrationRequiredMessage });
     }
     if (error.code === 'P2002') {
-      return res.status(409).json({ error: '该邮箱或 GitHub 用户 ID 已存在，请更换后重试' });
+      return res.status(409).json({ error: '该 API 已存在贡献记录，请直接更新原记录或更换 API Key' });
     }
     res.status(400).json({ error: error.message || '贡献提交失败' });
   }

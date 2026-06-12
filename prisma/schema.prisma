@@ -11,6 +11,7 @@ datasource db {
 model Provider {
   id       Int      @id @default(autoincrement())
   name     String   @unique
+  contributor String?
   baseUrl  String
   apiKey   String
   models   Json     @default("[]")

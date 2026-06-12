@@ -315,13 +315,20 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="numbers.js"></script>
 <script>
 let currentPage = 'dashboard';
 let authChecked = false;
 let currentGlobalRoute = null;
 const pageTitles = { dashboard: '仪表盘', providers: 'Provider 管理', models: '模型统计', ips: 'IP 统计', logs: '请求日志' };
-const numberFormatter = new Intl.NumberFormat('zh-CN');
+const formatCountValue = (value) => formatCount(value);
+const formatTokenValue = (value) => formatTokens(value);
 const ruleLabels = { priority: '遵循优先级', random: '随机', average: '平均', balanced: '平均', single: '遵循优先级' };
+
+function providerDisplayName(provider) {
+  if (provider?.isContributed && provider.contributor) return provider.contributor;
+  return provider?.name || '';
+}
 
 async function apiFetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -729,12 +736,12 @@ async function loadDashboard() {
   const rate = s.totalRequests ? ((s.successRequests / s.totalRequests) * 100).toFixed(1) : '0.0';
 
   document.getElementById('overview-stats').innerHTML = `
-    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalRequests||0)}</div><div class="label">总请求数</div></div>
-    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalTokens||0)}</div><div class="label">总 Token 数</div></div>
+    <div class="stat-item"><div class="value">${formatCountValue(s.totalRequests||0)}</div><div class="label">总请求数</div></div>
+    <div class="stat-item"><div class="value">${formatTokenValue(s.totalTokens||0)}</div><div class="label">总 Token 数</div></div>
     <div class="stat-item"><div class="value">${rate}%</div><div class="label">成功率</div></div>
-    <div class="stat-item"><div class="value">${numberFormatter.format(s.successRequests||0)}</div><div class="label">成功请求</div></div>
-    <div class="stat-item"><div class="value">${numberFormatter.format(s.failedRequests||0)}</div><div class="label">失败请求</div></div>
-    <div class="stat-item"><div class="value">${numberFormatter.format(s.totalPromptTokens||0)}</div><div class="label">Prompt Tokens</div></div>
+    <div class="stat-item"><div class="value">${formatCountValue(s.successRequests||0)}</div><div class="label">成功请求</div></div>
+    <div class="stat-item"><div class="value">${formatCountValue(s.failedRequests||0)}</div><div class="label">失败请求</div></div>
+    <div class="stat-item"><div class="value">${formatTokenValue(s.totalPromptTokens||0)}</div><div class="label">Prompt Tokens</div></div>
   `;
 
   if (summaryRows.length) {
@@ -749,14 +756,14 @@ async function loadDashboard() {
           <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap">
             <div>
               <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap">
-                <strong>${escapeHtml(name)}</strong>
+                <strong>${escapeHtml(providerDisplayName(provider))}</strong>
                 ${tags}
               </div>
-              <div style="margin-top:.45rem;color:var(--text-muted);font-size:.84rem">请求 ${numberFormatter.format(data.totalRequests||0)} · 成功率 ${successRate}% · Token ${numberFormatter.format(data.totalTokens||0)}</div>
+              <div style="margin-top:.45rem;color:var(--text-muted);font-size:.84rem">请求 ${formatCountValue(data.totalRequests||0)} · 成功率 ${successRate}% · Token ${formatTokenValue(data.totalTokens||0)}</div>
             </div>
             <div style="display:grid;grid-template-columns:repeat(2,minmax(90px,1fr));gap:.45rem;min-width:min(100%,220px)">
-              <div class="pill" style="justify-content:center">成功 ${numberFormatter.format(data.successRequests||0)}</div>
-              <div class="pill" style="justify-content:center">失败 ${numberFormatter.format(data.failedRequests||0)}</div>
+              <div class="pill" style="justify-content:center">成功 ${formatCountValue(data.successRequests||0)}</div>
+              <div class="pill" style="justify-content:center">失败 ${formatCountValue(data.failedRequests||0)}</div>
             </div>
           </div>
           <div style="margin-top:.8rem;height:.6rem;border-radius:999px;background:var(--surface-muted);overflow:hidden">
@@ -874,7 +881,7 @@ async function loadProviders() {
       : `<button class="btn btn-sm btn-danger" onclick="deleteProvider(${p.id}, decodeURIComponent('${nameArg}'))">删除</button>`;
     const actions = `<div class="actions"><button class="btn btn-sm btn-outline" onclick="editProvider(${p.id})">编辑</button>${toggleButton}${deleteButton}</div>`;
     return `<tr>
-      <td class="provider-name-cell" data-label="名称"><strong>${escapeHtml(p.name)}</strong><div style="margin-top:.32rem;display:flex;gap:.32rem;flex-wrap:wrap">${sourceTags}</div></td>
+      <td class="provider-name-cell" data-label="名称"><strong>${escapeHtml(providerDisplayName(p))}</strong>${p.isContributed && p.contributor ? `<div style="margin-top:.2rem;color:var(--text-soft);font-size:.78rem">${escapeHtml(p.name)}</div>` : ''}<div style="margin-top:.32rem;display:flex;gap:.32rem;flex-wrap:wrap">${sourceTags}</div></td>
       <td class="provider-url-cell" data-label="Base URL"><code>${escapeHtml(p.baseUrl)}</code></td>
       <td class="provider-model-cell" data-label="模型">${modelsPreview}</td>
       <td data-label="规则">${ruleTag}</td>
@@ -996,9 +1003,9 @@ async function loadModels() {
   if (!s.models || !Object.keys(s.models).length) { tbody.innerHTML='<tr><td colspan="5" class="table-empty">暂无模型调用数据</td></tr>'; return; }
   tbody.innerHTML = Object.entries(s.models).map(([model, d]) => {
     const resolved = d.actualResolved && Object.keys(d.actualResolved).length
-      ? Object.entries(d.actualResolved).map(([a,c])=>`${escapeHtml(a)} (${numberFormatter.format(c)})`).join(', ')
+      ? Object.entries(d.actualResolved).map(([a,c])=>`${escapeHtml(a)} (${formatCountValue(c)})`).join(', ')
       : '-';
-    return `<tr><td class="model">${escapeHtml(model)}</td><td>${numberFormatter.format(d.requested||0)}</td><td>${numberFormatter.format(d.promptTokens||0)}</td><td>${numberFormatter.format(d.completionTokens||0)}</td><td style="font-size:.8rem;text-align:left">${resolved}</td></tr>`;
+    return `<tr><td class="model">${escapeHtml(model)}</td><td>${formatCountValue(d.requested||0)}</td><td>${formatTokenValue(d.promptTokens||0)}</td><td>${formatTokenValue(d.completionTokens||0)}</td><td style="font-size:.8rem;text-align:left">${resolved}</td></tr>`;
   }).join('');
 }
 
@@ -1007,7 +1014,7 @@ async function loadIps() {
   const tbody = document.querySelector('#ips-table tbody');
   if (!s.ips || !Object.keys(s.ips).length) { tbody.innerHTML='<tr><td colspan="3" class="table-empty">暂无 IP 统计数据</td></tr>'; return; }
   const sorted = Object.entries(s.ips).sort((a,b)=>b[1].requests-a[1].requests);
-  tbody.innerHTML = sorted.map(([ip,d]) => `<tr><td><code>${escapeHtml(ip)}</code></td><td>${numberFormatter.format(d.requests||0)}</td><td>${numberFormatter.format(d.tokens||0)}</td></tr>`).join('');
+  tbody.innerHTML = sorted.map(([ip,d]) => `<tr><td><code>${escapeHtml(ip)}</code></td><td>${formatCountValue(d.requests||0)}</td><td>${formatTokenValue(d.tokens||0)}</td></tr>`).join('');
 }
 
 async function loadLogs() {
@@ -1021,7 +1028,7 @@ async function loadLogs() {
     failed: '失败',
     'claimed-by-other': '被更快响应抢占',
   };
-  const formatDuration = (value) => value != null ? `${numberFormatter.format(value)}ms` : '-';
+  const formatDuration = (value) => value != null ? `${formatCountValue(value)}ms` : '-';
   const formatTime = (value, fallback = '-') => value ? new Date(value).toLocaleTimeString() : fallback;
   const statusTone = (status) => {
     if (status === 'success') return 'var(--success)';
@@ -1096,7 +1103,7 @@ async function loadLogs() {
     const firstResponse = formatTime(log.firstResponseAt);
     const firstLatency = formatDuration(log.firstResponseDurationMs);
     const totalDuration = formatDuration(log.totalDurationMs);
-    const tokens = numberFormatter.format((log.promptTokens || 0) + (log.completionTokens || 0));
+    const tokens = formatTokenValue((log.promptTokens || 0) + (log.completionTokens || 0));
     const providerError = log.error
       ? `<div style="margin-top:.7rem;color:var(--danger);font-size:.82rem;word-break:break-word">错误：${escapeHtml(log.error)}</div>`
       : '';

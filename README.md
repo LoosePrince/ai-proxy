@@ -153,6 +153,7 @@ curl -X POST http://localhost:3000/api/contributions \
 
 验证通过后：
 - 新贡献会创建为 `isContributed=true` 的 Provider
+- 同一贡献者可以提交多个不同的 API（不同 `apiKey` 会各自创建记录）
 - 同一个 `apiKey` 再次提交会更新已有贡献
 - 贡献 Provider 默认 `enabled=false`，需要管理员在后台手动启用
 - 公开贡献列表只返回脱敏信息，不返回 `apiKey`

@@ -35,7 +35,7 @@ function requireAuth(req, res, next) {
 }
 
 function isMissingContributionColumn(error) {
-  return error.code === 'P2022' || /isContributed/i.test(error.message || '');
+  return error.code === 'P2022' || /isContributed|contributor/i.test(error.message || '');
 }
 
 function withContributionFallback(provider) {
@@ -88,7 +88,7 @@ async function findProvidersCompat(args = {}) {
   } catch (error) {
     if (!isMissingContributionColumn(error)) throw error;
     const rows = await prisma.$queryRaw`
-      SELECT id, name, "baseUrl", "apiKey", models, rule, priority, enabled, "isEnv", stats, "createdAt", "updatedAt"
+      SELECT id, name, contributor, "baseUrl", "apiKey", models, rule, priority, enabled, "isEnv", stats, "createdAt", "updatedAt"
       FROM "Provider"
       ORDER BY priority ASC, id ASC
     `;
