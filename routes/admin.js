@@ -6,6 +6,7 @@ const { getLogs, aggregateAllStats, ensureStatsProviders } = require('../lib/sta
 const {
   ensureGlobalRouteController,
   explainResolvedRouting,
+  invalidateProviderRoutingCache,
   normalizeGlobalModelConfig,
   normalizeRoutingRule,
   updateGlobalModelConfig,
@@ -279,6 +280,7 @@ router.put('/api/global-route', requireAuth, async (req, res) => {
       await updateGlobalModelConfig(modelConfig);
     }
     const updated = Object.keys(data).length ? await updateProviderCompat(controller.id, data) : await findProviderByIdCompat(controller.id);
+    invalidateProviderRoutingCache();
     const latest = await findProviderByIdCompat(controller.id);
     const modelConfig = sanitizeGlobalModelConfigForResponse(latest?.stats?.modelConfig || {});
     res.json({
@@ -316,6 +318,7 @@ router.post('/api/providers', requireAuth, async (req, res) => {
       stats: {},
     });
     await syncPriorityGroupRule(normalizedPriority, normalizedRule, provider.id);
+    invalidateProviderRoutingCache();
     res.json(provider);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -342,6 +345,7 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
       if (body.rule !== undefined) allowed.rule = normalizeRoutingRule(body.rule);
       if (body.enabled !== undefined) allowed.enabled = body.enabled;
       const updated = await updateProviderCompat(id, allowed);
+      invalidateProviderRoutingCache();
       return res.json(updated);
     }
 
@@ -360,6 +364,7 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
         await syncPriorityGroupRule(oldPriority, existing.rule, updated.id);
       }
       await syncPriorityGroupRule(targetPriority, targetRule, updated.id);
+      invalidateProviderRoutingCache();
       return res.json(updated);
     }
 
@@ -382,6 +387,7 @@ router.put('/api/providers/:id', requireAuth, async (req, res) => {
       await syncPriorityGroupRule(oldPriority, existing.rule, updated.id);
     }
     await syncPriorityGroupRule(targetPriority, targetRule, updated.id);
+    invalidateProviderRoutingCache();
     res.json(updated);
   } catch (err) {
     if (err.code === 'P2002') {
@@ -403,6 +409,7 @@ router.delete('/api/providers/:id', requireAuth, async (req, res) => {
     if (Number(existing.priority) < 0) return res.status(403).json({ error: 'Cannot delete virtual global controller' });
 
     await prisma.provider.delete({ where: { id } });
+    invalidateProviderRoutingCache();
     res.json({ success: true });
   } catch (err) {
     if (isMissingContributionColumn(err)) {

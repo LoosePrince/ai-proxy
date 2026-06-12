@@ -4,6 +4,7 @@ const express = require('express');
 const net = require('net');
 const OpenAI = require('openai');
 const prisma = require('../lib/prisma');
+const { invalidateProviderRoutingCache } = require('../lib/provider');
 
 const router = express.Router();
 
@@ -242,6 +243,7 @@ router.post('/api/contributions', async (req, res) => {
     const provider = existing
       ? await prisma.provider.update({ where: { id: existing.id }, data })
       : await prisma.provider.create({ data: { ...data, stats: {} } });
+    invalidateProviderRoutingCache();
 
     res.json({
       success: true,
