@@ -5,6 +5,7 @@ const {
   resolveGlobalModelProviders,
   resolveProviders,
 } = require('../lib/provider');
+const { checkIpRateLimit } = require('../lib/ip-rate-limit');
 const { updateStats, addLog } = require('../lib/stats');
 
 const router = express.Router();
@@ -457,6 +458,23 @@ router.post('/v1/chat/completions', async (req, res) => {
     resolveProviders(requestedModel),
     resolveGlobalModelProviders(requestedModel),
   ]);
+
+  const rateLimit = checkIpRateLimit(ip, globalModelProviders.config.ipRateLimitRpm);
+  if (!rateLimit.allowed) {
+    res.setHeader('Retry-After', String(rateLimit.retryAfterSec));
+    res.setHeader('X-RateLimit-Limit', String(rateLimit.limit));
+    res.setHeader('X-RateLimit-Remaining', '0');
+    return res.status(429).json({
+      error: {
+        message: `请求过于频繁，同 IP 每分钟最多 ${rateLimit.limit} 次请求，请 ${rateLimit.retryAfterSec} 秒后重试`,
+        type: 'rate_limit_exceeded',
+      },
+    });
+  }
+  if (rateLimit.limit > 0) {
+    res.setHeader('X-RateLimit-Limit', String(rateLimit.limit));
+    res.setHeader('X-RateLimit-Remaining', String(rateLimit.remaining));
+  }
 
   if (providers.length === 0 && !globalModelProviders.fallbackProvider && !globalModelProviders.parallelProvider) {
     return res.status(503).json({ error: { message: 'No available AI providers configured' } });

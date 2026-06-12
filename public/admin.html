@@ -221,6 +221,11 @@ button,input,select{font:inherit}button{cursor:pointer}a{color:inherit;text-deco
                     <label for="global-parallel-timeout">并行竞速窗口（ms）</label>
                     <input id="global-parallel-timeout" type="number" min="1" placeholder="14000">
                   </div>
+                  <div class="global-field">
+                    <label for="global-ip-rate-limit">同 IP 请求限制（RPM）</label>
+                    <input id="global-ip-rate-limit" type="number" min="0" step="1" placeholder="20">
+                    <div class="special-provider-hint">每分钟每 IP 最多请求次数，0 表示不限流。</div>
+                  </div>
                 </div>
                 <div class="global-field">
                   <label>按 priority 覆盖超时</label>
@@ -548,6 +553,16 @@ function readOptionalPositiveMsInput(id, label) {
   return Math.round(number);
 }
 
+function readOptionalNonNegativeIntInput(id, label) {
+  const raw = String(document.getElementById(id)?.value || '').trim();
+  if (!raw) return undefined;
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number < 0 || !Number.isInteger(number)) {
+    throw new Error(`${label} 必须是大于等于 0 的整数`);
+  }
+  return number;
+}
+
 function buildPriorityTimeoutPayload() {
   const payload = {};
   const seen = new Set();
@@ -586,6 +601,7 @@ function setTimeoutConfigForm(config = {}) {
   document.getElementById('global-default-timeout').value = config.defaultResponseTimeoutMs || '';
   document.getElementById('global-fallback-timeout').value = config.fallbackResponseTimeoutMs || '';
   document.getElementById('global-parallel-timeout').value = config.parallelTimeoutMs || '';
+  document.getElementById('global-ip-rate-limit').value = config.ipRateLimitRpm ?? '';
   setPriorityTimeoutItems(config.priorityTimeouts || {});
 }
 
@@ -594,6 +610,7 @@ function buildGlobalTimeoutConfigPayload() {
     defaultResponseTimeoutMs: readOptionalPositiveMsInput('global-default-timeout', '主路由默认超时'),
     fallbackResponseTimeoutMs: readOptionalPositiveMsInput('global-fallback-timeout', '保底超时'),
     parallelTimeoutMs: readOptionalPositiveMsInput('global-parallel-timeout', '并行竞速窗口'),
+    ipRateLimitRpm: readOptionalNonNegativeIntInput('global-ip-rate-limit', '同 IP 请求限制'),
     priorityTimeouts: buildPriorityTimeoutPayload(),
   };
 }

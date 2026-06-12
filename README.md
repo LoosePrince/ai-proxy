@@ -124,6 +124,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 - `fallbackResponseTimeoutMs`：保底 Provider 的独立超时。
 - `fallbackProvider`：三次主路由失败后才会调用。
 - `parallelProvider`：首轮请求时可并行竞速，更快首包时直接采用其结果。
+- `ipRateLimitRpm`：同 IP 每分钟最大请求数，默认 `20`；设为 `0` 表示不限流。
 
 这些参数既可以通过管理后台维护，也可以通过环境变量提供默认值：
 
@@ -131,6 +132,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 - `PARALLEL_RESPONSE_TIMEOUT_MS`
 - `FALLBACK_RESPONSE_TIMEOUT_MS`
 - `PRIORITY_RESPONSE_TIMEOUTS`
+- `IP_RATE_LIMIT_RPM`
 
 ## 贡献 API 服务
 

@@ -207,6 +207,15 @@ function validateTimeoutValue(value, label) {
   return null;
 }
 
+function validateIpRateLimitRpm(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || !Number.isInteger(number)) {
+    return '同 IP 每分钟请求数限制必须是大于等于 0 的整数，0 表示不限流';
+  }
+  return null;
+}
+
 function validatePriorityTimeouts(priorityTimeouts) {
   if (priorityTimeouts === undefined || priorityTimeouts === null) return null;
   if (typeof priorityTimeouts !== 'object' || Array.isArray(priorityTimeouts)) {
@@ -232,6 +241,8 @@ function validateGlobalModelConfigInput(inputConfig = {}) {
   if (fallbackTimeoutError) return fallbackTimeoutError;
   const parallelTimeoutError = validateTimeoutValue(inputConfig.parallelTimeoutMs, '并行竞速窗口');
   if (parallelTimeoutError) return parallelTimeoutError;
+  const ipRateLimitError = validateIpRateLimitRpm(inputConfig.ipRateLimitRpm);
+  if (ipRateLimitError) return ipRateLimitError;
   return validatePriorityTimeouts(inputConfig.priorityTimeouts);
 }
 
