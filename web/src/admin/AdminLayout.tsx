@@ -44,12 +44,12 @@ const THEME_LABEL: Record<ThemeMode, string> = {
 };
 
 const NAV = [
-  { key: '', icon: <DashboardOutlined />, label: '概览' },
-  { key: 'providers', icon: <ApiOutlined />, label: 'Provider' },
-  { key: 'logs', icon: <ProfileOutlined />, label: '请求日志' },
-  { key: 'models', icon: <BarChartOutlined />, label: '模型统计' },
-  { key: 'ips', icon: <GlobalOutlined />, label: 'IP 统计' },
-  { key: 'settings', icon: <SettingOutlined />, label: '设置' },
+  { key: '', icon: <DashboardOutlined />, label: '概览', desc: '全站用量与运行状态' },
+  { key: 'providers', icon: <ApiOutlined />, label: 'Provider', desc: '上游节点与路由分组' },
+  { key: 'logs', icon: <ProfileOutlined />, label: '请求日志', desc: '调用链路与错误详情' },
+  { key: 'models', icon: <BarChartOutlined />, label: '模型统计', desc: '模型调用与 Token 分布' },
+  { key: 'ips', icon: <GlobalOutlined />, label: 'IP 统计', desc: '访问来源与用量分析' },
+  { key: 'settings', icon: <SettingOutlined />, label: '设置', desc: '路由策略与运行参数' },
 ];
 
 export default function AdminLayout() {
@@ -93,13 +93,19 @@ export default function AdminLayout() {
 
   // 侧边栏选中项由 URL 派生，不额外维护 activeTab 状态
   const segment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] ?? '';
+  const activeNav = NAV.find((item) => item.key === segment) ?? NAV[0]!;
 
   return (
     <Layout className="admin-shell">
       <Header className="admin-header">
-        <Link to="/" className="brand">
-          <img src="/logo.webp" alt="" width={24} height={24} />
-          <span>AI Proxy 控制台</span>
+        <Link to="/" className="brand admin-brand">
+          <span className="admin-brand-mark">
+            <img src="/logo.webp" alt="" width={26} height={26} />
+          </span>
+          <span className="admin-brand-copy">
+            <strong>AI Proxy</strong>
+            <small>控制台</small>
+          </span>
         </Link>
 
         <div className="row">
@@ -123,7 +129,8 @@ export default function AdminLayout() {
       </Header>
 
       <Layout>
-        <Sider className="admin-sider" breakpoint="lg" collapsedWidth={0} width={192}>
+        <Sider className="admin-sider" breakpoint="lg" collapsedWidth={0} width={208}>
+          <div className="sider-caption">Workspace</div>
           <Menu
             mode="inline"
             selectedKeys={[segment]}
@@ -136,15 +143,22 @@ export default function AdminLayout() {
         </Sider>
 
         <Content className="admin-content">
-          <Routes>
-            <Route index element={<Dashboard />} />
-            <Route path="providers" element={<Providers />} />
-            <Route path="logs" element={<RequestLogs />} />
-            <Route path="models" element={<ModelStats />} />
-            <Route path="ips" element={<IpStats />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/admin" replace />} />
-          </Routes>
+          <div className="admin-content-inner">
+            <div className="admin-page-heading">
+              <span>Admin Console</span>
+              <h1>{activeNav.label}</h1>
+              <p>{activeNav.desc}</p>
+            </div>
+            <Routes>
+              <Route index element={<Dashboard />} />
+              <Route path="providers" element={<Providers />} />
+              <Route path="logs" element={<RequestLogs />} />
+              <Route path="models" element={<ModelStats />} />
+              <Route path="ips" element={<IpStats />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Routes>
+          </div>
         </Content>
       </Layout>
     </Layout>

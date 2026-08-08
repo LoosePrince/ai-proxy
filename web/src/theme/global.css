@@ -1,81 +1,116 @@
-/*
- * 全局 CSS 变量与基础样式。
- *
- * 明暗两套值挂在 :root[data-theme=...] 上，由 ThemeProvider 切换属性即可整站换肤，
- * 组件里一律只引用变量名，不写具体颜色 —— 旧 index.html 把 958 行内联 CSS
- * 里的色值散落在各处，改一个主题色要全文搜索。
- */
+/* 全站设计令牌与基础样式。页面只消费语义变量，不持有主题色值。 */
 
 :root[data-theme='light'] {
-  --bg: #f6f7fb;
+  --bg: #f5f7fb;
   --bg-elevated: #ffffff;
-  --bg-subtle: #eef1f8;
-  --border: #e2e6f0;
-  --text: #1a1f2e;
-  --text-muted: #5b6478;
-  --text-faint: #8b94a8;
-  --primary: #4f6bed;
-  --primary-soft: rgba(79, 107, 237, 0.1);
-  --success: #17a673;
-  --success-soft: rgba(23, 166, 115, 0.12);
-  --danger: #e0475b;
-  --danger-soft: rgba(224, 71, 91, 0.12);
-  --warning: #d98c14;
-  --warning-soft: rgba(217, 140, 20, 0.12);
-  --shadow: 0 2px 12px rgba(26, 31, 46, 0.06);
-  --shadow-lg: 0 12px 32px rgba(26, 31, 46, 0.1);
-  --border-subtle: #edeff5;
-  --code-bg: #f2f4fa;
-  --hero-glow: rgba(79, 107, 237, 0.14);
-  /* 顶栏毛玻璃：半透明底色配 backdrop-filter，不能直接用不透明的 --bg-elevated */
-  --surface-translucent: rgba(255, 255, 255, 0.78);
+  --bg-subtle: #f0f3f9;
+  --bg-muted: #e8edf6;
+  --surface-raised: rgba(255, 255, 255, 0.92);
+  --surface-translucent: rgba(255, 255, 255, 0.8);
+  --border: #dfe5ef;
+  --border-subtle: #ebeff5;
+  --border-strong: #ccd5e4;
+  --text: #182033;
+  --text-strong: #0d1424;
+  --text-muted: #657087;
+  --text-faint: #929bad;
+  --primary: #5267e8;
+  --primary-hover: #4056d9;
+  --primary-strong: #3548be;
+  --primary-soft: rgba(82, 103, 232, 0.1);
+  --primary-softer: rgba(82, 103, 232, 0.055);
+  --accent: #7c56d9;
+  --accent-soft: rgba(124, 86, 217, 0.1);
+  --success: #15966c;
+  --success-soft: rgba(21, 150, 108, 0.1);
+  --danger: #d9485f;
+  --danger-soft: rgba(217, 72, 95, 0.1);
+  --warning: #c98216;
+  --warning-soft: rgba(201, 130, 22, 0.11);
+  --code-bg: #111728;
+  --code-text: #dce5ff;
+  --hero-glow: rgba(82, 103, 232, 0.18);
+  --hero-glow-secondary: rgba(124, 86, 217, 0.12);
+  --grid-line: rgba(45, 58, 92, 0.055);
+  --shadow-xs: 0 1px 2px rgba(26, 36, 58, 0.04);
+  --shadow-sm: 0 8px 24px rgba(29, 42, 70, 0.07);
+  --shadow: 0 16px 40px rgba(29, 42, 70, 0.1);
+  --shadow-lg: 0 28px 72px rgba(29, 42, 70, 0.14);
+  --focus-ring: rgba(82, 103, 232, 0.2);
 }
 
 :root[data-theme='dark'] {
-  --bg: #12141c;
-  --bg-elevated: #1a1d27;
-  --bg-subtle: #222634;
-  --border: #2c3140;
-  --text: #e8eaf2;
-  --text-muted: #a0a7bb;
-  --text-faint: #6f7789;
-  --primary: #7b90f5;
-  --primary-soft: rgba(123, 144, 245, 0.16);
-  --success: #35c48d;
-  --success-soft: rgba(53, 196, 141, 0.16);
-  --danger: #f0697b;
-  --danger-soft: rgba(240, 105, 123, 0.16);
-  --warning: #e8a53a;
-  --warning-soft: rgba(232, 165, 58, 0.16);
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --border-subtle: #232733;
-  --code-bg: #0e1016;
-  --hero-glow: rgba(123, 144, 245, 0.18);
-  --surface-translucent: rgba(18, 20, 28, 0.78);
+  --bg: #0d111b;
+  --bg-elevated: #151a27;
+  --bg-subtle: #1b2130;
+  --bg-muted: #222a3b;
+  --surface-raised: rgba(21, 26, 39, 0.94);
+  --surface-translucent: rgba(13, 17, 27, 0.8);
+  --border: #293246;
+  --border-subtle: #222a3b;
+  --border-strong: #38445c;
+  --text: #e8ecf5;
+  --text-strong: #f7f9fd;
+  --text-muted: #a4aec1;
+  --text-faint: #707b91;
+  --primary: #8293ff;
+  --primary-hover: #98a5ff;
+  --primary-strong: #aab4ff;
+  --primary-soft: rgba(130, 147, 255, 0.15);
+  --primary-softer: rgba(130, 147, 255, 0.075);
+  --accent: #b18aef;
+  --accent-soft: rgba(177, 138, 239, 0.14);
+  --success: #41c996;
+  --success-soft: rgba(65, 201, 150, 0.14);
+  --danger: #f17286;
+  --danger-soft: rgba(241, 114, 134, 0.14);
+  --warning: #e9a844;
+  --warning-soft: rgba(233, 168, 68, 0.15);
+  --code-bg: #090d15;
+  --code-text: #dce5ff;
+  --hero-glow: rgba(91, 111, 241, 0.2);
+  --hero-glow-secondary: rgba(165, 112, 232, 0.13);
+  --grid-line: rgba(173, 187, 222, 0.045);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 10px 28px rgba(0, 0, 0, 0.24);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 32px 80px rgba(0, 0, 0, 0.44);
+  --focus-ring: rgba(130, 147, 255, 0.24);
 }
 
 :root {
-  --radius: 10px;
-  --radius-lg: 16px;
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
   --gap: 16px;
-  --max-width: 1180px;
-  /* 内容区左右留白，站点页与后台页共用同一个值，改版式只改这一处 */
-  --gutter: 20px;
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+  --max-width: 1200px;
+  --gutter: clamp(18px, 4vw, 32px);
+  --header-height: 68px;
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-synthesis: none;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-html,
+html {
+  min-width: 320px;
+  min-height: 100%;
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-height) + 20px);
+}
+
 body,
 #root {
+  min-height: 100vh;
   margin: 0;
-  min-height: 100%;
 }
 
 body {
@@ -83,18 +118,49 @@ body {
   color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+::selection {
+  background: var(--primary-soft);
+  color: var(--text-strong);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
   color: var(--primary);
   text-decoration: none;
+  transition: color 0.18s ease;
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--primary-hover);
+}
+
+img,
+svg {
+  display: block;
+}
+
+h1,
+h2,
+h3,
+p {
+  overflow-wrap: break-word;
 }
 
 code,
@@ -102,18 +168,42 @@ pre {
   font-family: var(--mono);
 }
 
-/* 页面主容器：站点页与后台页共用 */
+code {
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--border-strong);
+  background-clip: padding-box;
+}
+
 .page {
-  max-width: var(--max-width);
+  width: min(100%, var(--max-width));
   margin: 0 auto;
-  padding: 24px 20px 64px;
+  padding: 28px var(--gutter) 72px;
 }
 
 .surface {
-  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
 }
 
 .stack {
@@ -146,12 +236,111 @@ pre {
   font-size: 12px;
 }
 
-/* 尊重系统的减少动效偏好，避免动画造成不适 */
+.mt-12 {
+  margin-top: 12px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.control-full {
+  width: 100%;
+}
+
+.control-w-110 {
+  width: 110px;
+}
+
+.control-w-120 {
+  width: 120px;
+}
+
+.control-w-150 {
+  width: 150px;
+}
+
+.control-w-160 {
+  width: 160px;
+}
+
+.control-w-180 {
+  width: 180px;
+}
+
+.skeleton-value {
+  width: 120px !important;
+}
+
+/* Ant Design 只负责交互组件；下面统一其表面质感与密度。 */
+.ant-btn {
+  box-shadow: none;
+  font-weight: 550;
+}
+
+.ant-btn-primary:not(:disabled) {
+  box-shadow: 0 7px 18px var(--focus-ring);
+}
+
+.ant-card {
+  overflow: hidden;
+  border-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.ant-card .ant-card-head {
+  border-color: var(--border-subtle);
+}
+
+.ant-card .ant-card-head-title {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.ant-input,
+.ant-input-number,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker,
+textarea.ant-input {
+  box-shadow: none !important;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-color: var(--border-subtle);
+}
+
+.ant-tag {
+  font-weight: 520;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --header-height: 60px;
+  }
+
+  .page {
+    padding-top: 20px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

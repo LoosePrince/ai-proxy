@@ -36,7 +36,7 @@ export function LoginGate({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="login-gate">
       <Card className="login-card" title="管理后台登录">
-        {error ? <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} /> : null}
+        {error ? <Alert type="error" message={error} showIcon className="login-error" /> : null}
 
         <Form<LoginForm> layout="vertical" onFinish={submit} requiredMark={false}>
           <Form.Item

@@ -345,7 +345,7 @@ export function Providers() {
               render: (_: unknown, row) => (
                 <Select<RoutingRule>
                   size="small"
-                  style={{ width: 120 }}
+                  className="control-w-120"
                   value={row.rule}
                   onChange={(rule) => void saveGroup(row.priority, { rule })}
                   options={(Object.keys(RULE_LABEL) as RoutingRule[]).map((rule) => ({
@@ -444,7 +444,7 @@ export function Providers() {
             label="Priority"
             extra="数字越小越先尝试；仅对主路由角色生效"
           >
-            <InputNumber min={0} step={1} style={{ width: '100%' }} />
+            <InputNumber min={0} step={1} className="control-full" />
           </Form.Item>
 
           <Form.Item name="enabled" label="启用" valuePropName="checked">

@@ -6,7 +6,8 @@
  */
 
 import { motion } from 'framer-motion';
-import { Button, Space } from 'antd';
+import { Button } from 'antd';
+import { ArrowRightOutlined, CheckCircleFilled, CodeOutlined } from '@ant-design/icons';
 
 import { useAsync } from '../hooks/useAsync';
 import { HealthBadge } from './SiteHeader';
@@ -35,34 +36,70 @@ export function Hero() {
         animate="show"
         variants={{ show: { transition: { staggerChildren: 0.08 } } }}
       >
-        <motion.div className="eyebrow" variants={fadeUp}>
-          <span>免费 AI API · OpenAI 兼容 · 无需注册</span>
-          <HealthBadge ok={ok} />
-        </motion.div>
+        <div className="hero-copy">
+          <motion.div className="eyebrow" variants={fadeUp}>
+            <span className="eyebrow-dot" aria-hidden="true" />
+            <span>OpenAI 兼容接口，免费开放</span>
+            <HealthBadge ok={ok} />
+          </motion.div>
 
-        <motion.h1 variants={fadeUp}>
-          免费 AI API
-          <br />
-          <span>打开就能用。</span>
-        </motion.h1>
+          <motion.h1 variants={fadeUp}>
+            一个地址，
+            <br />
+            <span>接入你的 AI 应用。</span>
+          </motion.h1>
 
-        <motion.p className="hero-description" variants={fadeUp}>
-          面向开发者和轻量应用的免费 AI 接口服务。无需注册账号，无需单独申请 Key，
-          使用标准 API 地址即可快速完成聊天、测试和原型验证。
-        </motion.p>
+          <motion.p className="hero-description" variants={fadeUp}>
+            无需注册和申请 Key，沿用熟悉的 OpenAI 请求格式。适合快速验证想法、开发原型，
+            以及为轻量应用接入可靠的 AI 能力。
+          </motion.p>
 
-        <motion.div variants={fadeUp}>
-          <Space wrap>
-            <Button type="primary" size="large" href="#chat-test">
-              立即测试
+          <motion.div className="hero-actions" variants={fadeUp}>
+            <Button type="primary" size="large" href="#chat-test" icon={<ArrowRightOutlined />} iconPosition="end">
+              立即在线测试
             </Button>
-            <Button size="large" href="#api-guide">
-              查看接入方式
+            <Button size="large" href="#api-guide" icon={<CodeOutlined />}>
+              查看接入代码
             </Button>
-            <Button size="large" href="#contribute">
-              贡献 API
-            </Button>
-          </Space>
+          </motion.div>
+
+          <motion.div className="hero-proof" variants={fadeUp} aria-label="服务特点">
+            <span><CheckCircleFilled /> 无需注册</span>
+            <span><CheckCircleFilled /> 标准协议</span>
+            <span><CheckCircleFilled /> 流式响应</span>
+          </motion.div>
+        </div>
+
+        <motion.div className="hero-preview" variants={fadeUp} aria-label="API 请求示例">
+          <div className="preview-glow" aria-hidden="true" />
+          <div className="endpoint-window">
+            <div className="window-bar">
+              <div className="window-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </div>
+              <span>POST /v1/chat/completions</span>
+              <span className="window-secure">HTTPS</span>
+            </div>
+            <pre className="hero-code"><code><span className="code-punctuation">{'{'}</span>{'\n'}  <span className="code-key">"model"</span>: <span className="code-string">"gpt-4o-mini"</span>,{'\n'}  <span className="code-key">"messages"</span>: <span className="code-punctuation">[{'{'}</span>{'\n'}    <span className="code-key">"role"</span>: <span className="code-string">"user"</span>,{'\n'}    <span className="code-key">"content"</span>: <span className="code-string">"你好"</span>{'\n'}  <span className="code-punctuation">{'}]'}</span>,{'\n'}  <span className="code-key">"stream"</span>: <span className="code-boolean">true</span>{'\n'}<span className="code-punctuation">{'}'}</span></code></pre>
+            <div className="response-strip">
+              <span className="response-status"><i /> 200 OK</span>
+              <span>text/event-stream</span>
+              <span className="response-time">流式返回</span>
+            </div>
+          </div>
+          <div className="floating-card floating-card-model">
+            <span>自动路由</span>
+            <strong>最佳可用模型</strong>
+          </div>
+          <div className="floating-card floating-card-ready">
+            <CheckCircleFilled />
+            <div>
+              <span>API Ready</span>
+              <strong>即开即用</strong>
+            </div>
+          </div>
         </motion.div>
       </motion.div>
     </section>

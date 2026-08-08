@@ -78,7 +78,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="未单独设置超时的优先级组使用此值。"
         >
-          <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+          <InputNumber min={1000} step={1000} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -87,7 +87,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="主链全部失败后，保底 Provider 的单次调用超时。"
         >
-          <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+          <InputNumber min={1000} step={1000} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -96,7 +96,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="并行 Provider 只在此窗口内有权抢占响应；超窗后即使先返回也不再抢占，避免慢速旁路拖累整体延迟。"
         >
-          <InputNumber min={1000} step={1000} style={{ width: '100%' }} />
+          <InputNumber min={1000} step={1000} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -105,7 +105,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="尝试链会被截断到这个长度，防止 Provider 很多时单个请求耗时失控。"
         >
-          <InputNumber min={1} max={20} style={{ width: '100%' }} />
+          <InputNumber min={1} max={20} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -114,7 +114,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="同一个 Provider 内最多尝试几个模型。"
         >
-          <InputNumber min={1} max={20} style={{ width: '100%' }} />
+          <InputNumber min={1} max={20} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -123,7 +123,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="0 表示不限流。限流是进程内的滑动窗口，多实例部署时每个实例独立计数。"
         >
-          <InputNumber min={0} style={{ width: '100%' }} />
+          <InputNumber min={0} className="control-full" />
         </Form.Item>
 
         <Form.Item
@@ -132,7 +132,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           rules={[{ required: true, message: '必填' }]}
           tooltip="0 表示永不清理。清理只删请求明细，日聚合统计永久保留，因此面板上的历史趋势不会因清理而回退。"
         >
-          <InputNumber min={0} style={{ width: '100%' }} />
+          <InputNumber min={0} className="control-full" />
         </Form.Item>
       </div>
 
@@ -174,7 +174,7 @@ function PriorityGroups() {
         </Button>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+      <Typography.Paragraph type="secondary" className="paragraph-flush">
         组是真实实体：规则与超时是组自身的属性。旧实现「组内规则取该组第一个 Provider 的
         rule」，导致删掉一个 Provider 就可能悄悄改变整组的路由行为。组由{' '}
         <Link to="/admin/providers">Provider</Link> 的 priority 自动产生，空组会被清理。
@@ -195,7 +195,7 @@ function PriorityGroups() {
             render: (_: unknown, row) => (
               <Select
                 size="small"
-                style={{ width: '100%' }}
+                className="control-full"
                 value={row.rule}
                 options={RULE_OPTIONS}
                 disabled={busy === row.priority}
@@ -212,7 +212,7 @@ function PriorityGroups() {
                   size="small"
                   min={1000}
                   step={1000}
-                  style={{ width: '100%' }}
+                  className="control-full"
                   placeholder="继承全局"
                   defaultValue={row.timeoutMs ?? undefined}
                   disabled={busy === row.priority}
@@ -342,7 +342,7 @@ function RuntimePanel() {
 
       {data?.writeQueue.lastError ? (
         <Alert
-          style={{ marginTop: 12 }}
+          className="mt-12"
           type="warning"
           showIcon
           message="写队列上次落盘失败"

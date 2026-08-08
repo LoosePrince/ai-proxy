@@ -78,10 +78,37 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         theme={{
           algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: '#4f6bed',
+            colorPrimary: resolved === 'dark' ? '#8293ff' : '#5267e8',
+            colorInfo: resolved === 'dark' ? '#8293ff' : '#5267e8',
+            colorSuccess: resolved === 'dark' ? '#41c996' : '#15966c',
+            colorWarning: resolved === 'dark' ? '#e9a844' : '#c98216',
+            colorError: resolved === 'dark' ? '#f17286' : '#d9485f',
             borderRadius: 10,
+            borderRadiusLG: 16,
+            controlHeight: 38,
+            fontSize: 14,
             fontFamily:
-              "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+              "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+          },
+          components: {
+            Button: {
+              controlHeightLG: 46,
+              paddingInlineLG: 22,
+              fontWeight: 550,
+            },
+            Card: {
+              headerFontSize: 15,
+              bodyPadding: 20,
+            },
+            Menu: {
+              itemBorderRadius: 9,
+              itemMarginInline: 10,
+            },
+            Table: {
+              headerBorderRadius: 8,
+              cellPaddingBlockSM: 11,
+              cellPaddingInlineSM: 12,
+            },
           },
         }}
       >

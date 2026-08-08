@@ -147,7 +147,13 @@ export function Contribute() {
       />
 
       <div className="contribution-card">
-        <Form<FormValues> form={form} layout="vertical" onFinish={submit} disabled={submitting}>
+        <div className="contribution-panel">
+          <div className="panel-heading">
+            <span className="panel-kicker">提交服务</span>
+            <h3>分享你的 API 节点</h3>
+            <p>凭据仅用于可用性验证和转发，不会在公开页面中展示。</p>
+          </div>
+          <Form<FormValues> form={form} layout="vertical" onFinish={submit} disabled={submitting}>
           <Form.Item
             name="contributor"
             label="邮箱或 GitHub 用户 ID"
@@ -204,9 +210,17 @@ export function Contribute() {
               )}
             </motion.div>
           )}
-        </AnimatePresence>
+          </AnimatePresence>
+        </div>
 
-        <ContributionList key={listKey} />
+        <div className="contribution-list-panel">
+          <div className="panel-heading panel-heading-compact">
+            <span className="panel-kicker">Community</span>
+            <h3>社区贡献节点</h3>
+            <p>通过验证的服务会在管理员启用后加入路由池。</p>
+          </div>
+          <ContributionList key={listKey} />
+        </div>
       </div>
     </section>
   );

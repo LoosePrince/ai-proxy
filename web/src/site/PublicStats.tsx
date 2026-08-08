@@ -8,6 +8,7 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Alert, Card, Skeleton } from 'antd';
+import { ApiOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
 import { publicApi } from '../api/client';
 import { SectionHead } from '../components/SectionHead';
@@ -31,16 +32,22 @@ export function PublicStats() {
       label: '总请求数',
       value: stats.data ? formatCount(stats.data.totalRequests) : '--',
       hint: '累计 API 调用次数',
+      icon: <ApiOutlined />,
+      tone: 'primary',
     },
     {
       label: '总 Token 数',
       value: stats.data ? formatTokens(stats.data.totalTokens) : '--',
       hint: 'Prompt 与 Completion 合计',
+      icon: <ThunderboltOutlined />,
+      tone: 'accent',
     },
     {
       label: '成功率',
       value: stats.data ? formatPercent(stats.data.successRate) : '--',
       hint: '已完成请求的成功占比',
+      icon: <CheckCircleOutlined />,
+      tone: 'success',
     },
   ];
 
@@ -64,12 +71,16 @@ export function PublicStats() {
               viewport={{ once: true }}
               transition={{ delay: index * 0.06 }}
             >
-              <Card className="stat-card" bordered={false}>
+              <Card className={`stat-card stat-card-${card.tone}`} bordered={false}>
+                <div className="stat-card-head">
+                  <div className="stat-icon">{card.icon}</div>
+                  <span className="live-label"><i /> LIVE</span>
+                </div>
                 <div className="label">{card.label}</div>
                 {stats.status === 'success' ? (
                   <div className="value">{card.value}</div>
                 ) : (
-                  <Skeleton.Input active size="large" style={{ width: 120 }} />
+                  <Skeleton.Input active size="large" className="skeleton-value" />
                 )}
                 <div className="hint">{card.hint}</div>
               </Card>

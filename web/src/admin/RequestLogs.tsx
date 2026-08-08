@@ -101,7 +101,7 @@ export function RequestLogs() {
           <Space wrap>
             <Select
               size="small"
-              style={{ width: 110 }}
+              className="control-w-110"
               value={params.get('success') ?? 'all'}
               onChange={(value) => patchFilter('success', value === 'all' ? null : value)}
               options={[
@@ -114,7 +114,7 @@ export function RequestLogs() {
               size="small"
               allowClear
               placeholder="请求模型"
-              style={{ width: 160 }}
+              className="control-w-160"
               defaultValue={params.get('requestedModel') ?? ''}
               onSearch={(value) => patchFilter('requestedModel', value || null)}
             />
@@ -122,7 +122,7 @@ export function RequestLogs() {
               size="small"
               allowClear
               placeholder="IP"
-              style={{ width: 150 }}
+              className="control-w-150"
               defaultValue={params.get('ip') ?? ''}
               onSearch={(value) => patchFilter('ip', value || null)}
             />

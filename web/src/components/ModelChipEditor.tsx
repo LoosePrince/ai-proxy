@@ -24,7 +24,7 @@ export function ModelChipEditor({
   return (
     <Select
       mode="tags"
-      style={{ width: '100%' }}
+      className="control-full"
       value={value}
       disabled={disabled}
       placeholder={placeholder}

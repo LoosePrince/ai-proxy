@@ -7,6 +7,7 @@
 
 import { Link } from 'react-router-dom';
 import { Badge, Button, Tooltip } from 'antd';
+import { ControlOutlined, BgColorsOutlined } from '@ant-design/icons';
 
 import { useTheme, type ThemeMode } from '../theme/ThemeProvider';
 
@@ -23,25 +24,31 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="site-header-inner">
         <Link to="/" className="brand">
-          <img src="/logo.webp" alt="" width={28} height={28} />
-          <span>AI Proxy</span>
+          <span className="brand-mark">
+            <img src="/logo.webp" alt="" width={30} height={30} />
+          </span>
+          <span className="brand-copy">
+            <strong>AI Proxy</strong>
+            <small>Free API Gateway</small>
+          </span>
         </Link>
 
         <nav className="site-nav" aria-label="站点导航">
-          <a href="#api-guide">接入方式</a>
-          <a href="#contribute">贡献 API</a>
+          <a href="#stats">运行数据</a>
+          <a href="#api-guide">接入指南</a>
+          <a href="#contribute">贡献服务</a>
           <a href="#chat-test">在线测试</a>
         </nav>
 
         <div className="site-header-actions">
           <Tooltip title="切换 自动 / 浅色 / 深色">
-            <Button size="small" onClick={cycleMode}>
-              {THEME_LABEL[mode]}
+            <Button className="header-icon-button" icon={<BgColorsOutlined />} onClick={cycleMode}>
+              <span className="header-action-label">{THEME_LABEL[mode]}</span>
             </Button>
           </Tooltip>
-          <Link to="/admin">
-            <Button size="small" type="primary" ghost>
-              管理后台
+          <Link to="/admin" className="admin-entry">
+            <Button type="primary" icon={<ControlOutlined />}>
+              <span className="header-action-label">管理后台</span>
             </Button>
           </Link>
         </div>

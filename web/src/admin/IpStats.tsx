@@ -51,7 +51,7 @@ export function IpStats() {
               size="small"
               allowClear
               placeholder="筛选 IP"
-              style={{ width: 180 }}
+              className="control-w-180"
               onChange={(event) => setKeyword(event.target.value)}
             />
             <DayRangePicker {...control} />
