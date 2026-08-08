@@ -1,0 +1,461 @@
+/*
+ * 站点首页样式。
+ *
+ * 全部颜色走 theme/global.css 定义的 CSS 变量，因此明暗主题切换
+ * 不需要在这里写任何 [data-theme] 分支 —— 变量已经在根节点换过一轮。
+ */
+
+.site {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ---------------------------------------------------------------- 顶栏 */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface-translucent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 12px var(--gutter);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.brand:hover {
+  color: var(--text);
+}
+
+.site-nav {
+  display: flex;
+  gap: 20px;
+  margin-right: auto;
+  font-size: 14px;
+}
+
+.site-nav a {
+  color: var(--text-muted);
+}
+
+.site-nav a:hover {
+  color: var(--primary);
+}
+
+.site-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------- 通用区块 */
+
+main {
+  flex: 1;
+}
+
+.section {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 56px var(--gutter);
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.section-kicker {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.section-title {
+  margin: 6px 0 0;
+  font-size: 28px;
+  font-weight: 650;
+}
+
+.section-desc {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- 首屏 */
+
+.hero {
+  padding: 72px var(--gutter) 48px;
+  background:
+    radial-gradient(1000px 420px at 12% -10%, var(--hero-glow), transparent 70%),
+    var(--bg);
+}
+
+.hero-inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hero h1 {
+  margin: 22px 0 0;
+  font-size: clamp(36px, 6vw, 60px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.hero h1 span {
+  color: var(--primary);
+}
+
+.hero-description {
+  max-width: 60ch;
+  margin: 18px 0 26px;
+  font-size: 16px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- 卡片网格 */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+}
+
+.stat-card .label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.stat-card .value {
+  margin: 8px 0 4px;
+  font-size: 32px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card .hint {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.feature-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+}
+
+.feature-number {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.feature-item span {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- 接入指南 */
+
+.api-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 20px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+}
+
+.api-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.request-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.request-row > span {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.code-block {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ---------------------------------------------------------------- 贡献 */
+
+.contribution-card {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.contribution-panel,
+.contribution-list-panel {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+}
+
+.contribution-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.contribution-item:last-child {
+  border-bottom: none;
+}
+
+.contribution-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.contribution-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- 聊天 */
+
+.chat-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-head span {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 380px;
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-message {
+  max-width: min(78%, 620px);
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.chat-message.user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: #fff;
+  white-space: pre-wrap;
+}
+
+.chat-message.assistant {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+/* Markdown 渲染出的块级元素需要收紧默认外边距，否则气泡会被撑开 */
+.chat-message.assistant :first-child {
+  margin-top: 0;
+}
+
+.chat-message.assistant :last-child {
+  margin-bottom: 0;
+}
+
+.chat-message.assistant pre {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  overflow-x: auto;
+}
+
+.chat-message.assistant code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.chat-typing {
+  color: var(--text-faint);
+}
+
+.chat-input-area {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input-area textarea {
+  flex: 1;
+  min-height: 40px;
+  max-height: 160px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.chat-input-area textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.chat-error {
+  padding: 0 20px 12px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
+
+/* ---------------------------------------------------------------- 页脚 */
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 28px var(--gutter);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- 移动端 */
+
+@media (max-width: 860px) {
+  .site-nav {
+    display: none;
+  }
+
+  .api-card,
+  .contribution-card {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 40px var(--gutter);
+  }
+
+  .hero {
+    padding: 48px var(--gutter) 36px;
+  }
+
+  .chat-messages {
+    height: 320px;
+  }
+
+  .chat-message {
+    max-width: 90%;
+  }
+}

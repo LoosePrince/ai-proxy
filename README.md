@@ -1,218 +1,205 @@
-# AI Proxy Service
+# AI Proxy
 
-基于 Express.js 的 AI 代理服务，提供 OpenAI 兼容的 `/v1/chat/completions` 接口，支持多 Provider 动态管理、数据库统计和管理后台。
+OpenAI 兼容的 AI 代理服务。多 Provider 动态路由、并行竞速、保底兜底，全链路请求可追溯，自带管理后台。
 
-## 功能特性
+持久化使用 [Lsqlite](https://github.com/LoosePrince/Lsqlite)（远程 HTTP SQL 服务，底层 SQLite），表结构完全规范化，不再有 JSON blob 统计字段。
 
-- OpenAI 兼容的 `/v1/chat/completions` 接口，统一 OpenAI SDK 调用
-- 支持流式和非流式响应
-- 多 Provider 动态管理（通过数据库配置，无需重启）
-- 三种全局路由规则：遵循优先级 / 随机 / 平均
-- 支持全局默认超时、按 priority 单独覆盖超时、并行竞速窗口、保底超时
-- 首页支持公开贡献 OpenAI 兼容 API，后端逐模型验证后保存为待启用 Provider
-- 按 model 名匹配 Provider，自动回退
-- PostgreSQL 数据库记录请求数、Token 用量、IP 统计、模型映射（请求模型 vs 真实模型）
-- 管理后台：Provider 增删改查、全局路由 / 超时配置、统计查看、全链路请求日志
-- 环境变量保底 Provider 可在后台关闭，但不可删除
-- Docker 部署支持
+## 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 后端 | TypeScript + Express 5 + OpenAI Node SDK |
+| 持久化 | Lsqlite（`POST /api/query`、`POST /api/transaction`） |
+| 前端 | React 18 + Vite + Ant Design / Ant Design Mobile + Framer Motion |
+| 测试 | `node --test` + tsx |
+
+## 架构要点
+
+Lsqlite 是远程服务，一条 SQL 等于一次 HTTPS 往返。因此代理热路径被设计为**零数据库往返**：
+
+```
+POST /v1/chat/completions
+  ├─ 读配置 → runtime/config-cache（内存快照，写操作后显式失效）
+  ├─ IP 限流 / round-robin → runtime/counters（内存，带过期清理与上界）
+  └─ 落盘   → runtime/write-queue（入队，后台按批合并为单次 transaction）
+```
+
+写队列把 `requests` 明细、`request_attempts` 明细和 4 张日聚合表的累加合并进**一个事务**，聚合列用 `on conflict do update set x = x + excluded.x` 原子累加，不存在读改写丢更新。
+
+目录职责：
+
+```
+src/
+  db/        Lsqlite 客户端、SQL DSL、迁移、仓储（唯一的 DB 访问出口）
+  core/      纯函数：routing / timeout / trace / gate / contribution（可单测）
+  runtime/   config-cache、write-queue、counters、retention
+  upstream/  OpenAI 客户端 LRU、SSE 透传与 usage 旁路解析
+  http/      proxy / public / admin / server
+  types/     前后端共享 DTO（web 通过 @shared/api 引用）
+web/         前端源码，构建产物 web/dist 由服务静态托管
+```
+
+## 数据模型
+
+配置域
+
+- `settings(key, value)` — 全局路由规则、超时、限流、日志保留天数
+- `providers` — `kind` 为 `primary | fallback | parallel`，`source` 为 `managed | env | contributed`
+- `provider_models` — 模型列表（取代 JSON 数组）
+- `priority_groups(priority, rule, timeout_ms)` — 优先级组是实体，组内规则和超时挂在组上
+
+明细域（每次请求都落盘，可追溯）
+
+- `requests` — 首包时间、总耗时、最终 Provider / 模型、token、是否触发保底
+- `request_attempts` — 每次尝试，含 `success | failed | claimed-by-other`
+- `ips`、`models` — 维度表
+
+聚合域（面板读取，避免全表扫描）
+
+- `provider_usage_daily`、`model_usage_daily`、`ip_usage_daily`
+
+`settings.logRetentionDays` 控制明细清理：`0` 表示永不清理；大于 0 时后台任务按天删 `requests`（`request_attempts` 级联删除），日聚合数据永久保留。
 
 ## 快速开始
 
-### 1. 克隆并安装
-
 ```bash
-git clone <repository-url>
-cd ai-proxy
 npm install
+cp .env.template .env   # 填入 LSQLITE_URL / LSQLITE_KEY
+npm run build           # 编译后端 + 构建前端
+npm start
 ```
 
-### 2. 配置环境变量
+开发模式：
 
 ```bash
-cp .env.template .env
+npm run dev       # 后端热重载 (tsx watch)
+npm run dev:web   # 前端 Vite dev server
 ```
 
-编辑 `.env`：
+启动后：
 
-```env
-# 必填：数据库连接
-DATABASE_URL=postgresql://user:password@host:5432/dbname
+- API `http://localhost:3000/v1/chat/completions`
+- 首页 `http://localhost:3000/`
+- 后台 `http://localhost:3000/admin`
 
-# 可选：服务端口
-PORT=3000
-
-# 可选：管理后台登录（不设则无需登录）
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your_password
-
-# 可选：超时配置（管理后台中的全局配置会覆盖这里）
-DEFAULT_RESPONSE_TIMEOUT_MS=30000
-PARALLEL_RESPONSE_TIMEOUT_MS=14000
-FALLBACK_RESPONSE_TIMEOUT_MS=30000
-PRIORITY_RESPONSE_TIMEOUTS={"0":20000,"1":35000}
-
-# 可选：保底 Provider（JSON 数组，可在后台关闭但不可删除）
-FALLBACK_PROVIDERS=[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"],"rule":"priority","priority":0}]
-```
-
-> `baseUrl` 使用 OpenAI SDK 格式（不含 `/chat/completions`，SDK 会自动拼接）。
-> 不设 `FALLBACK_PROVIDERS` 时可通过管理后台添加 Provider。
-
-### 3. 初始化数据库并启动
+服务启动时会自动执行迁移（幂等），无需手工建表。也可单独运行：
 
 ```bash
-# 首次运行：推送数据库 schema
-npx prisma db push
-
-# 启动服务
-node server.js
+npm run db:migrate
 ```
 
-服务启动后：
-- API: `http://localhost:3000/v1/chat/completions`
-- 管理后台: `http://localhost:3000/admin`
+## 环境变量
 
-## API 使用
+| 变量 | 说明 |
+|---|---|
+| `LSQLITE_URL` | Lsqlite 服务地址 |
+| `LSQLITE_KEY` | Bearer key |
+| `LSQLITE_TIMEOUT_MS` | 单条 SQL 的 HTTP 超时，默认 15000 |
+| `PORT` | 监听端口，默认 3000 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 后台账号，两者留空则后台无登录门禁 |
+| `SESSION_SECRET` | session 密钥，生产务必更换 |
+| `FALLBACK_PROVIDERS` | 启动时同步的 Provider JSON 数组，`source=env` |
 
-### 聊天补全
+以下变量**只在 settings 表首次初始化时作为种子值**写入，之后一律以数据库为准，改环境变量不会覆盖后台修改：
 
-```bash
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": false
-  }'
-```
+`DEFAULT_RESPONSE_TIMEOUT_MS`、`FALLBACK_RESPONSE_TIMEOUT_MS`、`PARALLEL_RESPONSE_TIMEOUT_MS`、`PRIORITY_RESPONSE_TIMEOUTS`、`IP_RATE_LIMIT_RPM`、`LOG_RETENTION_DAYS`
 
-### 指定模型
-
-```bash
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "kilo-auto/free",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-指定 `model` 时，系统会优先选择支持该模型的普通 Provider 候选组，再按双重路由规则选择；未指定模型时在所有启用的普通 Provider 组中路由。
+`PRIORITY_RESPONSE_TIMEOUTS` 为 JSON 对象（key 是 priority），种子写入 `priority_groups.timeout_ms`。
 
 ## 路由规则
 
-路由规则分为两层：
-- 全局路由：只读取虚拟控制条目 `priority=-1` 的 `rule` 字段，用来决定“先尝试哪个普通优先级组”。
-- 内部路由：同一普通优先级组内共享一条 `rule`，用来决定“组内 Provider 的尝试顺序”。
+两层排序，都由 `RoutingRule = priority | random | average` 描述：
 
-注意：`priority=-1` 是专门的虚拟全局控制条目，不参与实际 AI 转发；普通 AI Provider 不再承担全局控制职责。后台不会在 Provider 列表中显示这条虚拟记录，而是通过独立的全局路由切换入口来修改它。
+| 规则 | 组间（`settings.globalRule`） | 组内（`priority_groups.rule`） |
+|---|---|---|
+| `priority` | 优先级数字从小到大 | 组内按 id 升序 |
+| `random` | 随机打乱组顺序 | 随机打乱组内顺序 |
+| `average` | 对组做 round-robin | 对组内 Provider 做 round-robin |
 
-| 规则 | 全局层含义 | 内部层含义 |
-|------|------|------|
-| `priority` | 按优先级组从小到大依次尝试 | 按组内 `id ASC` 依次尝试 |
-| `random` | 随机打乱内部优先级组顺序 | 随机打乱组内 Provider 顺序 |
-| `average` | 对内部优先级组做 round-robin 轮换 | 对组内 Provider 做 round-robin 轮换 |
+排完序后扁平为候选链，主链最多尝试 `maxPrimaryAttempts` 次（默认 3）。`kind=parallel` 的 Provider 在首轮参与竞速，超过 `parallelTimeoutMs` 后不再允许抢占响应；主链全部失败后调用 `kind=fallback`。
 
-兼容旧配置：`balanced` 会按 `average` 处理，`single` 会按 `priority` 处理。优先级数字越小越优先。
+所有尝试（包括中途失败和被更快响应抢占的）都会写入 `request_attempts`，后台日志页可展开查看时间线。
 
-## 超时与特殊 Provider
+## API
 
-全局路由控制条目除了决定普通 Provider 的组间顺序，还负责存储下面这组运行参数：
+聊天补全（OpenAI 兼容，无需 API Key）：
 
-- `defaultResponseTimeoutMs`：普通主路由默认超时。
-- `priorityTimeouts`：按普通 Provider 的 `priority` 单独覆盖超时，未命中的优先级继承默认超时。
-- `parallelTimeoutMs`：并行 Provider 的竞速窗口；超过窗口后它不能再抢占响应。
-- `fallbackResponseTimeoutMs`：保底 Provider 的独立超时。
-- `fallbackProvider`：三次主路由失败后才会调用。
-- `parallelProvider`：首轮请求时可并行竞速，更快首包时直接采用其结果。
-- `ipRateLimitRpm`：同 IP 每分钟最大请求数，默认 `20`；设为 `0` 表示不限流。
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello"}],"stream":true}'
+```
 
-这些参数既可以通过管理后台维护，也可以通过环境变量提供默认值：
+不传 `model` 时在所有启用的 primary Provider 中路由；传 `model` 时优先选择声明了该模型的 Provider。
 
-- `DEFAULT_RESPONSE_TIMEOUT_MS`
-- `PARALLEL_RESPONSE_TIMEOUT_MS`
-- `FALLBACK_RESPONSE_TIMEOUT_MS`
-- `PRIORITY_RESPONSE_TIMEOUTS`
-- `IP_RATE_LIMIT_RPM`
+> 该端点是公开的，唯一防护是内存 IP 限流（`ipRateLimitRpm`，`0` 表示不限流）。如果部署在公网并需要鉴权，请在反向代理层添加。
 
-## 贡献 API 服务
+其他端点：
 
-首页提供公开贡献入口，也可以直接调用接口：
+- `GET /v1/models` — 聚合所有启用 Provider 的模型
+- `GET /healthz` — 服务与 Lsqlite 连通性
+- `GET /api/public-stats` — 首页公开统计
+- `GET|POST /api/contributions` — 公开贡献列表与提交
+
+## 贡献 API
 
 ```bash
 curl -X POST http://localhost:3000/api/contributions \
   -H "Content-Type: application/json" \
-  -d '{
-    "contributor": "123456@qq.com",
-    "baseUrl": "https://api.example.com/v1",
-    "apiKey": "sk-xxx",
-    "models": "model-a,model-b"
-  }'
+  -d '{"contributor":"123456@qq.com","baseUrl":"https://api.example.com/v1","apiKey":"sk-xxx","models":"model-a,model-b"}'
 ```
 
-提交字段中的 `contributor` 必须是邮箱或 GitHub 用户 ID；如果使用 QQ 邮箱，公开贡献列表会展示对应 QQ 头像。
-
-提交后服务端会逐个模型发起一次真实 AI 请求，要求返回固定内容 `AI_PROXY_PROVIDER_OK`。任一模型失败都会整体拒绝，并返回模型级失败原因。
-
-验证通过后：
-- 新贡献会创建为 `isContributed=true` 的 Provider
-- 同一贡献者可以提交多个不同的 API（不同 `apiKey` 会各自创建记录）
-- 同一个 `apiKey` 再次提交会更新已有贡献
-- 贡献 Provider 默认 `enabled=false`，需要管理员在后台手动启用
-- 公开贡献列表只返回脱敏信息，不返回 `apiKey`
-
-## 环境变量 Provider
-
-`FALLBACK_PROVIDERS` 中的 Provider 标记为 `isEnv=true`：
-- 启动时 upsert 到数据库
-- 可通过管理后台启用或关闭，重启不会强制恢复为启用
-- 不可通过管理后台删除
-- 环境变量中移除后，数据库中降级为普通 Provider（可管理）
+- `contributor` 必须是邮箱或 GitHub 用户 ID；QQ 邮箱会在公开列表展示对应头像
+- 服务端逐个模型发起真实请求，要求返回固定内容才算通过，任一模型失败整体拒绝并返回模型级原因
+- `baseUrl` 会做两层 SSRF 校验（IP 字面量私网段 + DNS 解析结果）
+- 通过后创建 `source=contributed` 且 `enabled=false` 的 Provider，需管理员在后台启用
+- 同一 `apiKey` 再次提交视为更新
+- 公开列表不返回 `apiKey`
 
 ## 管理后台
 
-访问 `/admin` 进入管理后台（如果设置了 `ADMIN_USERNAME` 则需要登录）。
+`/admin`，React Router 真实 URL，页面包括仪表盘、Provider、设置、模型统计、IP 统计、请求日志。
 
-功能：
-- 仪表盘：总请求数、Token 统计、成功率
-- Provider 管理：添加 / 编辑 / 启停 / 删除，普通 Provider 只展示组内路由；全局路由通过独立切换入口控制
-- 全局配置：统一维护组间路由、主路由默认超时、按 priority 覆盖超时、并行竞速窗口、保底超时
-- 模型统计：请求模型 vs 真实模型映射（如 `kilo-auto/free` -> `gpt-4o-mini`）
-- IP 统计
-- 最近请求日志：直接显示请求模型、最终 Provider / 模型、主链路尝试明细、并行 / 保底链路状态
+Admin API：
 
-## 数据库
+| 端点 | 说明 |
+|---|---|
+| `POST /admin/api/login`、`/logout`、`GET /api/auth-check` | 会话 |
+| `GET|POST /admin/api/providers`、`PUT|DELETE /admin/api/providers/:id` | Provider CRUD，按 `kind` 区分角色 |
+| `GET /admin/api/priority-groups`、`PUT /admin/api/priority-groups/:priority` | 组内规则与超时 |
+| `GET|PUT /admin/api/settings` | 全局配置 |
+| `GET /admin/api/requests?limit&offset&success&requestedModel&ip&providerId&from&to` | 服务端分页日志 |
+| `GET /admin/api/requests/:id` | 单请求含全部 attempts |
+| `GET /admin/api/dashboard` | 概览聚合 |
+| `GET /admin/api/usage?dimension=model|ip|provider&from&to` | 维度聚合 |
+| `GET /admin/api/runtime` | 写队列与缓存运行状态 |
+| `POST /admin/api/retention/sweep` | 手动触发明细清理 |
 
-使用 PostgreSQL，单表 `providers` 存储配置和统计信息。
+`apiKey` 永不出站，接口只返回 `hasApiKey: boolean`。
 
-`stats` JSONB 字段结构：
-- `totalRequests` / `successRequests` / `failedRequests` — 请求计数
-- `totalPromptTokens` / `totalCompletionTokens` / `totalTokens` — Token 统计
-- `models.{model}.requested` — 按请求模型的调用次数
-- `models.{model}.actualResolved.{realModel}` — 请求模型到真实模型的映射
-- `ips.{ip}.requests` / `ips.{ip}.tokens` — 按 IP 的统计
+`source=env` 的 Provider 可在后台停用，但不可修改连接信息、不可删除。
 
-## Docker 部署
+## Docker
+
+多阶段构建：构建阶段编译后端并打包前端，运行阶段只保留生产依赖与 `dist/`、`web/dist`。
 
 ```bash
 docker build -t ai-proxy .
 
-docker run -d \
-  -p 3000:3000 \
-  -e DATABASE_URL="postgresql://user:password@host:5432/dbname" \
-  -e FALLBACK_PROVIDERS='[{"name":"Kilo","baseUrl":"https://api.kilo.ai/api/gateway/v1","apiKey":"sk-xxx","models":["kilo-auto/free"]}]' \
+docker run -d -p 3000:3000 \
+  -e LSQLITE_URL="https://lsqlite.example.com" \
+  -e LSQLITE_KEY="lsq_xxx" \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=secret \
   ai-proxy
 ```
 
-容器启动时自动执行 `prisma migrate deploy` 同步数据库 schema。
+## 测试
 
-## 技术栈
-
-- [Express.js](https://expressjs.com/) - Web 框架
-- [OpenAI Node.js SDK](https://github.com/openai/openai-node) - 统一 AI API 调用
-- [Prisma](https://www.prisma.io/) - PostgreSQL ORM
-- [express-session](https://github.com/expressjs/session) - Session 管理
+```bash
+npm test        # core 纯函数单测
+npm run typecheck
+```
 
 ## 许可证
 

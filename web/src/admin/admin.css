@@ -1,0 +1,218 @@
+/*
+ * 后台样式。
+ *
+ * 只定义布局与自定义元素，控件外观交给 Ant Design 的 token（见 ThemeProvider）。
+ * 所有颜色引用 theme/global.css 的变量，因此明暗切换不需要这里出现第二套色值。
+ */
+
+.page-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.admin-shell {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 56px;
+  padding: 0 20px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.admin-header .brand:hover {
+  text-decoration: none;
+}
+
+.admin-sider {
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+}
+
+.admin-content {
+  padding: 20px;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------- 指标与统计 */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--gap);
+}
+
+.stat-card {
+  padding: 16px 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.stat-label,
+.stat-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.stat-value {
+  margin: 4px 0;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.stat-card.tone-success .stat-value {
+  color: var(--success);
+}
+
+.stat-card.tone-danger .stat-value {
+  color: var(--danger);
+}
+
+.stat-card.tone-warning .stat-value {
+  color: var(--warning);
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 var(--gap);
+}
+
+/* ---------------------------------------------------------- 模型分布展开行 */
+
+.resolved-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.resolved-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------- attempts 时间线 */
+
+.attempt-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attempt-item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* 左侧状态色条：一眼区分成功、失败与被抢占 */
+.attempt-item::before {
+  content: '';
+  grid-column: 1;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.attempt-item.status-success::before {
+  background: var(--success);
+}
+
+.attempt-item.status-failed::before {
+  background: var(--danger);
+}
+
+.attempt-item.status-claimed-by-other::before {
+  background: var(--warning);
+}
+
+.attempt-seq {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.attempt-body {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.attempt-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attempt-meta {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.attempt-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--danger-soft);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px var(--gap);
+  margin-bottom: 16px;
+}
+
+.detail-item .stat-label {
+  margin-bottom: 2px;
+}
+
+.detail-item .detail-value {
+  font-size: 14px;
+  word-break: break-all;
+}
+
+@media (max-width: 640px) {
+  .admin-content {
+    padding: 12px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+  }
+}

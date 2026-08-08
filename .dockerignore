@@ -5,3 +5,10 @@ Dockerfile
 .git
 .gitignore
 .github
+.env
+.env.local
+dist
+web/dist
+test
+README.md
+LICENSE

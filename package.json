@@ -1,28 +1,49 @@
 {
-  "name": "ai-api",
-  "version": "2.0.9",
-  "description": "AI Proxy with OpenAI SDK, database management, and admin panel",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "db:migrate": "npx prisma migrate deploy",
-    "db:generate": "npx prisma generate",
-    "db:studio": "npx prisma studio",
-    "postinstall": "npx prisma generate"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "name": "ai-proxy",
+  "version": "3.0.0",
+  "description": "OpenAI-compatible AI proxy with Lsqlite persistence, traceable request logs, and admin console",
+  "main": "dist/http/server.js",
   "type": "commonjs",
+  "scripts": {
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p tsconfig.json",
+    "build:web": "vite build --config web/vite.config.ts",
+    "dev": "tsx watch src/http/server.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "start": "node dist/http/server.js",
+    "db:migrate": "tsx src/db/migrate-cli.ts",
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
+  },
+  "license": "MIT",
   "dependencies": {
-    "@prisma/client": "^6.8.2",
-    "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "express-session": "^1.18.1",
-    "openai": "^4.100.0"
+    "cors": "2.8.5",
+    "dotenv": "17.3.1",
+    "express": "5.2.1",
+    "express-session": "1.18.1",
+    "openai": "4.104.0"
   },
   "devDependencies": {
-    "prisma": "^6.8.2"
+    "@ant-design/icons": "5.6.1",
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.0",
+    "@types/express-session": "1.18.1",
+    "@types/node": "22.13.1",
+    "@types/pg": "^8.11.10",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "antd": "5.23.4",
+    "antd-mobile": "5.38.1",
+    "dayjs": "^1.11.13",
+    "framer-motion": "11.18.2",
+    "pg": "^8.13.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "9.0.3",
+    "react-router-dom": "6.29.0",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vite": "6.0.11"
   }
 }

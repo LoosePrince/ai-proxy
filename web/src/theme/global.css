@@ -1,0 +1,157 @@
+/*
+ * 全局 CSS 变量与基础样式。
+ *
+ * 明暗两套值挂在 :root[data-theme=...] 上，由 ThemeProvider 切换属性即可整站换肤，
+ * 组件里一律只引用变量名，不写具体颜色 —— 旧 index.html 把 958 行内联 CSS
+ * 里的色值散落在各处，改一个主题色要全文搜索。
+ */
+
+:root[data-theme='light'] {
+  --bg: #f6f7fb;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #eef1f8;
+  --border: #e2e6f0;
+  --text: #1a1f2e;
+  --text-muted: #5b6478;
+  --text-faint: #8b94a8;
+  --primary: #4f6bed;
+  --primary-soft: rgba(79, 107, 237, 0.1);
+  --success: #17a673;
+  --success-soft: rgba(23, 166, 115, 0.12);
+  --danger: #e0475b;
+  --danger-soft: rgba(224, 71, 91, 0.12);
+  --warning: #d98c14;
+  --warning-soft: rgba(217, 140, 20, 0.12);
+  --shadow: 0 2px 12px rgba(26, 31, 46, 0.06);
+  --shadow-lg: 0 12px 32px rgba(26, 31, 46, 0.1);
+  --border-subtle: #edeff5;
+  --code-bg: #f2f4fa;
+  --hero-glow: rgba(79, 107, 237, 0.14);
+  /* 顶栏毛玻璃：半透明底色配 backdrop-filter，不能直接用不透明的 --bg-elevated */
+  --surface-translucent: rgba(255, 255, 255, 0.78);
+}
+
+:root[data-theme='dark'] {
+  --bg: #12141c;
+  --bg-elevated: #1a1d27;
+  --bg-subtle: #222634;
+  --border: #2c3140;
+  --text: #e8eaf2;
+  --text-muted: #a0a7bb;
+  --text-faint: #6f7789;
+  --primary: #7b90f5;
+  --primary-soft: rgba(123, 144, 245, 0.16);
+  --success: #35c48d;
+  --success-soft: rgba(53, 196, 141, 0.16);
+  --danger: #f0697b;
+  --danger-soft: rgba(240, 105, 123, 0.16);
+  --warning: #e8a53a;
+  --warning-soft: rgba(232, 165, 58, 0.16);
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --border-subtle: #232733;
+  --code-bg: #0e1016;
+  --hero-glow: rgba(123, 144, 245, 0.18);
+  --surface-translucent: rgba(18, 20, 28, 0.78);
+}
+
+:root {
+  --radius: 10px;
+  --radius-lg: 16px;
+  --gap: 16px;
+  --max-width: 1180px;
+  /* 内容区左右留白，站点页与后台页共用同一个值，改版式只改这一处 */
+  --gutter: 20px;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre {
+  font-family: var(--mono);
+}
+
+/* 页面主容器：站点页与后台页共用 */
+.page {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+.surface {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* 尊重系统的减少动效偏好，避免动画造成不适 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
