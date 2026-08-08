@@ -151,7 +151,7 @@ export function Contribute() {
           <div className="panel-heading">
             <span className="panel-kicker">提交服务</span>
             <h3>分享你的 API 节点</h3>
-            <p>凭据仅用于可用性验证和转发，不会在公开页面中展示。</p>
+            <p>凭据仅用于可用性验证和转发；公开列表中的邮箱 ID 会使用星号脱敏，并移除邮箱后缀。</p>
           </div>
           <Form<FormValues> form={form} layout="vertical" onFinish={submit} disabled={submitting}>
           <Form.Item

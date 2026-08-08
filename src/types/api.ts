@@ -181,9 +181,12 @@ export type ContributorType = 'email' | 'github';
 export interface ContributionListItemDTO {
   id: number;
   name: string;
+  /** 邮箱类型仅返回星号脱敏后的本地 ID，不包含邮箱后缀 */
   contributor: string;
   contributorType: ContributorType;
+  /** 与公开 contributor 使用相同脱敏规则 */
   displayName: string;
+  /** 邮箱类型固定为 null，防止头像 URL 泄露原始 ID */
   avatarUrl: string | null;
   /** 只保留 origin + pathname */
   baseUrl: string;

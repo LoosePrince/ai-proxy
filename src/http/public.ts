@@ -2,7 +2,7 @@
  * 公开路由：无需鉴权即可访问的两个入口。
  *
  *   GET  /api/public-stats    只读 global_usage 单行（旧实现是全表扫描 + 内存聚合）
- *   GET  /api/contributions   贡献列表，apiKey 不出站、baseUrl 去查询串
+ *   GET  /api/contributions   贡献列表，身份/API Key 脱敏、baseUrl 去查询串
  *   POST /api/contributions   贡献提交：SSRF 校验 → 逐模型真实调用验证 → 落库
  *
  * 贡献提交是唯一「服务端主动访问用户给定地址」的入口，因此 baseUrl 必须

@@ -33,6 +33,11 @@ import {
   normalizeContributor,
   normalizeModels,
 } from '../src/core/contribution';
+import { toContributionDTO } from '../src/http/dto';
+import {
+  normalizeChatPayload,
+  responseInputToChatMessages,
+} from '../src/core/protocol';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
 import type { SettingsDTO } from '../src/types/api';
 
@@ -91,8 +96,18 @@ describe('routing/selectCandidates', () => {
     assert.deepEqual(selectCandidates(list, 'claude-3').map((p) => p.id), [2]);
   });
 
-  it('无人支持该模型时回退到全部 primary，保持旧行为', () => {
-    assert.deepEqual(selectCandidates(list, 'unknown-model').map((p) => p.id), [1, 2]);
+  it('指定模型支持大小写、分隔符与厂商前缀的近似匹配', () => {
+    const fuzzy = [
+      provider({ id: 10, models: ['openai/gpt-4o-mini'] }),
+      provider({ id: 11, models: ['deepseek-ai/DeepSeek-R1'] }),
+    ];
+
+    assert.deepEqual(selectCandidates(fuzzy, 'GPT 4o mini').map((p) => p.id), [10]);
+    assert.deepEqual(selectCandidates(fuzzy, 'deepseek-r1').map((p) => p.id), [11]);
+  });
+
+  it('没有相近模型时不尝试声明了其他模型的 primary provider', () => {
+    assert.deepEqual(selectCandidates(list, 'unknown-model'), []);
   });
 });
 
@@ -181,8 +196,8 @@ describe('routing/buildAttemptChain', () => {
 describe('routing/buildModelCandidates', () => {
   const p = provider({ id: 1, models: ['a', 'b', 'c', 'd'] });
 
-  it('请求模型被支持时顶到首位', () => {
-    assert.deepEqual(buildModelCandidates(p, 'c', 'priority', createCursor(), 3), ['c', 'a', 'b']);
+  it('请求模型被支持时只尝试匹配模型', () => {
+    assert.deepEqual(buildModelCandidates(p, 'c', 'priority', createCursor(), 3), ['c']);
   });
 
   it('按 maxCount 截断', () => {
@@ -193,6 +208,25 @@ describe('routing/buildModelCandidates', () => {
     const bare = provider({ id: 2, models: [] });
     assert.deepEqual(buildModelCandidates(bare, 'x', 'priority', createCursor(), 3), ['x']);
     assert.deepEqual(buildModelCandidates(bare, null, 'priority', createCursor(), 3), []);
+  });
+
+  it('近似请求模型映射到 provider 声明的真实模型', () => {
+    const fuzzy = provider({ id: 4, models: ['openai/gpt-4o-mini', 'deepseek-chat'] });
+    assert.deepEqual(buildModelCandidates(fuzzy, 'GPT 4o mini', 'priority', createCursor(), 2), [
+      'openai/gpt-4o-mini',
+    ]);
+  });
+
+  it('指定模型时 fallback 与 parallel 忽略自身模型列表并原样透传', () => {
+    const fallback = provider({ id: 5, kind: 'fallback', models: ['fallback-default'] });
+    const parallel = provider({ id: 6, kind: 'parallel', models: ['parallel-default'] });
+
+    assert.deepEqual(buildModelCandidates(fallback, 'deepseek-reasoner', 'priority', createCursor(), 3), [
+      'deepseek-reasoner',
+    ]);
+    assert.deepEqual(buildModelCandidates(parallel, 'deepseek-reasoner', 'priority', createCursor(), 3), [
+      'deepseek-reasoner',
+    ]);
   });
 
   it('去重并剔除空白模型名', () => {
@@ -381,6 +415,64 @@ describe('contribution/normalizeModels', () => {
   });
 });
 
+describe('protocol/reasoning', () => {
+  it('保留 DeepSeek assistant 历史中的 reasoning_content', () => {
+    const payload = normalizeChatPayload({
+      messages: [
+        { role: 'assistant', content: '答案', reasoning_content: '思考过程' },
+        { role: 'user', content: '继续' },
+      ],
+    });
+
+    assert.equal((payload.messages as Array<Record<string, unknown>>)[0]?.reasoning_content, '思考过程');
+  });
+
+  it('兼容 reasoning 字段和 reasoning 内容块并映射为 reasoning_content', () => {
+    const payload = normalizeChatPayload({
+      thinking: { type: 'enabled' },
+      messages: [
+        { role: 'assistant', content: '答案', reasoning: '旧字段思考' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: '块思考' },
+            { type: 'text', text: '块答案' },
+          ],
+        },
+      ],
+    });
+    const messages = payload.messages as Array<Record<string, unknown>>;
+
+    assert.equal(messages[0]?.reasoning_content, '旧字段思考');
+    assert.equal(messages[1]?.reasoning_content, '块思考');
+    assert.equal(messages[1]?.content, '块答案');
+    assert.deepEqual(payload.thinking, { type: 'enabled' });
+  });
+});
+
+describe('protocol/responses', () => {
+  it('把 Responses 字符串输入和 instructions 转为 Chat messages', () => {
+    assert.deepEqual(responseInputToChatMessages('你好', '保持简洁'), [
+      { role: 'developer', content: '保持简洁' },
+      { role: 'user', content: '你好' },
+    ]);
+  });
+
+  it('保留 Responses 多轮消息与 reasoning item', () => {
+    assert.deepEqual(
+      responseInputToChatMessages([
+        { role: 'user', content: [{ type: 'input_text', text: '问题' }] },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '思考' }] },
+        { role: 'assistant', content: [{ type: 'output_text', text: '答案' }] },
+      ]),
+      [
+        { role: 'user', content: '问题' },
+        { role: 'assistant', content: '答案', reasoning_content: '思考' },
+      ],
+    );
+  });
+});
+
 describe('contribution/其他', () => {
   it('maskBaseUrl 只保留 origin 与 pathname', () => {
     assert.equal(maskBaseUrl('https://api.example.com/v1?token=secret#x'), 'https://api.example.com/v1');
@@ -391,8 +483,29 @@ describe('contribution/其他', () => {
     assert.notEqual(contributionProviderName('sk-a'), contributionProviderName('sk-b'));
   });
 
-  it('邮箱在列表中只显示本地部分', () => {
-    assert.equal(contributorDisplayName('dev@example.com', 'email'), 'dev');
+  it('公开邮箱 ID 使用星号脱敏且不包含邮箱后缀', () => {
+    assert.equal(contributorDisplayName('dev@example.com', 'email'), 'd*v');
+    assert.equal(contributorDisplayName('123456@qq.com', 'email'), '1****6');
+    assert.equal(contributorDisplayName('a@example.com', 'email'), '*');
+    assert.equal(contributorDisplayName('ab@example.com', 'email'), 'a*');
     assert.equal(contributorDisplayName('LoosePrince', 'github'), 'LoosePrince');
+  });
+
+  it('公开贡献 DTO 不泄露原始邮箱或可反查 QQ ID 的头像', () => {
+    const dto = toContributionDTO(
+      provider({
+        id: 20,
+        source: 'contributed',
+        contributor: '123456@qq.com',
+        contributorType: 'email',
+        models: ['m1'],
+      }),
+    );
+
+    assert.equal(dto.contributor, '1****6');
+    assert.equal(dto.displayName, '1****6');
+    assert.equal(dto.avatarUrl, null);
+    assert.equal(JSON.stringify(dto).includes('@qq.com'), false);
+    assert.equal(JSON.stringify(dto).includes('123456'), false);
   });
 });

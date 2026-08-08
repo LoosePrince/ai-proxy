@@ -13,23 +13,26 @@ import { Button, Segmented, Tag, Tooltip, message } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 
 import { SectionHead } from '../components/SectionHead';
-import { apiBase } from './origin';
+import { apiBase, apiOrigin } from './origin';
 
 type Snippet = 'curl' | 'fetch' | 'sdk';
 
-function buildSnippets(base: string): Record<Snippet, string> {
+function buildSnippets(origin: string, base: string): Record<Snippet, string> {
   return {
-    curl: `curl ${base}/chat/completions \\
+    curl: `curl ${base}/responses \\
   -H "Content-Type: application/json" \\
   -d '{
-    "messages": [{ "role": "user", "content": "你好" }],
+    "model": "deepseek-reasoner",
+    "input": "你好，请先思考再回答",
+    "reasoning": { "effort": "high" },
     "stream": false
   }'`,
 
-    fetch: `const response = await fetch('${base}/chat/completions', {
+    fetch: `const response = await fetch('${origin}/chat/completions', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
+    model: 'GPT 4o mini', // 支持相近模型名匹配
     messages: [{ role: 'user', content: '你好' }],
     stream: true,
   }),
@@ -51,8 +54,9 @@ const completion = await client.chat.completions.create({
 }
 
 export function ApiGuide() {
+  const origin = useMemo(apiOrigin, []);
   const base = useMemo(apiBase, []);
-  const snippets = useMemo(() => buildSnippets(base), [base]);
+  const snippets = useMemo(() => buildSnippets(origin, base), [origin, base]);
   const [active, setActive] = useState<Snippet>('curl');
 
   const copy = async (text: string, label: string) => {
@@ -70,7 +74,7 @@ export function ApiGuide() {
       <SectionHead
         kicker="API guide"
         title="接入方式"
-        desc="复制下面的请求示例，即可在命令行、前端或已有 SDK 项目中发起一次对话请求。"
+        desc="Chat Completions 与 Responses 共用同一套路由能力，接口路径中的 /v1 可按客户端习惯保留或省略。"
       />
 
       <div className="api-card">
@@ -89,13 +93,22 @@ export function ApiGuide() {
             </Tooltip>
           </div>
           <div className="request-row">
+            <span>兼容端点</span>
+            <code>/chat/completions · /responses</code>
+            <Tag color="cyan">/v1 可选</Tag>
+          </div>
+          <div className="request-row">
             <span>API Key</span>
             <code>任意字符 / 可留空</code>
           </div>
           <div className="request-row">
             <span>模型名称</span>
-            <code>省略则由路由自动选择</code>
+            <code>支持相近名称匹配；省略则自动选择</code>
             <Tag color="blue">可选</Tag>
+          </div>
+          <div className="request-row">
+            <span>思考上下文</span>
+            <code>支持 reasoning / thinking / reasoning_content</code>
           </div>
         </div>
 
@@ -106,9 +119,9 @@ export function ApiGuide() {
               value={active}
               onChange={(value) => setActive(value as Snippet)}
               options={[
-                { label: 'curl', value: 'curl' },
-                { label: 'fetch', value: 'fetch' },
-                { label: 'OpenAI SDK', value: 'sdk' },
+                { label: 'Responses', value: 'curl' },
+                { label: 'Chat fetch', value: 'fetch' },
+                { label: 'Chat SDK', value: 'sdk' },
               ]}
             />
             <Button

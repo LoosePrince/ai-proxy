@@ -39,7 +39,7 @@ export function Hero() {
         <div className="hero-copy">
           <motion.div className="eyebrow" variants={fadeUp}>
             <span className="eyebrow-dot" aria-hidden="true" />
-            <span>OpenAI 兼容接口，免费开放</span>
+            <span>Chat Completions / Responses，免费开放</span>
             <HealthBadge ok={ok} />
           </motion.div>
 
@@ -50,8 +50,8 @@ export function Hero() {
           </motion.h1>
 
           <motion.p className="hero-description" variants={fadeUp}>
-            无需注册和申请 Key，沿用熟悉的 OpenAI 请求格式。适合快速验证想法、开发原型，
-            以及为轻量应用接入可靠的 AI 能力。
+            无需注册和申请 Key，同时支持 Chat Completions 与 Responses 格式、流式响应和思考内容回传。
+            可直接沿用 OpenAI 客户端，也可省略接口地址中的 /v1。
           </motion.p>
 
           <motion.div className="hero-actions" variants={fadeUp}>
@@ -65,8 +65,8 @@ export function Hero() {
 
           <motion.div className="hero-proof" variants={fadeUp} aria-label="服务特点">
             <span><CheckCircleFilled /> 无需注册</span>
-            <span><CheckCircleFilled /> 标准协议</span>
-            <span><CheckCircleFilled /> 流式响应</span>
+            <span><CheckCircleFilled /> 双协议接口</span>
+            <span><CheckCircleFilled /> 思考模式</span>
           </motion.div>
         </div>
 
@@ -79,10 +79,10 @@ export function Hero() {
                 <i />
                 <i />
               </div>
-              <span>POST /v1/chat/completions</span>
+              <span>POST /v1/responses · /responses</span>
               <span className="window-secure">HTTPS</span>
             </div>
-            <pre className="hero-code"><code><span className="code-punctuation">{'{'}</span>{'\n'}  <span className="code-key">"model"</span>: <span className="code-string">"gpt-4o-mini"</span>,{'\n'}  <span className="code-key">"messages"</span>: <span className="code-punctuation">[{'{'}</span>{'\n'}    <span className="code-key">"role"</span>: <span className="code-string">"user"</span>,{'\n'}    <span className="code-key">"content"</span>: <span className="code-string">"你好"</span>{'\n'}  <span className="code-punctuation">{'}]'}</span>,{'\n'}  <span className="code-key">"stream"</span>: <span className="code-boolean">true</span>{'\n'}<span className="code-punctuation">{'}'}</span></code></pre>
+            <pre className="hero-code"><code><span className="code-punctuation">{'{'}</span>{'\n'}  <span className="code-key">"model"</span>: <span className="code-string">"deepseek-reasoner"</span>,{'\n'}  <span className="code-key">"input"</span>: <span className="code-string">"你好，请先思考再回答"</span>,{'\n'}  <span className="code-key">"reasoning"</span>: <span className="code-punctuation">{'{'}</span>{'\n'}    <span className="code-key">"effort"</span>: <span className="code-string">"high"</span>{'\n'}  <span className="code-punctuation">{'}'}</span>,{'\n'}  <span className="code-key">"stream"</span>: <span className="code-boolean">true</span>{'\n'}<span className="code-punctuation">{'}'}</span></code></pre>
             <div className="response-strip">
               <span className="response-status"><i /> 200 OK</span>
               <span>text/event-stream</span>
@@ -90,8 +90,8 @@ export function Hero() {
             </div>
           </div>
           <div className="floating-card floating-card-model">
-            <span>自动路由</span>
-            <strong>最佳可用模型</strong>
+            <span>模型名相近匹配</span>
+            <strong>自动映射真实模型</strong>
           </div>
           <div className="floating-card floating-card-ready">
             <CheckCircleFilled />

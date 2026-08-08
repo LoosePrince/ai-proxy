@@ -14,13 +14,13 @@ const FEATURES = [
     icon: <SafetyCertificateOutlined />,
   },
   {
-    title: '兼容 OpenAI 格式',
-    desc: '沿用常见的 /v1/chat/completions 请求结构，迁移成本低。',
+    title: '兼容双协议',
+    desc: '同时支持 Chat Completions 与 Responses，全部端点均可选择是否保留 /v1 前缀。',
     icon: <ApiOutlined />,
   },
   {
-    title: '先测再接入',
-    desc: '页面内置在线对话框，可以直接验证服务是否可用，再复制请求示例接入项目。',
+    title: '模型与思考适配',
+    desc: '相近模型名自动映射到真实配置，并兼容多轮 reasoning_content 与流式思考输出。',
     icon: <ThunderboltOutlined />,
   },
 ];
@@ -31,7 +31,7 @@ export function Features() {
       <SectionHead
         kicker="Why use it"
         title="为快速使用而设计"
-        desc="免费开放的 AI 接口服务，适合快速体验、原型开发和轻量应用接入。"
+        desc="一套地址兼容多种 OpenAI 客户端与请求格式，适合快速体验、原型开发和轻量应用接入。"
       />
 
       <div className="feature-grid">

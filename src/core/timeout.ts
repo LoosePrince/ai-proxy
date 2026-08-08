@@ -33,21 +33,26 @@ export class UpstreamTimeoutError extends Error {
   }
 }
 
-/** 以 AbortSignal 中断上游调用，超时抛 UpstreamTimeoutError */
+function abortReason(signal: AbortSignal, fallback: Error): Error {
+  return signal.reason instanceof Error ? signal.reason : fallback;
+}
+
+/** 以 AbortSignal 中断上游调用，区分服务超时与客户端主动断连。 */
 export async function withTimeout<T>(
   run: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
   message: string,
+  externalSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutError = new UpstreamTimeoutError(message);
+  const signal = externalSignal ? AbortSignal.any([controller.signal, externalSignal]) : controller.signal;
+  const timer = setTimeout(() => controller.abort(timeoutError), timeoutMs);
 
   try {
-    return await run(controller.signal);
+    return await run(signal);
   } catch (error) {
-    if (controller.signal.aborted || (error as Error)?.name === 'AbortError') {
-      throw new UpstreamTimeoutError(message);
-    }
+    if (signal.aborted) throw abortReason(signal, timeoutError);
     throw error;
   } finally {
     clearTimeout(timer);
@@ -63,17 +68,34 @@ export async function readChunkWithTimeout<T>(
   iterator: AsyncIterator<T>,
   timeoutMs: number,
   message: string,
+  externalSignal?: AbortSignal,
 ): Promise<IteratorResult<T>> {
   let timer: NodeJS.Timeout | null = null;
+  let onAbort: (() => void) | null = null;
+  const timeoutError = new UpstreamTimeoutError(message);
+
+  if (externalSignal?.aborted) throw abortReason(externalSignal, new Error('Client disconnected'));
 
   try {
-    return await Promise.race([
+    const pending: Array<Promise<IteratorResult<T>>> = [
       iterator.next(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new UpstreamTimeoutError(message)), timeoutMs);
+        timer = setTimeout(() => reject(timeoutError), timeoutMs);
       }),
-    ]);
+    ];
+
+    if (externalSignal) {
+      pending.push(
+        new Promise<never>((_, reject) => {
+          onAbort = () => reject(abortReason(externalSignal, new Error('Client disconnected')));
+          externalSignal.addEventListener('abort', onAbort, { once: true });
+        }),
+      );
+    }
+
+    return await Promise.race(pending);
   } finally {
     if (timer) clearTimeout(timer);
+    if (externalSignal && onAbort) externalSignal.removeEventListener('abort', onAbort);
   }
 }

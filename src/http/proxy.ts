@@ -16,7 +16,9 @@
 import express, { type Request, type Response } from 'express';
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
+import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
 import { buildAttemptChain, buildModelCandidates, findSpecialProvider } from '../core/routing';
+import { registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
 import { resolveTimeoutMs } from '../core/timeout';
 import {
   createTrace,
@@ -69,6 +71,16 @@ function errorCode(error: unknown): string | null {
   return (error as { code?: string })?.code ?? null;
 }
 
+class ClientDisconnectedError extends Error {
+  readonly status = 499;
+  readonly code = 'CLIENT_DISCONNECTED';
+
+  constructor() {
+    super('Client disconnected');
+    this.name = 'ClientDisconnectedError';
+  }
+}
+
 /**
  * 对单个 provider 依次尝试其候选模型。
  *
@@ -78,8 +90,11 @@ function errorCode(error: unknown): string | null {
 async function attemptProvider(args: {
   provider: ProviderRecord;
   role: AttemptRole;
-  req: Request;
+  payload: JsonRecord;
+  responseRequest?: JsonRecord;
+  protocol: ProxyProtocol;
   res: Response;
+  clientSignal: AbortSignal;
   config: ConfigSnapshot;
   gate: ResponseGate;
   canClaim?: () => boolean;
@@ -87,7 +102,20 @@ async function attemptProvider(args: {
   requestedModel: string | null;
   trace: Trace;
 }): Promise<{ outcome: AttemptResult; trace: Trace }> {
-  const { provider, role, req, res, config, gate, canClaim, stream, requestedModel } = args;
+  const {
+    provider,
+    role,
+    payload,
+    responseRequest,
+    protocol,
+    res,
+    clientSignal,
+    config,
+    gate,
+    canClaim,
+    stream,
+    requestedModel,
+  } = args;
   let trace = args.trace;
 
   const timeoutMs = resolveTimeoutMs(provider, config.settings, config.groups);
@@ -132,13 +160,16 @@ async function attemptProvider(args: {
       const result = await invokeUpstream(
         {
           client,
-          payload: req.body as Record<string, unknown>,
+          payload,
+          responseRequest,
+          protocol,
           model,
           res,
           gate,
           owner,
           canClaim,
           timeoutMs,
+          clientSignal,
           onFirstResponse: () => {
             trace = withFirstResponse(trace);
           },
@@ -194,6 +225,10 @@ async function attemptProvider(args: {
         startedAtMs,
       });
 
+      if (clientSignal.aborted) {
+        return { outcome: { ok: false, provider, role, error, responseSettled: true }, trace };
+      }
+
       console.warn(
         `[Proxy] ${provider.name} (${model}) failed: status=${errorStatus(error)} timeout=${timeoutMs}ms ${errorMessage(error)}`,
       );
@@ -203,7 +238,7 @@ async function attemptProvider(args: {
        * 只能在流内补一个 error 帧并收尾。
        */
       if (res.headersSent && gate.isOwnedBy(owner)) {
-        if (!res.writableEnded) writeStreamError(res, errorMessage(error));
+        if (!res.writableEnded) writeStreamError(res, errorMessage(error), protocol);
         return { outcome: { ok: false, provider, role, error, responseSettled: true }, trace };
       }
 
@@ -216,9 +251,21 @@ async function attemptProvider(args: {
   return { outcome: { ok: false, provider, role, error: lastError, responseSettled: false }, trace };
 }
 
-router.post('/v1/chat/completions', async (req: Request, res: Response) => {
-  const requestedModel = typeof req.body?.model === 'string' ? req.body.model : null;
-  const stream = !!req.body?.stream;
+async function handleProxyRequest(
+  req: Request,
+  res: Response,
+  protocol: ProxyProtocol,
+): Promise<void> {
+  const clientController = new AbortController();
+  res.once('close', () => {
+    if (!res.writableEnded) clientController.abort(new ClientDisconnectedError());
+  });
+
+  const originalPayload = (req.body ?? {}) as JsonRecord;
+  const requestedModel = typeof originalPayload.model === 'string' ? originalPayload.model : null;
+  const stream = originalPayload.stream === true;
+  const payload =
+    protocol === 'responses' ? responsesPayloadToChat(originalPayload) : normalizeChatPayload(originalPayload);
   const ip = getClientIp(req);
 
   let trace = createTrace({ requestedModel, stream, ip });
@@ -279,8 +326,11 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const { outcome, trace: nextTrace } = await attemptProvider({
       provider,
       role,
-      req,
+      payload,
+      responseRequest: protocol === 'responses' ? originalPayload : undefined,
+      protocol,
       res,
+      clientSignal: clientController.signal,
       config,
       gate,
       canClaim,
@@ -312,8 +362,8 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
    */
   const raceWindow = parallelProvider ? createRaceWindow(settings.parallelTimeoutMs) : null;
   const parallelAttempt =
-    parallelProvider && raceWindow && chain.length > 0
-      ? run(parallelProvider, 'parallel', raceWindow).catch(
+    parallelProvider && raceWindow
+      ? run(parallelProvider, 'parallel', chain.length > 0 ? raceWindow : undefined).catch(
           (error): AttemptResult => ({
             ok: false,
             provider: parallelProvider,
@@ -390,14 +440,16 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
   finish({ success: false, httpStatus: status, errorCode: errorCode(lastError), errorMessage: message });
 
   if (res.headersSent) {
-    if (!res.writableEnded) writeStreamError(res, message);
+    if (!res.writableEnded) writeStreamError(res, message, protocol);
     return;
   }
   res.status(status).json({ error: { message } });
-});
+}
 
-/** GET /v1/models —— 汇总所有启用 provider 声明的模型，OpenAI 兼容格式 */
-router.get('/v1/models', async (_req: Request, res: Response) => {
+registerProxyRoutes(router, handleProxyRequest);
+
+/** GET /models —— 汇总所有启用 provider 声明的模型，OpenAI 兼容格式 */
+async function listModels(_req: Request, res: Response): Promise<void> {
   try {
     const config = await getConfig();
     const models = new Set<string>();
@@ -413,6 +465,8 @@ router.get('/v1/models', async (_req: Request, res: Response) => {
   } catch (error) {
     res.status(503).json({ error: { message: errorMessage(error) } });
   }
-});
+}
+
+for (const path of ['/v1/models', '/models']) router.get(path, (req, res) => void listModels(req, res));
 
 export default router;

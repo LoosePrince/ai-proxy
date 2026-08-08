@@ -29,8 +29,9 @@ function avatarOf(contributor: string | null, type: ContributorType | null): str
 
 function displayNameOf(record: ProviderRecord): string {
   const type = asContributorType(record.contributorType);
-  if (record.contributor && type) return contributorDisplayName(record.contributor, type);
-  return record.name;
+  if (!record.contributor || !type) return record.name;
+  if (type === 'email') return record.contributor.split('@')[0] ?? record.name;
+  return record.contributor;
 }
 
 export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule): ProviderDTO {
@@ -56,17 +57,20 @@ export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule
   };
 }
 
-/** 公开贡献列表：不含 apiKey，baseUrl 只保留 origin + pathname */
+/** 公开贡献列表：不含 apiKey，邮箱身份脱敏且不提供后缀，baseUrl 只保留 origin + pathname */
 export function toContributionDTO(record: ProviderRecord): ContributionListItemDTO {
   const contributorType = asContributorType(record.contributorType) ?? 'github';
+  const contributor = record.contributor ?? record.name;
+  const publicContributor = contributorDisplayName(contributor, contributorType);
 
   return {
     id: record.id,
     name: record.name,
-    contributor: record.contributor ?? record.name,
+    contributor: publicContributor,
     contributorType,
-    displayName: displayNameOf(record),
-    avatarUrl: avatarOf(record.contributor, contributorType),
+    displayName: publicContributor,
+    // QQ 头像地址包含完整数字 ID，公开接口不能在脱敏后通过头像 URL 反向泄露。
+    avatarUrl: contributorType === 'email' ? null : avatarOf(record.contributor, contributorType),
     baseUrl: maskBaseUrl(record.baseUrl),
     modelCount: record.models.length,
     models: record.models,

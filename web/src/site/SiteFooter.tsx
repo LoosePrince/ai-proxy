@@ -14,7 +14,7 @@ export function SiteFooter() {
           </span>
           <div>
             <strong>AI Proxy</strong>
-            <span>简单、开放、即开即用的 AI API</span>
+            <span>兼容 Chat Completions 与 Responses 的开放 AI API</span>
           </div>
         </div>
         <div className="footer-endpoint">

@@ -50,9 +50,75 @@ export function applyRule<T>(items: T[], rule: RoutingRule, key: string, cursor:
   return [...items];
 }
 
+function canonicalModelName(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function modelBasename(value: string): string {
+  return value.trim().split('/').filter(Boolean).at(-1) ?? value.trim();
+}
+
+function withoutVersionSuffix(value: string): string {
+  return value.replace(/(?:latest|\d{8})$/i, '');
+}
+
+function editDistance(a: string, b: string): number {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        (current[j - 1] ?? 0) + 1,
+        (previous[j] ?? 0) + 1,
+        (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[b.length] ?? Math.max(a.length, b.length);
+}
+
 /**
- * 候选筛选：指定模型时优先取支持该模型的 provider；
- * 无人支持则回退到全部 primary provider，与旧行为一致。
+ * 模型名匹配分数。优先级依次为原名、忽略分隔符、忽略厂商前缀、前缀/后缀与轻微拼写差异。
+ * 低于阈值即视为不同模型，防止“模糊匹配”扩散成任意模型路由。
+ */
+export function modelMatchScore(requested: string, available: string): number {
+  const requestRaw = requested.trim().toLowerCase();
+  const availableRaw = available.trim().toLowerCase();
+  if (!requestRaw || !availableRaw) return 0;
+  if (requestRaw === availableRaw) return 100;
+
+  const requestCanonical = canonicalModelName(requestRaw);
+  const availableCanonical = canonicalModelName(availableRaw);
+  if (requestCanonical === availableCanonical) return 98;
+
+  const requestBase = withoutVersionSuffix(canonicalModelName(modelBasename(requestRaw)));
+  const availableBase = withoutVersionSuffix(canonicalModelName(modelBasename(availableRaw)));
+  if (requestBase === availableBase) return 96;
+
+  const shorter = requestBase.length <= availableBase.length ? requestBase : availableBase;
+  const longer = requestBase.length > availableBase.length ? requestBase : availableBase;
+  if (shorter.length >= 5 && longer.includes(shorter)) {
+    return 80 + (shorter.length / longer.length) * 10;
+  }
+
+  const maxLength = Math.max(requestBase.length, availableBase.length);
+  if (Math.min(requestBase.length, availableBase.length) < 6 || maxLength === 0) return 0;
+  const similarity = 1 - editDistance(requestBase, availableBase) / maxLength;
+  return similarity >= 0.8 ? 72 + similarity * 8 : 0;
+}
+
+function bestProviderModelScore(provider: ProviderRecord, requestedModel: string): number {
+  // 未声明模型表示 provider 接受客户端模型透传。
+  if (provider.models.length === 0) return 100;
+  return Math.max(0, ...provider.models.map((model) => modelMatchScore(requestedModel, model)));
+}
+
+/**
+ * 候选筛选：指定模型时按模型名相似度选择最接近的 primary provider；
+ * 没有达到阈值的候选时返回空链，避免把明确指定的模型改成无关模型。
  */
 export function selectCandidates(
   providers: ProviderRecord[],
@@ -61,8 +127,12 @@ export function selectCandidates(
   const primary = providers.filter((p) => p.kind === 'primary' && p.enabled);
   if (!requestedModel) return primary;
 
-  const matched = primary.filter((p) => p.models.includes(requestedModel));
-  return matched.length > 0 ? matched : primary;
+  const scored = primary.map((provider) => ({ provider, score: bestProviderModelScore(provider, requestedModel) }));
+  const bestScore = Math.max(0, ...scored.map((item) => item.score));
+  if (bestScore < 72) return [];
+
+  // 同一模型可能配置在多个 provider；保留同档最佳候选以继续应用组路由规则。
+  return scored.filter((item) => item.score >= bestScore - 1).map((item) => item.provider);
 }
 
 export function groupByPriority(
@@ -136,18 +206,24 @@ export function buildModelCandidates(
 ): string[] {
   const models = [...new Set(provider.models.map((m) => m.trim()).filter(Boolean))];
 
+  // 指定模型时，特殊 Provider 不读取自身模型列表，严格透传客户端模型。
+  if (requestedModel && provider.kind !== 'primary') return [requestedModel];
+
   // provider 未声明模型时，直接透传请求模型
   if (models.length === 0) {
     return requestedModel ? [requestedModel] : [];
   }
 
-  const ordered = applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor);
+  if (requestedModel) {
+    const scored = models.map((model) => ({ model, score: modelMatchScore(requestedModel, model) }));
+    const bestScore = Math.max(0, ...scored.map((item) => item.score));
+    if (bestScore < 72) return [];
 
-  if (requestedModel && models.includes(requestedModel)) {
-    return [requestedModel, ...ordered.filter((m) => m !== requestedModel)].slice(0, maxCount);
+    const matched = scored.filter((item) => item.score >= bestScore - 1).map((item) => item.model);
+    return applyRule(matched, rule, `models:${provider.id}:${matched.join(',')}`, cursor).slice(0, maxCount);
   }
 
-  return ordered.slice(0, maxCount);
+  return applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor).slice(0, maxCount);
 }
 
 export function findSpecialProvider(

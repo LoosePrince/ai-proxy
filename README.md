@@ -18,10 +18,11 @@ OpenAI 兼容的 AI 代理服务。多 Provider 动态路由、并行竞速、�
 Lsqlite 是远程服务，一条 SQL 等于一次 HTTPS 往返。因此代理热路径被设计为**零数据库往返**：
 
 ```
-POST /v1/chat/completions
-  ├─ 读配置 → runtime/config-cache（内存快照，写操作后显式失效）
+POST /v1/chat/completions 或 /v1/responses（也支持省略 /v1）
+  ├─ 协议适配 → Responses / Chat 统一归一化为 Chat 热路径
+  ├─ 读配置   → runtime/config-cache（内存快照，写操作后显式失效）
   ├─ IP 限流 / round-robin → runtime/counters（内存，带过期清理与上界）
-  └─ 落盘   → runtime/write-queue（入队，后台按批合并为单次 transaction）
+  └─ 落盘     → runtime/write-queue（入队，后台按批合并为单次 transaction）
 ```
 
 写队列把 `requests` 明细、`request_attempts` 明细和 4 张日聚合表的累加合并进**一个事务**，聚合列用 `on conflict do update set x = x + excluded.x` 原子累加，不存在读改写丢更新。
@@ -31,7 +32,7 @@ POST /v1/chat/completions
 ```
 src/
   db/        Lsqlite 客户端、SQL DSL、迁移、仓储（唯一的 DB 访问出口）
-  core/      纯函数：routing / timeout / trace / gate / contribution（可单测）
+  core/      纯函数：routing / protocol / timeout / trace / gate / contribution（可单测）
   runtime/   config-cache、write-queue、counters、retention
   upstream/  OpenAI 客户端 LRU、SSE 透传与 usage 旁路解析
   http/      proxy / public / admin / server
@@ -78,7 +79,8 @@ npm run dev:web   # 前端 Vite dev server
 
 启动后：
 
-- API `http://localhost:3000/v1/chat/completions`
+- Chat Completions `http://localhost:3000/v1/chat/completions` 或 `/chat/completions`
+- Responses `http://localhost:3000/v1/responses` 或 `/responses`
 - 首页 `http://localhost:3000/`
 - 后台 `http://localhost:3000/admin`
 
@@ -122,17 +124,31 @@ npm run db:migrate
 
 ## API
 
-聊天补全（OpenAI 兼容，无需 API Key）：
+聊天补全（OpenAI 兼容，无需 API Key；`/v1` 可省略）：
 
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Hello"}],"stream":true}'
+  -d '{"model":"deepseek-reasoner","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
-不传 `model` 时在所有启用的 primary Provider 中路由；传 `model` 时优先选择声明了该模型的 Provider。
+Responses API 使用同一套路由、重试、并行和兜底链路，支持流式与非流式格式：
 
-> 该端点是公开的，唯一防护是内存 IP 限流（`ipRateLimitRpm`，`0` 表示不限流）。如果部署在公网并需要鉴权，请在反向代理层添加。
+```bash
+curl -X POST http://localhost:3000/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model":"deepseek-reasoner","input":"Hello","reasoning":{"effort":"high"}}'
+```
+
+不传 `model` 时在所有启用的 primary Provider 中路由。传 `model` 时：
+
+- primary Provider 支持忽略大小写、分隔符、厂商前缀、版本后缀和轻微拼写差异的相近匹配，并调用其实际配置的模型名。
+- fallback / parallel Provider 忽略自身模型列表，严格尝试客户端指定的原始模型名。
+- 未找到相近 primary 模型时不会替换为无关模型，仍可进入 parallel / fallback 特殊 Provider。
+
+思考模式参数会继续透传；assistant 历史中的 `reasoning_content` 原样回传上游，同时兼容 `reasoning`、`thinking` 和思考内容块，避免 DeepSeek 多轮思考请求因缺失 `reasoning_content` 返回 400。Responses 输出会将思考内容转换为 reasoning item/事件。
+
+> 这些端点是公开的，唯一防护是内存 IP 限流（`ipRateLimitRpm`，`0` 表示不限流）。如果部署在公网并需要鉴权，请在反向代理层添加。
 
 其他端点：
 
@@ -149,7 +165,7 @@ curl -X POST http://localhost:3000/api/contributions \
   -d '{"contributor":"123456@qq.com","baseUrl":"https://api.example.com/v1","apiKey":"sk-xxx","models":"model-a,model-b"}'
 ```
 
-- `contributor` 必须是邮箱或 GitHub 用户 ID；QQ 邮箱会在公开列表展示对应头像
+- `contributor` 必须是邮箱或 GitHub 用户 ID；公开输出中的邮箱仅保留星号脱敏后的本地 ID，不返回邮箱后缀或可反查 QQ ID 的头像
 - 服务端逐个模型发起真实请求，要求返回固定内容才算通过，任一模型失败整体拒绝并返回模型级原因
 - `baseUrl` 会做两层 SSRF 校验（IP 字面量私网段 + DNS 解析结果）
 - 通过后创建 `source=contributed` 且 `enabled=false` 的 Provider，需管理员在后台启用

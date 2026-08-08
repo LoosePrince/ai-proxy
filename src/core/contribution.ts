@@ -86,11 +86,19 @@ export function maskBaseUrl(baseUrl: string): string {
   }
 }
 
-/** 邮箱在列表中只显示本地部分，避免完整地址被爬取 */
+/**
+ * 公开邮箱标识只保留首尾字符，中间按原长度替换为星号，并完全移除邮箱后缀。
+ * 极短 ID 也至少隐藏一个字符，避免公开 DTO 可还原完整邮箱本地部分。
+ */
 export function contributorDisplayName(
   contributor: string,
   contributorType: ContributorType,
 ): string {
-  if (contributorType === 'email') return contributor.split('@')[0] ?? contributor;
-  return contributor;
+  if (contributorType !== 'email') return contributor;
+
+  const local = contributor.split('@', 1)[0] ?? '';
+  const characters = Array.from(local);
+  if (characters.length <= 1) return '*';
+  if (characters.length === 2) return `${characters[0]}*`;
+  return `${characters[0]}${'*'.repeat(characters.length - 2)}${characters.at(-1)}`;
 }
