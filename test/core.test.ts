@@ -106,8 +106,17 @@ describe('routing/selectCandidates', () => {
     assert.deepEqual(selectCandidates(fuzzy, 'deepseek-r1').map((p) => p.id), [11]);
   });
 
-  it('没有相近模型时不尝试声明了其他模型的 primary provider', () => {
-    assert.deepEqual(selectCandidates(list, 'unknown-model'), []);
+  it('没有相近模型时退化为全部普通 provider 的未指定模型路由', () => {
+    assert.deepEqual(selectCandidates(list, 'unknown-model').map((p) => p.id), [1, 2]);
+  });
+
+  it('只有兜底匹配指定模型时也不会把兜底加入候选链', () => {
+    const fallbackOnlyMatch = [
+      provider({ id: 20, models: ['regular-model'] }),
+      provider({ id: 21, kind: 'fallback', models: ['expensive-model'] }),
+    ];
+
+    assert.deepEqual(selectCandidates(fallbackOnlyMatch, 'expensive-model').map((p) => p.id), [20]);
   });
 });
 
@@ -188,6 +197,13 @@ describe('routing/buildAttemptChain', () => {
     assert.deepEqual(buildAttemptChain(list, groups([]), null, 'average', cursor).map((p) => p.id), [3, 1, 2]);
   });
 
+  it('指定模型无匹配时按未指定模型方式构建普通尝试链', () => {
+    assert.deepEqual(
+      buildAttemptChain(list, groups([]), 'unknown-model', 'priority', createCursor()).map((p) => p.id),
+      [1, 2, 3],
+    );
+  });
+
   it('无候选时返回空链', () => {
     assert.deepEqual(buildAttemptChain([], groups([]), null, 'priority', createCursor()), []);
   });
@@ -217,12 +233,16 @@ describe('routing/buildModelCandidates', () => {
     ]);
   });
 
-  it('指定模型时 fallback 与 parallel 忽略自身模型列表并原样透传', () => {
-    const fallback = provider({ id: 5, kind: 'fallback', models: ['fallback-default'] });
+  it('指定模型无匹配时按正常规则选择 provider 自身模型', () => {
+    assert.deepEqual(buildModelCandidates(p, 'unknown-model', 'priority', createCursor(), 2), ['a', 'b']);
+  });
+
+  it('fallback 忽略指定模型并使用自身模型，parallel 仍原样透传参与竞速', () => {
+    const fallback = provider({ id: 5, kind: 'fallback', models: ['fallback-default', 'fallback-secondary'] });
     const parallel = provider({ id: 6, kind: 'parallel', models: ['parallel-default'] });
 
-    assert.deepEqual(buildModelCandidates(fallback, 'deepseek-reasoner', 'priority', createCursor(), 3), [
-      'deepseek-reasoner',
+    assert.deepEqual(buildModelCandidates(fallback, 'deepseek-reasoner', 'priority', createCursor(), 1), [
+      'fallback-default',
     ]);
     assert.deepEqual(buildModelCandidates(parallel, 'deepseek-reasoner', 'priority', createCursor(), 3), [
       'deepseek-reasoner',

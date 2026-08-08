@@ -144,7 +144,7 @@ curl -X POST http://localhost:3000/responses \
 
 - primary Provider 支持忽略大小写、分隔符、厂商前缀、版本后缀和轻微拼写差异的相近匹配，并调用其实际配置的模型名。
 - fallback / parallel Provider 忽略自身模型列表，严格尝试客户端指定的原始模型名。
-- 未找到相近 primary 模型时不会替换为无关模型，仍可进入 parallel / fallback 特殊 Provider。
+- 未找到相近 primary 模型时会视为未指定模型，仍可进入 parallel / fallback 特殊 Provider。
 
 思考模式参数会继续透传；assistant 历史中的 `reasoning_content` 原样回传上游，同时兼容 `reasoning`、`thinking` 和思考内容块，避免 DeepSeek 多轮思考请求因缺失 `reasoning_content` 返回 400。Responses 输出会将思考内容转换为 reasoning item/事件。
 

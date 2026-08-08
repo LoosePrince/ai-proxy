@@ -117,8 +117,9 @@ function bestProviderModelScore(provider: ProviderRecord, requestedModel: string
 }
 
 /**
- * 候选筛选：指定模型时按模型名相似度选择最接近的 primary provider；
- * 没有达到阈值的候选时返回空链，避免把明确指定的模型改成无关模型。
+ * 候选筛选：始终只考虑启用的 primary provider。
+ * 指定模型时优先选择最接近的普通候选；没有达到阈值时退化为未指定模型的
+ * 正常路由集合，而不是返回空链后提前触发昂贵的 fallback provider。
  */
 export function selectCandidates(
   providers: ProviderRecord[],
@@ -129,7 +130,7 @@ export function selectCandidates(
 
   const scored = primary.map((provider) => ({ provider, score: bestProviderModelScore(provider, requestedModel) }));
   const bestScore = Math.max(0, ...scored.map((item) => item.score));
-  if (bestScore < 72) return [];
+  if (bestScore < 72) return primary;
 
   // 同一模型可能配置在多个 provider；保留同档最佳候选以继续应用组路由规则。
   return scored.filter((item) => item.score >= bestScore - 1).map((item) => item.provider);
@@ -206,23 +207,30 @@ export function buildModelCandidates(
 ): string[] {
   const models = [...new Set(provider.models.map((m) => m.trim()).filter(Boolean))];
 
-  // 指定模型时，特殊 Provider 不读取自身模型列表，严格透传客户端模型。
-  if (requestedModel && provider.kind !== 'primary') return [requestedModel];
+  /*
+   * fallback 是主链全部失败后的独立末级资源，不参与客户端模型定向。
+   * 即使客户端指定了模型，也按它自身的模型列表和组规则选择，避免把高价兜底
+   * 当成某个普通模型的直达节点。parallel 仍需透传请求模型参与主链竞速。
+   */
+  if (requestedModel && provider.kind === 'parallel') return [requestedModel];
 
   // provider 未声明模型时，直接透传请求模型
   if (models.length === 0) {
     return requestedModel ? [requestedModel] : [];
   }
 
-  if (requestedModel) {
-    const scored = models.map((model) => ({ model, score: modelMatchScore(requestedModel, model) }));
-    const bestScore = Math.max(0, ...scored.map((item) => item.score));
-    if (bestScore < 72) return [];
+  const effectiveRequestedModel = provider.kind === 'fallback' ? null : requestedModel;
 
-    const matched = scored.filter((item) => item.score >= bestScore - 1).map((item) => item.model);
-    return applyRule(matched, rule, `models:${provider.id}:${matched.join(',')}`, cursor).slice(0, maxCount);
+  if (effectiveRequestedModel) {
+    const scored = models.map((model) => ({ model, score: modelMatchScore(effectiveRequestedModel, model) }));
+    const bestScore = Math.max(0, ...scored.map((item) => item.score));
+    if (bestScore >= 72) {
+      const matched = scored.filter((item) => item.score >= bestScore - 1).map((item) => item.model);
+      return applyRule(matched, rule, `models:${provider.id}:${matched.join(',')}`, cursor).slice(0, maxCount);
+    }
   }
 
+  // 未指定模型，或指定模型在当前 provider 无匹配时，走正常模型选择策略。
   return applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor).slice(0, maxCount);
 }
 

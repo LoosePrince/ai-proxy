@@ -11,14 +11,15 @@
  * 前端也就不显示登录框 —— 前端加锁只是装饰，真正的边界在服务端。
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Button, Layout, Menu, Result, Spin, Tooltip } from 'antd';
+import { Button, Drawer, Layout, Menu, Result, Spin, Tooltip } from 'antd';
 import {
   ApiOutlined,
   BarChartOutlined,
   DashboardOutlined,
   GlobalOutlined,
+  MenuOutlined,
   ProfileOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -55,8 +56,13 @@ const NAV = [
 export default function AdminLayout() {
   const location = useLocation();
   const { mode, cycleMode } = useTheme();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const auth = useAsync(() => adminApi.authCheck(), []);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const logout = useCallback(async () => {
     await adminApi.logout();
@@ -94,19 +100,34 @@ export default function AdminLayout() {
   // 侧边栏选中项由 URL 派生，不额外维护 activeTab 状态
   const segment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] ?? '';
   const activeNav = NAV.find((item) => item.key === segment) ?? NAV[0]!;
+  const navItems = NAV.map((item) => ({
+    key: item.key,
+    icon: item.icon,
+    label: <Link to={`/admin/${item.key}`}>{item.label}</Link>,
+  }));
 
   return (
     <Layout className="admin-shell">
       <Header className="admin-header">
-        <Link to="/" className="brand admin-brand">
-          <span className="admin-brand-mark">
-            <img src="/logo.webp" alt="" width={26} height={26} />
-          </span>
-          <span className="admin-brand-copy">
-            <strong>AI Proxy</strong>
-            <small>控制台</small>
-          </span>
-        </Link>
+        <div className="admin-header-leading">
+          <Button
+            className="admin-mobile-nav-button"
+            type="text"
+            icon={<MenuOutlined />}
+            aria-label="打开后台导航"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen(true)}
+          />
+          <Link to="/" className="brand admin-brand">
+            <span className="admin-brand-mark">
+              <img src="/logo.webp" alt="" width={26} height={26} />
+            </span>
+            <span className="admin-brand-copy">
+              <strong>AI Proxy</strong>
+              <small>控制台</small>
+            </span>
+          </Link>
+        </div>
 
         <div className="row">
           <Tooltip title="切换 自动 / 浅色 / 深色">
@@ -128,18 +149,26 @@ export default function AdminLayout() {
         </div>
       </Header>
 
+      <Drawer
+        rootClassName="admin-mobile-drawer"
+        title="后台导航"
+        placement="left"
+        width={280}
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[segment]}
+          items={navItems}
+          onClick={() => setMobileNavOpen(false)}
+        />
+      </Drawer>
+
       <Layout>
-        <Sider className="admin-sider" breakpoint="lg" collapsedWidth={0} width={208}>
+        <Sider className="admin-sider" width={208}>
           <div className="sider-caption">Workspace</div>
-          <Menu
-            mode="inline"
-            selectedKeys={[segment]}
-            items={NAV.map((item) => ({
-              key: item.key,
-              icon: item.icon,
-              label: <Link to={`/admin/${item.key}`}>{item.label}</Link>,
-            }))}
-          />
+          <Menu mode="inline" selectedKeys={[segment]} items={navItems} />
         </Sider>
 
         <Content className="admin-content">
