@@ -6,7 +6,7 @@
  *   2. 旧实现中途重试失败被静默丢弃（只 console.warn）-> 现在每个 attempt 都入库
  *   3. 旧实现 stats JSON 读改写并发丢更新 -> 现在聚合走 SQL 原子累加
  *
- * 一次请求的明细 + attempts + 四张聚合表全部在**单次事务**内完成：
+ * 一次请求的明细 + attempts + 五张聚合表全部在**单次事务**内完成：
  * 既保证一致性，也把远程 HTTP 往返压到 1 次。
  *
  * attempts 通过 `(select id from requests where trace_id = ?)` 子查询关联父行 ——
@@ -202,6 +202,27 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
               completion_tokens = completion_tokens + ?
             where id = 1`,
       params: [
+        bool(event.success),
+        bool(!event.success),
+        event.promptTokens,
+        event.completionTokens,
+      ],
+      mode: 'write',
+    });
+
+    // 全站日聚合：图表只读固定粒度数据，不扫描可能被保留策略清理的请求明细
+    statements.push({
+      sql: `insert into global_usage_daily (
+              day, requests, success, failed, prompt_tokens, completion_tokens
+            ) values (?, 1, ?, ?, ?, ?)
+            on conflict (day) do update set
+              requests = global_usage_daily.requests + excluded.requests,
+              success = global_usage_daily.success + excluded.success,
+              failed = global_usage_daily.failed + excluded.failed,
+              prompt_tokens = global_usage_daily.prompt_tokens + excluded.prompt_tokens,
+              completion_tokens = global_usage_daily.completion_tokens + excluded.completion_tokens`,
+      params: [
+        day,
         bool(event.success),
         bool(!event.success),
         event.promptTokens,

@@ -129,6 +129,17 @@ export interface Paged<T> {
   offset: number;
 }
 
+export interface UsageDailyDTO {
+  day: string;
+  requests: number;
+  success: number;
+  failed: number;
+  successRate: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface DashboardSummaryDTO {
   totalRequests: number;
   successRequests: number;

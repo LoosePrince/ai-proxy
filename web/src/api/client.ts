@@ -28,6 +28,7 @@ import type {
   RoutingRule,
   SettingsDTO,
   SettingsPatch,
+  UsageDailyDTO,
 } from '@shared/api';
 
 export class ApiError extends Error {
@@ -148,6 +149,9 @@ export const adminApi = {
     request<Paged<RequestSummaryDTO>>(`/admin/api/requests${toQuery(query as Record<string, unknown>)}`),
 
   requestDetail: (id: number) => request<RequestDetailDTO>(`/admin/api/requests/${id}`),
+
+  dailyUsage: (range: { from?: string; to?: string } = {}) =>
+    request<UsageDailyDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'daily' })}`),
 
   providerUsage: (range: { from?: string; to?: string } = {}) =>
     request<ProviderUsageDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'provider' })}`),

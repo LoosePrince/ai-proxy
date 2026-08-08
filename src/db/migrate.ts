@@ -8,13 +8,14 @@
 
 import { getDb, type LsqliteStatement } from './lsqlite';
 import { migration001Init } from './migrations/001_init';
+import { migration002GlobalUsageDaily } from './migrations/002_global_usage_daily';
 
 export interface Migration {
   id: string;
   statements: string[];
 }
 
-const MIGRATIONS: Migration[] = [migration001Init];
+const MIGRATIONS: Migration[] = [migration001Init, migration002GlobalUsageDaily];
 
 const CREATE_MIGRATIONS_TABLE = `
 create table if not exists _migrations (

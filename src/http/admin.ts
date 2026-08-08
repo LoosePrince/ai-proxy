@@ -28,7 +28,13 @@ import {
 } from '../db/repo/providers';
 import { getRequestDetail, queryRequests } from '../db/repo/requests';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
-import { getDashboardSummary, getIpUsage, getModelUsage, getProviderUsage } from '../db/repo/usage';
+import {
+  getDailyUsage,
+  getDashboardSummary,
+  getIpUsage,
+  getModelUsage,
+  getProviderUsage,
+} from '../db/repo/usage';
 import { getConfig, invalidateConfig, peekConfig } from '../runtime/config-cache';
 import { counterStats } from '../runtime/counters';
 import { getWriteQueueStats } from '../runtime/write-queue';
@@ -432,6 +438,10 @@ router.get('/api/usage', requireAuth, async (req: Request, res: Response) => {
     const range = parseRange(req.query as Record<string, unknown>);
     const dimension = String(req.query.dimension ?? 'provider');
 
+    if (dimension === 'daily') {
+      res.json(await getDailyUsage(range));
+      return;
+    }
     if (dimension === 'model') {
       res.json(await getModelUsage(range));
       return;
@@ -445,7 +455,7 @@ router.get('/api/usage', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    throw new BadRequest('dimension 只允许 provider / model / ip');
+    throw new BadRequest('dimension 只允许 daily / provider / model / ip');
   } catch (error) {
     fail(res, error);
   }

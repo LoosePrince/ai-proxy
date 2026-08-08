@@ -10,11 +10,21 @@
  * 表现只是统计数字不涨，无法区分是没流量还是写不进去。
  */
 
+import { useMemo } from 'react';
 import { Alert, Button, Card, Space, Spin, Table, Tag } from 'antd';
 
 import { adminApi } from '../api/client';
+import { DayRangeSelect, useDayRange } from '../components/DayRangePicker';
 import { StatCard } from '../components/StatCard';
+import { CalendarHeatmap, DonutChart, UsageTrendChart, WeeklyUsageChart } from '../components/UsageCharts';
 import { useAsync } from '../hooks/useAsync';
+import {
+  aggregateWeekly,
+  fillDailyGaps,
+  filterDailyRange,
+  providerRequestSlices,
+  summarizeDaily,
+} from '../lib/analytics';
 import { formatCount, formatDateTime, formatPercent, formatTokens } from '../lib/format';
 import type { ProviderUsageDTO } from '@shared/api';
 
@@ -58,44 +68,127 @@ function ProviderUsageTable({ rows }: { rows: ProviderUsageDTO[] }) {
 }
 
 export function Dashboard() {
-  const summary = useAsync(() => adminApi.dashboard(), []);
+  const metricsRange = useDayRange('30d');
+  const trendRange = useDayRange('30d');
+  const pieRange = useDayRange('30d');
+  const calendarRange = useDayRange('365d');
+  const weekRange = useDayRange('90d');
+  const tableRange = useDayRange('30d');
+
+  // 日序列体量固定为“一天一行”，一次拉全量后由各板块独立切片，避免重复请求。
+  const daily = useAsync(() => adminApi.dailyUsage(), []);
+  const pieUsage = useAsync(
+    () => adminApi.providerUsage(pieRange.range),
+    [pieRange.range.from, pieRange.range.to],
+  );
+  const tableUsage = useAsync(
+    () => adminApi.providerUsage(tableRange.range),
+    [tableRange.range.from, tableRange.range.to],
+  );
   const runtime = useAsync(() => adminApi.runtime(), []);
+
+  const metrics = useMemo(
+    () => summarizeDaily(filterDailyRange(daily.data ?? [], metricsRange.range)),
+    [daily.data, metricsRange.range.from, metricsRange.range.to],
+  );
+  const trendRows = useMemo(
+    () => fillDailyGaps(filterDailyRange(daily.data ?? [], trendRange.range), trendRange.range),
+    [daily.data, trendRange.range.from, trendRange.range.to],
+  );
+  const calendarRows = useMemo(
+    () => fillDailyGaps(filterDailyRange(daily.data ?? [], calendarRange.range), calendarRange.range),
+    [daily.data, calendarRange.range.from, calendarRange.range.to],
+  );
+  const weeks = useMemo(
+    () => aggregateWeekly(fillDailyGaps(filterDailyRange(daily.data ?? [], weekRange.range), weekRange.range)),
+    [daily.data, weekRange.range.from, weekRange.range.to],
+  );
+  const providerSlices = useMemo(() => providerRequestSlices(pieUsage.data ?? []), [pieUsage.data]);
+  const reloadUsage = () => {
+    daily.reload();
+    pieUsage.reload();
+    tableUsage.reload();
+  };
 
   return (
     <div className="stack">
-      {summary.status === 'error' ? (
+      {daily.status === 'error' || pieUsage.status === 'error' || tableUsage.status === 'error' ? (
         <Alert
           type="error"
           showIcon
           message="用量数据加载失败"
-          description={summary.error}
-          action={<Button onClick={summary.reload}>重试</Button>}
+          description={daily.error ?? pieUsage.error ?? tableUsage.error}
+          action={<Button onClick={reloadUsage}>重试</Button>}
         />
       ) : null}
 
+      <div className="dashboard-section-head">
+        <div>
+          <strong>核心指标</strong>
+          <span>请求、成功率与 Token 汇总</span>
+        </div>
+        <DayRangeSelect control={metricsRange.control} />
+      </div>
+
       <div className="stat-grid">
-        <StatCard label="总请求数" value={formatCount(summary.data?.totalRequests ?? 0)} hint="累计调用" />
+        <StatCard label="总请求数" value={formatCount(metrics.totalRequests)} hint="选定范围内调用" />
         <StatCard
           label="成功率"
-          value={formatPercent(summary.data?.successRate ?? 0)}
-          hint={`成功 ${formatCount(summary.data?.successRequests ?? 0)} / 失败 ${formatCount(summary.data?.failedRequests ?? 0)}`}
-          tone={(summary.data?.successRate ?? 100) >= 95 ? 'success' : 'warning'}
+          value={formatPercent(metrics.successRate)}
+          hint={`成功 ${formatCount(metrics.successRequests)} / 失败 ${formatCount(metrics.failedRequests)}`}
+          tone={metrics.successRate >= 95 ? 'success' : 'warning'}
         />
         <StatCard
           label="总 Token"
-          value={formatTokens(summary.data?.totalTokens ?? 0)}
-          hint={`Prompt ${formatTokens(summary.data?.promptTokens ?? 0)} · Completion ${formatTokens(summary.data?.completionTokens ?? 0)}`}
+          value={formatTokens(metrics.totalTokens)}
+          hint={`Prompt ${formatTokens(metrics.promptTokens)} · Completion ${formatTokens(metrics.completionTokens)}`}
         />
+      </div>
+
+      <div className="chart-grid">
+        <Card
+          className="chart-card"
+          title="请求趋势"
+          extra={<DayRangeSelect control={trendRange.control} />}
+        >
+          {daily.status === 'loading' && !daily.data ? <Spin /> : <UsageTrendChart rows={trendRows} />}
+        </Card>
+        <Card
+          className="chart-card"
+          title="Provider 请求占比"
+          extra={<DayRangeSelect control={pieRange.control} />}
+        >
+          {pieUsage.status === 'loading' && !pieUsage.data ? <Spin /> : <DonutChart slices={providerSlices} />}
+        </Card>
+        <Card
+          className="chart-card"
+          title="活跃日历"
+          extra={<DayRangeSelect control={calendarRange.control} />}
+        >
+          {daily.status === 'loading' && !daily.data ? <Spin /> : <CalendarHeatmap rows={calendarRows} />}
+        </Card>
+        <Card
+          className="chart-card"
+          title="周视图"
+          extra={<DayRangeSelect control={weekRange.control} />}
+        >
+          {daily.status === 'loading' && !daily.data ? <Spin /> : <WeeklyUsageChart weeks={weeks} />}
+        </Card>
       </div>
 
       <Card
         title="Provider 用量"
-        extra={<Button size="small" onClick={summary.reload}>刷新</Button>}
+        extra={
+          <Space>
+            <DayRangeSelect control={tableRange.control} />
+            <Button size="small" onClick={tableUsage.reload}>刷新</Button>
+          </Space>
+        }
       >
-        {summary.status === 'loading' && !summary.data ? (
+        {tableUsage.status === 'loading' && !tableUsage.data ? (
           <Spin />
         ) : (
-          <ProviderUsageTable rows={summary.data?.providers ?? []} />
+          <ProviderUsageTable rows={tableUsage.data ?? []} />
         )}
       </Card>
 

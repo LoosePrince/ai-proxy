@@ -19,6 +19,7 @@ import type {
   ProviderKind,
   ProviderUsageDTO,
   PublicStatsDTO,
+  UsageDailyDTO,
 } from '../../types/api';
 
 /** 可选的日期范围过滤，from/to 均为 YYYY-MM-DD */
@@ -131,28 +132,65 @@ export async function getProviderUsage(range: UsageRange = {}): Promise<Provider
   });
 }
 
-export async function getDashboardSummary(range: UsageRange = {}): Promise<DashboardSummaryDTO> {
-  const [globalRow, providers] = await Promise.all([
-    getDb().selectOne<Record<string, unknown>>(
-      `select requests, success, failed, prompt_tokens, completion_tokens
-         from global_usage where id = 1`,
-    ),
-    getProviderUsage(range),
-  ]);
+interface DailyUsageRow {
+  day: string;
+  requests: number;
+  success: number;
+  failed: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
 
-  const totalRequests = num(globalRow?.requests);
-  const successRequests = num(globalRow?.success);
-  const promptTokens = num(globalRow?.prompt_tokens);
-  const completionTokens = num(globalRow?.completion_tokens);
+/** 全站每日序列。按日升序返回，缺失日期由展示层补零。 */
+export async function getDailyUsage(range: UsageRange = {}): Promise<UsageDailyDTO[]> {
+  const { sql: whereSql, params } = dayRange(range);
+  const rows = await getDb().select<DailyUsageRow>(
+    `select day, requests, success, failed, prompt_tokens, completion_tokens
+       from global_usage_daily
+       ${whereSql}
+       order by day asc`,
+    params,
+  );
+
+  return rows.map((row) => {
+    const requests = num(row.requests);
+    const success = num(row.success);
+    const promptTokens = num(row.prompt_tokens);
+    const completionTokens = num(row.completion_tokens);
+    return {
+      day: row.day,
+      requests,
+      success,
+      failed: num(row.failed),
+      successRate: rate(success, requests),
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+    };
+  });
+}
+
+export async function getDashboardSummary(range: UsageRange = {}): Promise<DashboardSummaryDTO> {
+  const [daily, providers] = await Promise.all([getDailyUsage(range), getProviderUsage(range)]);
+  const totals = daily.reduce(
+    (acc, item) => ({
+      requests: acc.requests + item.requests,
+      success: acc.success + item.success,
+      failed: acc.failed + item.failed,
+      promptTokens: acc.promptTokens + item.promptTokens,
+      completionTokens: acc.completionTokens + item.completionTokens,
+    }),
+    { requests: 0, success: 0, failed: 0, promptTokens: 0, completionTokens: 0 },
+  );
 
   return {
-    totalRequests,
-    successRequests,
-    failedRequests: num(globalRow?.failed),
-    successRate: rate(successRequests, totalRequests),
-    promptTokens,
-    completionTokens,
-    totalTokens: promptTokens + completionTokens,
+    totalRequests: totals.requests,
+    successRequests: totals.success,
+    failedRequests: totals.failed,
+    successRate: rate(totals.success, totals.requests),
+    promptTokens: totals.promptTokens,
+    completionTokens: totals.completionTokens,
+    totalTokens: totals.promptTokens + totals.completionTokens,
     providers,
   };
 }

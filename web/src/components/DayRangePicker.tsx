@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import { DatePicker, Segmented, Space } from 'antd';
+import { DatePicker, Segmented, Select, Space } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 
 export interface DayRange {
@@ -18,15 +18,25 @@ export interface DayRange {
   to?: string;
 }
 
-type Preset = '7d' | '30d' | 'all' | 'custom';
+export type Preset = '7d' | '30d' | '90d' | '365d' | 'all' | 'custom';
 
-const PRESET_DAYS: Record<'7d' | '30d', number> = { '7d': 7, '30d': 30 };
+type FixedPreset = Exclude<Preset, 'all' | 'custom'>;
+
+const PRESET_DAYS: Record<FixedPreset, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365 };
+
+export const RANGE_PRESET_OPTIONS = [
+  { label: '近 7 天', value: '7d' },
+  { label: '近 30 天', value: '30d' },
+  { label: '近 90 天', value: '90d' },
+  { label: '近一年', value: '365d' },
+  { label: '全部', value: 'all' },
+] satisfies Array<{ label: string; value: Preset }>;
 
 function toDay(value: Dayjs): string {
   return value.format('YYYY-MM-DD');
 }
 
-function presetRange(preset: '7d' | '30d'): DayRange {
+function presetRange(preset: FixedPreset): DayRange {
   const days = PRESET_DAYS[preset];
   return { from: toDay(dayjs().subtract(days - 1, 'day')), to: toDay(dayjs()) };
 }
@@ -65,6 +75,19 @@ export function useDayRange(initial: Preset = 'all'): { range: DayRange; control
   return { range, control: { preset, custom, onPreset, onCustom } };
 }
 
+export function DayRangeSelect({ control }: { control: DayRangeControl }) {
+  return (
+    <Select<Preset>
+      size="small"
+      className="chart-range-select"
+      value={control.preset === 'custom' ? 'all' : control.preset}
+      options={RANGE_PRESET_OPTIONS}
+      onChange={(value) => control.onPreset(value)}
+      aria-label="选择统计范围"
+    />
+  );
+}
+
 export function DayRangePicker({ preset, custom, onPreset, onCustom }: DayRangeControl) {
   return (
     <Space wrap>
@@ -72,11 +95,7 @@ export function DayRangePicker({ preset, custom, onPreset, onCustom }: DayRangeC
         size="small"
         value={preset}
         onChange={(value) => onPreset(value as Preset)}
-        options={[
-          { label: '近 7 天', value: '7d' },
-          { label: '近 30 天', value: '30d' },
-          { label: '全部', value: 'all' },
-        ]}
+        options={RANGE_PRESET_OPTIONS}
       />
       <DatePicker.RangePicker
         size="small"

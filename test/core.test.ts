@@ -39,7 +39,9 @@ import {
   responseInputToChatMessages,
 } from '../src/core/protocol';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
-import type { SettingsDTO } from '../src/types/api';
+import { buildIngestStatements, type RequestEventInput } from '../src/db/repo/requests';
+import { aggregateWeekly, fillDailyGaps, providerRequestSlices } from '../web/src/lib/analytics';
+import type { ProviderUsageDTO, SettingsDTO, UsageDailyDTO } from '../src/types/api';
 
 /** 确定性游标，避免测试依赖随机或共享状态 */
 function createCursor(): RotationCursor {
@@ -264,6 +266,83 @@ describe('routing/findSpecialProvider', () => {
     ];
     assert.equal(findSpecialProvider(list, 'fallback')?.id, 2);
     assert.equal(findSpecialProvider(list, 'parallel'), null);
+  });
+});
+
+describe('usage daily aggregation', () => {
+  const daily = (day: string, requests: number, success = requests): UsageDailyDTO => ({
+    day,
+    requests,
+    success,
+    failed: requests - success,
+    successRate: requests > 0 ? (success / requests) * 100 : 0,
+    promptTokens: requests * 10,
+    completionTokens: requests * 5,
+    totalTokens: requests * 15,
+  });
+
+  it('每个请求都写入全站日聚合，包括没有最终 Provider 的失败请求', () => {
+    const event: RequestEventInput = {
+      traceId: 'trace-daily',
+      startedAt: '2026-08-09T12:00:00.000Z',
+      firstResponseAt: null,
+      completedAt: '2026-08-09T12:00:01.000Z',
+      ttfbMs: null,
+      totalMs: 1_000,
+      ip: null,
+      requestedModel: 'm1',
+      finalModel: null,
+      finalProviderId: null,
+      finalProviderName: null,
+      finalRole: null,
+      stream: false,
+      success: false,
+      httpStatus: 503,
+      errorCode: 'all_failed',
+      errorMessage: 'all failed',
+      promptTokens: 12,
+      completionTokens: 3,
+      fallbackTriggered: true,
+      attempts: [],
+    };
+
+    const statement = buildIngestStatements([event]).find((item) => item.sql.includes('insert into global_usage_daily'));
+    assert.ok(statement);
+    assert.deepEqual(statement.params, ['2026-08-09', 0, 1, 12, 3]);
+  });
+
+  it('连续日序列会补零，并按周一聚合为周视图', () => {
+    const filled = fillDailyGaps(
+      [daily('2026-08-03', 2), daily('2026-08-05', 3, 2), daily('2026-08-10', 4, 3)],
+      { from: '2026-08-03', to: '2026-08-10' },
+    );
+    assert.equal(filled.length, 8);
+    assert.equal(filled[1]?.requests, 0);
+    assert.deepEqual(
+      aggregateWeekly(filled).map((week) => [week.weekStart, week.requests, week.failed]),
+      [
+        ['2026-08-03', 5, 1],
+        ['2026-08-10', 4, 1],
+      ],
+    );
+  });
+
+  it('Provider 饼图保留主要项并合并长尾', () => {
+    const rows = Array.from({ length: 7 }, (_, index): ProviderUsageDTO => ({
+      providerId: index + 1,
+      name: `p${index + 1}`,
+      kind: 'primary',
+      enabled: true,
+      requests: 70 - index * 10,
+      success: 70 - index * 10,
+      failed: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    }));
+    const slices = providerRequestSlices(rows, 4);
+    assert.deepEqual(slices.map((slice) => slice.label), ['p1', 'p2', 'p3', '其他']);
+    assert.equal(slices.at(-1)?.value, 100);
   });
 });
 
