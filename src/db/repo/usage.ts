@@ -265,8 +265,8 @@ export async function getIpUsage(range: UsageRange = {}, limit = 200): Promise<I
         i.ip                as ip,
         sum(u.requests)     as requests,
         sum(u.tokens)       as tokens,
-        i.first_seen_at     as first_seen_at,
-        i.last_seen_at      as last_seen_at
+        min(u.day)          as first_seen_at,
+        max(u.day)          as last_seen_at
       from ip_usage_daily u
       join ips i on i.id = u.ip_id
       ${whereSql}

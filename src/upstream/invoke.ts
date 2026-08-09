@@ -25,11 +25,18 @@ import {
   type SseScanState,
 } from './sse';
 
-/** 一次成功调用的产出，供 trace 与聚合统计使用 */
+export interface CapturedResponse {
+  contentType: string;
+  body: string;
+}
+
+/** 一次成功调用的产出，供 trace、内容记录与缓存使用 */
 export interface InvokeResult {
   actualModel: string;
   promptTokens: number;
   completionTokens: number;
+  upstreamRequest: JsonRecord;
+  capturedResponse: CapturedResponse;
 }
 
 export type ProxyProtocol = 'chat' | 'responses';
@@ -130,30 +137,32 @@ export async function invokeNonStream(ctx: InvokeContext): Promise<InvokeResult>
     };
   };
 
-  if (ctx.protocol === 'responses') {
-    const message = body.choices?.[0]?.message;
-    ctx.res.json(
-      createResponseEnvelope({
-        request: ctx.responseRequest ?? {},
-        model: body.model || ctx.model,
-        content: message?.content ?? '',
-        reasoningContent: message?.reasoning_content ?? message?.reasoning ?? undefined,
-        toolCalls: message?.tool_calls,
-        promptTokens: body.usage?.prompt_tokens,
-        completionTokens: body.usage?.completion_tokens,
-        reasoningTokens: body.usage?.completion_tokens_details?.reasoning_tokens,
-        id: body.id,
-        createdAt: body.created,
-      }),
-    );
-  } else {
-    ctx.res.json(response);
-  }
+  const responseBody =
+    ctx.protocol === 'responses'
+      ? createResponseEnvelope({
+          request: ctx.responseRequest ?? {},
+          model: body.model || ctx.model,
+          content: body.choices?.[0]?.message?.content ?? '',
+          reasoningContent:
+            body.choices?.[0]?.message?.reasoning_content ?? body.choices?.[0]?.message?.reasoning ?? undefined,
+          toolCalls: body.choices?.[0]?.message?.tool_calls,
+          promptTokens: body.usage?.prompt_tokens,
+          completionTokens: body.usage?.completion_tokens,
+          reasoningTokens: body.usage?.completion_tokens_details?.reasoning_tokens,
+          id: body.id,
+          createdAt: body.created,
+        })
+      : response;
+
+  ctx.res.json(responseBody);
+  const responseText = JSON.stringify(responseBody);
 
   return {
     actualModel: body.model || ctx.model,
     promptTokens: body.usage?.prompt_tokens ?? 0,
     completionTokens: body.usage?.completion_tokens ?? 0,
+    upstreamRequest: { ...ctx.payload, model: ctx.model, stream: false },
+    capturedResponse: { contentType: 'application/json; charset=utf-8', body: responseText },
   };
 }
 
@@ -189,9 +198,12 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
   let completionTokens = 0;
   let reasoningTokens = 0;
   const tools = new Map<number, ResponseToolState>();
+  const capturedChunks: string[] = [];
 
   const emit = (event: JsonRecord): void => {
-    write(ctx.res, formatResponseEvent({ ...event, sequence_number: sequence++ }));
+    const chunk = formatResponseEvent({ ...event, sequence_number: sequence++ });
+    capturedChunks.push(chunk);
+    write(ctx.res, chunk);
   };
 
   const ensureOpened = (): void => {
@@ -252,10 +264,13 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
 
   const base = { ...ctx.payload, model: ctx.model, stream: true };
   let upstream: unknown;
+  let upstreamRequest: JsonRecord;
   try {
-    upstream = await createStream({ ...base, stream_options: { include_usage: true } });
+    upstreamRequest = { ...base, stream_options: { include_usage: true } };
+    upstream = await createStream(upstreamRequest);
   } catch (error) {
     if (!isUnsupportedStreamOption(error)) throw error;
+    upstreamRequest = base;
     upstream = await createStream(base);
   }
 
@@ -457,7 +472,13 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
   emit({ type: 'response.completed', response });
   if (!ctx.res.writableEnded) ctx.res.end();
 
-  return { actualModel, promptTokens, completionTokens };
+  return {
+    actualModel,
+    promptTokens,
+    completionTokens,
+    upstreamRequest,
+    capturedResponse: { contentType: 'text/event-stream; charset=utf-8', body: capturedChunks.join('') },
+  };
 }
 
 function isJsonRecord(value: unknown): value is JsonRecord {
@@ -468,6 +489,7 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
   if (ctx.protocol === 'responses') return invokeResponsesStream(ctx);
   let headersOpened = false;
   let state: SseScanState = createScanState();
+  const capturedChunks: string[] = [];
 
   const ensureOpened = (): void => {
     if (headersOpened) return;
@@ -487,25 +509,27 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
 
   if (ctx.openEarly) {
     ensureOpened();
-    write(
-      ctx.res,
-      formatSseData({
-        id: 'ai-proxy-warmup',
-        object: 'chat.completion.chunk',
-        created: Math.floor(Date.now() / 1000),
-        model: ctx.model,
-        choices: [{ index: 0, delta: {}, finish_reason: null }],
-      }),
-    );
+    const warmup = formatSseData({
+      id: 'ai-proxy-warmup',
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model: ctx.model,
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+    });
+    capturedChunks.push(warmup);
+    write(ctx.res, warmup);
   }
 
   const base = { ...ctx.payload, model: ctx.model, stream: true };
   let upstream: unknown;
+  let upstreamRequest: JsonRecord;
   try {
     // 优先索取 usage，拿不到才降级 —— 否则 token 统计会缺失
-    upstream = await createStream({ ...base, stream_options: { include_usage: true } });
+    upstreamRequest = { ...base, stream_options: { include_usage: true } };
+    upstream = await createStream(upstreamRequest);
   } catch (error) {
     if (!isUnsupportedStreamOption(error)) throw error;
+    upstreamRequest = base;
     upstream = await createStream(base);
   }
 
@@ -525,6 +549,7 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
 
       ensureOpened();
       const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
+      capturedChunks.push(text);
       write(ctx.res, text);
       state = scanText(state, text);
     }
@@ -541,12 +566,17 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
       if (done) break;
 
       ensureOpened();
-      state = scanText(state, formatSseData(chunk));
-      write(ctx.res, formatSseData(chunk));
+      const text = formatSseData(chunk);
+      capturedChunks.push(text);
+      state = scanText(state, text);
+      write(ctx.res, text);
     }
 
     // SDK 迭代器路径不带 [DONE]，需要补上
-    if (headersOpened) write(ctx.res, SSE_DONE);
+    if (headersOpened) {
+      capturedChunks.push(SSE_DONE);
+      write(ctx.res, SSE_DONE);
+    }
   }
 
   // 上游一个 chunk 都没给：视为失败，让调用方继续尝试下一个 provider
@@ -560,6 +590,8 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
     actualModel: state.actualModel || ctx.model,
     promptTokens: state.promptTokens,
     completionTokens: state.completionTokens,
+    upstreamRequest,
+    capturedResponse: { contentType: 'text/event-stream; charset=utf-8', body: capturedChunks.join('') },
   };
 }
 

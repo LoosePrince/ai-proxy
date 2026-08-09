@@ -269,6 +269,29 @@ function providerUsageStatement(
   };
 }
 
+function globalUsageDailyStatement(day: string, usage: LegacyUsage): LsqliteStatement {
+  return {
+    sql: `insert into global_usage_daily (
+            day, requests, success, failed, prompt_tokens, completion_tokens
+          ) values (?, ?, ?, ?, ?, ?)
+          on conflict(day) do update set
+            requests = excluded.requests,
+            success = excluded.success,
+            failed = excluded.failed,
+            prompt_tokens = excluded.prompt_tokens,
+            completion_tokens = excluded.completion_tokens`,
+    params: [
+      day,
+      toNumber(usage.totalRequests),
+      toNumber(usage.successRequests),
+      toNumber(usage.failedRequests),
+      toNumber(usage.totalPromptTokens),
+      toNumber(usage.totalCompletionTokens),
+    ],
+    mode: 'write',
+  };
+}
+
 /**
  * 模型统计展开。
  *
@@ -578,6 +601,7 @@ function buildPlan(rows: LegacyRow[]): Plan {
       ],
       mode: 'write',
     });
+    statements.push(globalUsageDailyStatement(legacyDay, globalUsage));
     summary.push(
       `global_usage requests=${toNumber(globalUsage.totalRequests)} success=${toNumber(globalUsage.successRequests)} tokens=${toNumber(globalUsage.totalPromptTokens) + toNumber(globalUsage.totalCompletionTokens)}`,
     );

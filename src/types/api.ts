@@ -65,6 +65,14 @@ export interface SettingsDTO {
   maxModelRetryCount: number;
   /** 0 表示永不清理明细 */
   logRetentionDays: number;
+  /** 保存客户端请求、实际上游请求与响应正文到请求日志 */
+  requestContentLoggingEnabled: boolean;
+  /** 开放仅包含脱敏快照的实时 SSE 端点 */
+  publicRequestContentStreamEnabled: boolean;
+  /** 允许相同协议与传输形态的请求复用持久化响应 */
+  requestCacheEnabled: boolean;
+  /** 只命中此时间窗口内写入的缓存；缓存行本身不自动删除 */
+  requestCacheReuseHours: number;
 }
 
 export type SettingsPatch = Partial<SettingsDTO>;
@@ -93,6 +101,7 @@ export interface RequestSummaryDTO {
   finalProviderName: string | null;
   finalRole: AttemptRole | null;
   stream: boolean;
+  cacheHit: boolean;
   success: boolean;
   httpStatus: number | null;
   errorMessage: string | null;
@@ -117,9 +126,26 @@ export interface RequestAttemptDTO {
   durationMs: number | null;
 }
 
+export interface RequestContentDTO {
+  clientRequest: unknown;
+  upstreamRequest: unknown;
+  aiResponse: unknown;
+}
+
 export interface RequestDetailDTO extends RequestSummaryDTO {
   errorCode: string | null;
   attempts: RequestAttemptDTO[];
+  content: RequestContentDTO | null;
+}
+
+export interface PublicRequestContentEventDTO {
+  id: string;
+  occurredAt: string;
+  protocol: 'chat' | 'responses';
+  stream: boolean;
+  model: string | null;
+  request: unknown;
+  response: unknown;
 }
 
 export interface Paged<T> {

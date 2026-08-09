@@ -5,8 +5,8 @@
  * 一条虚拟 provider 行的 stats.ips JSON 里，IP 数量增长后这个 JSON
  * 会无限膨胀，且每次请求都要整块读改写。现在是按 (ip_id, day) 原子累加的行。
  *
- * 「首次出现 / 最近出现」来自 ips 表本身，因此即使明细被保留策略清掉，
- * 一个 IP 的活跃区间仍然可查。
+ * 「范围内首次活跃 / 最近活跃」来自日聚合表，因此会随日期筛选同步变化，
+ * 不会把该 IP 的全生命周期时间误显示成当前筛选区间的结果。
  */
 
 import { Alert, Button, Card, Input, Space, Table } from 'antd';
@@ -89,12 +89,12 @@ export function IpStats() {
               render: formatTokens,
             },
             {
-              title: '首次出现',
+              title: '范围内首次活跃',
               dataIndex: 'firstSeenAt',
               render: formatDateTime,
             },
             {
-              title: '最近出现',
+              title: '范围内最近活跃',
               dataIndex: 'lastSeenAt',
               render: formatDateTime,
             },

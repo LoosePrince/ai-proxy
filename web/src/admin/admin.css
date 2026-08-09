@@ -920,6 +920,29 @@
   overflow-wrap: anywhere;
 }
 
+.content-log-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.content-log-stack section {
+  min-width: 0;
+}
+
+.content-log-body {
+  max-height: 360px;
+  margin: 7px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: 11px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Ant Drawer 挂载在根节点，不能依赖 .admin-content 作用域。 */
 .admin-mobile-drawer .ant-drawer-body {
   padding: 12px 8px;

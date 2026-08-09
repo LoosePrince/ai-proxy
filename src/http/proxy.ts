@@ -17,6 +17,7 @@ import express, { type Request, type Response } from 'express';
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
 import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
+import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import { buildAttemptChain, buildModelCandidates, findSpecialProvider } from '../core/routing';
 import { registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
 import { resolveTimeoutMs } from '../core/timeout';
@@ -30,8 +31,11 @@ import {
   type TraceOutcome,
 } from '../core/trace';
 import type { ProviderRecord } from '../db/repo/providers';
+import { findReusableResponse, saveCachedResponse } from '../db/repo/response-cache';
+import type { RequestContentInput } from '../db/repo/requests';
 import { getConfig, type ConfigSnapshot } from '../runtime/config-cache';
 import { checkRateLimit, rotationCursor } from '../runtime/counters';
+import { publishPublicContent } from '../runtime/public-content-stream';
 import { enqueueRequestEvent } from '../runtime/write-queue';
 import { getUpstreamClient } from '../upstream/client';
 import { invokeUpstream, writeStreamError, type InvokeResult } from '../upstream/invoke';
@@ -269,10 +273,33 @@ async function handleProxyRequest(
   const ip = getClientIp(req);
 
   let trace = createTrace({ requestedModel, stream, ip });
+  let contentLoggingEnabled = false;
+  let publicContentStreamEnabled = false;
 
-  /** 唯一的落盘出口：把 trace 物化后入队，由后台批量写 */
-  const finish = (outcome: TraceOutcome) => {
-    enqueueRequestEvent(toRequestEvent(trace, outcome));
+  /** 唯一的落盘出口；正文持久化与公开脱敏发布是互相独立的消费者。 */
+  const finish = (outcome: TraceOutcome, content?: RequestContentInput) => {
+    const snapshot: RequestContentInput = content ?? {
+      clientRequest: originalPayload,
+      upstreamRequest: null,
+      aiResponse: outcome.errorMessage ? { error: outcome.errorMessage, code: outcome.errorCode ?? null } : null,
+    };
+    const event = toRequestEvent(trace, outcome);
+    if (contentLoggingEnabled) event.content = snapshot;
+    enqueueRequestEvent(event);
+
+    if (publicContentStreamEnabled) {
+      publishPublicContent(
+        createPublicContentEvent({
+          id: trace.traceId,
+          occurredAt: event.completedAt,
+          protocol,
+          stream,
+          model: outcome.finalModel ?? requestedModel,
+          request: snapshot.clientRequest,
+          response: snapshot.aiResponse,
+        }),
+      );
+    }
   };
 
   let config: ConfigSnapshot;
@@ -285,6 +312,8 @@ async function handleProxyRequest(
   }
 
   const { settings } = config;
+  contentLoggingEnabled = settings.requestContentLoggingEnabled;
+  publicContentStreamEnabled = settings.publicRequestContentStreamEnabled;
 
   // ---- 限流（内存滑动窗口，阈值来自配置快照）----
   const rate = checkRateLimit(ip, settings.ipRateLimitRpm);
@@ -298,6 +327,46 @@ async function handleProxyRequest(
     finish({ success: false, httpStatus: 429, errorCode: 'rate_limit_exceeded', errorMessage: message });
     res.status(429).json({ error: { message, type: 'rate_limit_exceeded' } });
     return;
+  }
+
+  const cacheKey = settings.requestCacheEnabled ? createRequestCacheKey(protocol, originalPayload) : null;
+  if (cacheKey) {
+    try {
+      const cached = await findReusableResponse(cacheKey, settings.requestCacheReuseHours);
+      if (cached) {
+        trace = withFirstResponse(trace);
+        res.status(200);
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('X-AI-Proxy-Cache', 'HIT');
+        if (cached.stream) {
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('X-Accel-Buffering', 'no');
+        }
+        res.end(cached.responseBody);
+
+        finish(
+          {
+            success: true,
+            httpStatus: 200,
+            finalProviderId: cached.finalProviderId,
+            finalProviderName: cached.finalProviderName,
+            finalRole: cached.finalRole,
+            finalModel: cached.actualModel,
+            promptTokens: cached.promptTokens,
+            completionTokens: cached.completionTokens,
+            cacheHit: true,
+          },
+          {
+            clientRequest: originalPayload,
+            upstreamRequest: { cacheHit: true, cacheCreatedAt: cached.createdAt },
+            aiResponse: parseCapturedBody(cached.responseBody, cached.contentType),
+          },
+        );
+        return;
+      }
+    } catch (error) {
+      console.warn(`[Cache] lookup failed, continuing without cache: ${errorMessage(error)}`);
+    }
   }
 
   // ---- 构建尝试链 ----
@@ -343,17 +412,51 @@ async function handleProxyRequest(
     return outcome;
   };
 
-  const succeed = (outcome: AttemptResult) => {
-    finish({
-      success: true,
-      httpStatus: 200,
-      finalProviderId: outcome.provider.id,
-      finalProviderName: outcome.provider.name,
-      finalRole: outcome.role,
-      finalModel: outcome.result?.actualModel ?? null,
-      promptTokens: outcome.result?.promptTokens ?? 0,
-      completionTokens: outcome.result?.completionTokens ?? 0,
-    });
+  const succeed = async (outcome: AttemptResult): Promise<void> => {
+    const result = outcome.result;
+    const content = result
+      ? {
+          clientRequest: originalPayload,
+          upstreamRequest: result.upstreamRequest,
+          aiResponse: parseCapturedBody(result.capturedResponse.body, result.capturedResponse.contentType),
+        }
+      : undefined;
+
+    finish(
+      {
+        success: true,
+        httpStatus: 200,
+        finalProviderId: outcome.provider.id,
+        finalProviderName: outcome.provider.name,
+        finalRole: outcome.role,
+        finalModel: result?.actualModel ?? null,
+        promptTokens: result?.promptTokens ?? 0,
+        completionTokens: result?.completionTokens ?? 0,
+      },
+      content,
+    );
+
+    if (cacheKey && result) {
+      try {
+        await saveCachedResponse({
+          cacheKey,
+          protocol,
+          stream,
+          requestedModel,
+          contentType: result.capturedResponse.contentType,
+          responseBody: result.capturedResponse.body,
+          actualModel: result.actualModel,
+          finalProviderId: outcome.provider.id,
+          finalProviderName: outcome.provider.name,
+          finalRole: outcome.role,
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.warn(`[Cache] response was served but cache write failed: ${errorMessage(error)}`);
+      }
+    }
   };
 
   /*
@@ -380,7 +483,7 @@ async function handleProxyRequest(
 
     const outcome = await run(provider, 'primary');
     if (outcome.ok) {
-      succeed(outcome);
+      await succeed(outcome);
       return;
     }
     if (outcome.responseSettled) {
@@ -401,7 +504,7 @@ async function handleProxyRequest(
   if (parallelAttempt) {
     const outcome = await parallelAttempt;
     if (outcome.ok) {
-      succeed(outcome);
+      await succeed(outcome);
       return;
     }
     if (res.headersSent || res.writableEnded) {
@@ -420,7 +523,7 @@ async function handleProxyRequest(
     trace = withFallbackTriggered(trace);
     const outcome = await run(fallbackProvider, 'fallback');
     if (outcome.ok) {
-      succeed(outcome);
+      await succeed(outcome);
       return;
     }
   }

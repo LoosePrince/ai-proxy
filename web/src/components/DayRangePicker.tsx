@@ -32,6 +32,11 @@ export const RANGE_PRESET_OPTIONS = [
   { label: '全部', value: 'all' },
 ] satisfies Array<{ label: string; value: Preset }>;
 
+const SELECT_RANGE_OPTIONS = [
+  ...RANGE_PRESET_OPTIONS,
+  { label: '自定义', value: 'custom' as const },
+];
+
 function toDay(value: Dayjs): string {
   return value.format('YYYY-MM-DD');
 }
@@ -77,14 +82,26 @@ export function useDayRange(initial: Preset = 'all'): { range: DayRange; control
 
 export function DayRangeSelect({ control }: { control: DayRangeControl }) {
   return (
-    <Select<Preset>
-      size="small"
-      className="chart-range-select"
-      value={control.preset === 'custom' ? 'all' : control.preset}
-      options={RANGE_PRESET_OPTIONS}
-      onChange={(value) => control.onPreset(value)}
-      aria-label="选择统计范围"
-    />
+    <Space wrap size={6}>
+      <Select<Preset>
+        size="small"
+        className="chart-range-select"
+        value={control.preset}
+        options={SELECT_RANGE_OPTIONS}
+        onChange={control.onPreset}
+        aria-label="选择统计范围"
+      />
+      {control.preset === 'custom' ? (
+        <DatePicker.RangePicker
+          size="small"
+          value={control.custom}
+          allowClear
+          onChange={(value) =>
+            control.onCustom(value && value[0] && value[1] ? [value[0], value[1]] : null)
+          }
+        />
+      ) : null}
+    </Space>
   );
 }
 

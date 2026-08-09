@@ -49,6 +49,7 @@ export interface TraceOutcome {
   finalModel?: string | null;
   promptTokens?: number;
   completionTokens?: number;
+  cacheHit?: boolean;
 }
 
 let traceCounter = 0;
@@ -134,6 +135,7 @@ export function toRequestEvent(
     finalProviderName: outcome.finalProviderName ?? null,
     finalRole: outcome.finalRole ?? null,
     stream: trace.stream,
+    cacheHit: outcome.cacheHit ?? false,
     success: outcome.success,
     httpStatus: outcome.httpStatus,
     errorCode: outcome.errorCode ?? null,

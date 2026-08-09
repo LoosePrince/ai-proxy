@@ -38,6 +38,10 @@ import {
   normalizeChatPayload,
   responseInputToChatMessages,
 } from '../src/core/protocol';
+import {
+  createPublicContentEvent,
+  createRequestCacheKey,
+} from '../src/core/request-content';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
 import { buildIngestStatements, type RequestEventInput } from '../src/db/repo/requests';
 import { aggregateWeekly, fillDailyGaps, providerRequestSlices } from '../web/src/lib/analytics';
@@ -356,6 +360,10 @@ describe('timeout/resolveTimeoutMs', () => {
     maxPrimaryAttempts: 3,
     maxModelRetryCount: 3,
     logRetentionDays: 0,
+    requestContentLoggingEnabled: false,
+    publicRequestContentStreamEnabled: false,
+    requestCacheEnabled: false,
+    requestCacheReuseHours: 24,
   };
 
   it('fallback 与 parallel 使用各自的独立超时', () => {
@@ -569,6 +577,58 @@ describe('protocol/responses', () => {
         { role: 'assistant', content: '答案', reasoning_content: '思考' },
       ],
     );
+  });
+});
+
+describe('request content and cache', () => {
+  it('对象键顺序不影响缓存键，但协议和流式形态会隔离', () => {
+    const left = createRequestCacheKey('chat', {
+      model: 'm1',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const reordered = createRequestCacheKey('chat', {
+      messages: [{ content: 'hello', role: 'user' }],
+      stream: false,
+      model: 'm1',
+    });
+    const streamed = createRequestCacheKey('chat', {
+      model: 'm1',
+      stream: true,
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const responses = createRequestCacheKey('responses', {
+      model: 'm1',
+      stream: false,
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    assert.equal(left, reordered);
+    assert.notEqual(left, streamed);
+    assert.notEqual(left, responses);
+  });
+
+  it('公开事件隐藏敏感字段与系统提示，并保留脱敏后的普通内容', () => {
+    const event = createPublicContentEvent({
+      id: 'trace-1',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      protocol: 'chat',
+      stream: false,
+      model: 'm1',
+      request: {
+        apiKey: 'sk-very-secret-key',
+        messages: [
+          { role: 'system', content: '内部提示词' },
+          { role: 'user', content: '联系 test@example.com，Bearer abc.def' },
+        ],
+      },
+      response: { text: 'ok' },
+    });
+    const serialized = JSON.stringify(event);
+
+    assert.doesNotMatch(serialized, /very-secret|内部提示词|test@example\.com|abc\.def/);
+    assert.match(serialized, /系统内容已隐藏|邮箱已脱敏/);
+    assert.match(serialized, /"text":"ok"/);
   });
 });
 

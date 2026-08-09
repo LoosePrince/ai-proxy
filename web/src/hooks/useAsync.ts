@@ -30,6 +30,7 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []): As
   const [error, setError] = useState<string | null>(null);
 
   const alive = useRef(true);
+  const requestVersion = useRef(0);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -42,16 +43,17 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: unknown[] = []): As
   fetcherRef.current = fetcher;
 
   const run = useCallback(async () => {
+    const version = ++requestVersion.current;
     setStatus('loading');
     setError(null);
 
     try {
       const result = await fetcherRef.current();
-      if (!alive.current) return;
+      if (!alive.current || version !== requestVersion.current) return;
       setData(result);
       setStatus('success');
     } catch (caught) {
-      if (!alive.current) return;
+      if (!alive.current || version !== requestVersion.current) return;
       setError((caught as Error)?.message || '请求失败');
       setStatus('error');
     }

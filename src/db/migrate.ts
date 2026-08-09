@@ -9,13 +9,22 @@
 import { getDb, type LsqliteStatement } from './lsqlite';
 import { migration001Init } from './migrations/001_init';
 import { migration002GlobalUsageDaily } from './migrations/002_global_usage_daily';
+import { migration003RequestContentCache } from './migrations/003_request_content_cache';
+import { migration004ResponseCacheWireFormat } from './migrations/004_response_cache_wire_format';
+import { migration005BackfillLegacyGlobalUsageDaily } from './migrations/005_backfill_legacy_global_usage_daily';
 
 export interface Migration {
   id: string;
   statements: string[];
 }
 
-const MIGRATIONS: Migration[] = [migration001Init, migration002GlobalUsageDaily];
+const MIGRATIONS: Migration[] = [
+  migration001Init,
+  migration002GlobalUsageDaily,
+  migration003RequestContentCache,
+  migration004ResponseCacheWireFormat,
+  migration005BackfillLegacyGlobalUsageDaily,
+];
 
 const CREATE_MIGRATIONS_TABLE = `
 create table if not exists _migrations (

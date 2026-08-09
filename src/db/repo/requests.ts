@@ -40,6 +40,12 @@ export interface AttemptEventInput {
   durationMs: number | null;
 }
 
+export interface RequestContentInput {
+  clientRequest: unknown;
+  upstreamRequest: unknown;
+  aiResponse: unknown;
+}
+
 export interface RequestEventInput {
   traceId: string;
   startedAt: string;
@@ -54,6 +60,7 @@ export interface RequestEventInput {
   finalProviderName: string | null;
   finalRole: AttemptRole | null;
   stream: boolean;
+  cacheHit: boolean;
   success: boolean;
   httpStatus: number | null;
   errorCode: string | null;
@@ -62,6 +69,7 @@ export interface RequestEventInput {
   completionTokens: number;
   fallbackTriggered: boolean;
   attempts: AttemptEventInput[];
+  content?: RequestContentInput | null;
 }
 
 const UNKNOWN_MODEL = '(unspecified)';
@@ -128,13 +136,14 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
       sql: `insert into requests (
               trace_id, started_at, first_response_at, completed_at, ttfb_ms, total_ms,
               ip_id, requested_model, final_model, final_provider_id, final_provider_name,
-              final_role, stream, success, http_status, error_code, error_message,
-              prompt_tokens, completion_tokens, fallback_triggered
+              final_role, stream, cache_hit, success, http_status, error_code, error_message,
+              prompt_tokens, completion_tokens, fallback_triggered,
+              client_request_body, upstream_request_body, ai_response_body
             ) values (
               ?, ?, ?, ?, ?, ?,
               (select id from ips where ip = ?), ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?,
-              ?, ?, ?
+              ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?
             )
             on conflict (trace_id) do nothing`,
       params: [
@@ -151,6 +160,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         event.finalProviderName,
         event.finalRole,
         bool(event.stream),
+        bool(event.cacheHit),
         bool(event.success),
         event.httpStatus,
         event.errorCode,
@@ -158,6 +168,9 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         event.promptTokens,
         event.completionTokens,
         bool(event.fallbackTriggered),
+        event.content ? JSON.stringify(event.content.clientRequest) : null,
+        event.content ? JSON.stringify(event.content.upstreamRequest) : null,
+        event.content ? JSON.stringify(event.content.aiResponse) : null,
       ],
       mode: 'write',
     });
@@ -310,6 +323,7 @@ interface RequestRow {
   final_provider_name: string | null;
   final_role: string | null;
   stream: number;
+  cache_hit: number;
   success: number;
   http_status: number | null;
   error_code: string | null;
@@ -318,12 +332,15 @@ interface RequestRow {
   completion_tokens: number;
   fallback_triggered: number;
   attempt_count: number;
+  client_request_body?: string | null;
+  upstream_request_body?: string | null;
+  ai_response_body?: string | null;
 }
 
 const REQUEST_SELECT = `
   r.id, r.trace_id, r.started_at, r.completed_at, r.ttfb_ms, r.total_ms,
   i.ip as ip, r.requested_model, r.final_model, r.final_provider_name, r.final_role,
-  r.stream, r.success, r.http_status, r.error_code, r.error_message,
+  r.stream, r.cache_hit, r.success, r.http_status, r.error_code, r.error_message,
   r.prompt_tokens, r.completion_tokens, r.fallback_triggered,
   (select count(*) from request_attempts a where a.request_id = r.id) as attempt_count`;
 
@@ -341,6 +358,7 @@ function toSummary(row: RequestRow): RequestSummaryDTO {
     finalProviderName: row.final_provider_name,
     finalRole: (row.final_role as AttemptRole | null) ?? null,
     stream: row.stream === 1,
+    cacheHit: row.cache_hit === 1,
     success: row.success === 1,
     httpStatus: row.http_status,
     errorMessage: row.error_message,
@@ -449,11 +467,21 @@ function toAttempt(row: AttemptRow): RequestAttemptDTO {
   };
 }
 
+function parseStoredJson(value: string | null | undefined): unknown {
+  if (value === null || value === undefined) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
 export async function getRequestDetail(id: number): Promise<RequestDetailDTO | null> {
   const db = getDb();
 
   const row = await db.selectOne<RequestRow>(
-    `select ${REQUEST_SELECT}
+    `select ${REQUEST_SELECT},
+            r.client_request_body, r.upstream_request_body, r.ai_response_body
      from requests r
      left join ips i on i.id = r.ip_id
      where r.id = ?`,
@@ -470,10 +498,25 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
     [id],
   );
 
+  const hasContent =
+    row.client_request_body !== null &&
+    row.client_request_body !== undefined &&
+    row.upstream_request_body !== null &&
+    row.upstream_request_body !== undefined &&
+    row.ai_response_body !== null &&
+    row.ai_response_body !== undefined;
+
   return {
     ...toSummary(row),
     errorCode: row.error_code,
     attempts: attempts.map(toAttempt),
+    content: hasContent
+      ? {
+          clientRequest: parseStoredJson(row.client_request_body),
+          upstreamRequest: parseStoredJson(row.upstream_request_body),
+          aiResponse: parseStoredJson(row.ai_response_body),
+        }
+      : null,
   };
 }
 

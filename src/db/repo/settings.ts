@@ -22,6 +22,10 @@ const HARD_DEFAULTS: SettingsDTO = {
   maxPrimaryAttempts: 3,
   maxModelRetryCount: 3,
   logRetentionDays: 0,
+  requestContentLoggingEnabled: false,
+  publicRequestContentStreamEnabled: false,
+  requestCacheEnabled: false,
+  requestCacheReuseHours: 24,
 };
 
 export function normalizeRoutingRule(value: unknown): RoutingRule {
@@ -42,6 +46,11 @@ function normalizeNonNegativeInt(value: unknown, fallback: number): number {
   return num <= 0 ? 0 : Math.round(num);
 }
 
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  if (value === undefined || value === null || value === '') return fallback;
+  return value === true || value === 'true' || value === '1' || value === 1;
+}
+
 /** 原始 key-value 行 -> 强类型 DTO，逐项做范围校验 */
 function toSettings(raw: Record<string, string>): SettingsDTO {
   const defaultTimeout = normalizePositiveInt(
@@ -59,6 +68,19 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
     maxPrimaryAttempts: normalizePositiveInt(raw.maxPrimaryAttempts, HARD_DEFAULTS.maxPrimaryAttempts),
     maxModelRetryCount: normalizePositiveInt(raw.maxModelRetryCount, HARD_DEFAULTS.maxModelRetryCount),
     logRetentionDays: normalizeNonNegativeInt(raw.logRetentionDays, HARD_DEFAULTS.logRetentionDays),
+    requestContentLoggingEnabled: normalizeBoolean(
+      raw.requestContentLoggingEnabled,
+      HARD_DEFAULTS.requestContentLoggingEnabled,
+    ),
+    publicRequestContentStreamEnabled: normalizeBoolean(
+      raw.publicRequestContentStreamEnabled,
+      HARD_DEFAULTS.publicRequestContentStreamEnabled,
+    ),
+    requestCacheEnabled: normalizeBoolean(raw.requestCacheEnabled, HARD_DEFAULTS.requestCacheEnabled),
+    requestCacheReuseHours: normalizePositiveInt(
+      raw.requestCacheReuseHours,
+      HARD_DEFAULTS.requestCacheReuseHours,
+    ),
   };
 }
 
@@ -116,7 +138,7 @@ export async function seedSettingsFromEnv(): Promise<void> {
   const env = process.env;
   const now = new Date().toISOString();
 
-  const seeds: Record<string, string | number> = {
+  const seeds: Record<string, string | number | boolean> = {
     globalRule: HARD_DEFAULTS.globalRule,
     defaultResponseTimeoutMs: normalizePositiveInt(
       env.DEFAULT_RESPONSE_TIMEOUT_MS,
@@ -131,6 +153,10 @@ export async function seedSettingsFromEnv(): Promise<void> {
     maxPrimaryAttempts: HARD_DEFAULTS.maxPrimaryAttempts,
     maxModelRetryCount: HARD_DEFAULTS.maxModelRetryCount,
     logRetentionDays: normalizeNonNegativeInt(env.LOG_RETENTION_DAYS, HARD_DEFAULTS.logRetentionDays),
+    requestContentLoggingEnabled: HARD_DEFAULTS.requestContentLoggingEnabled,
+    publicRequestContentStreamEnabled: HARD_DEFAULTS.publicRequestContentStreamEnabled,
+    requestCacheEnabled: HARD_DEFAULTS.requestCacheEnabled,
+    requestCacheReuseHours: HARD_DEFAULTS.requestCacheReuseHours,
   };
 
   const statements: LsqliteStatement[] = Object.entries(seeds).map(([key, value]) =>

@@ -10,11 +10,12 @@
  * 也让 IP 统计页能带参数跳进来。
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, Card, Drawer, Input, Select, Space, Table, Tag, Timeline, Tooltip } from 'antd';
 
 import { adminApi } from '../api/client';
+import { DayRangePicker, useDayRange } from '../components/DayRangePicker';
 import { useAsync } from '../hooks/useAsync';
 import { formatDateTime, formatMs, formatTokens } from '../lib/format';
 import type { AttemptStatus, RequestListQuery, RequestSummaryDTO } from '@shared/api';
@@ -40,12 +41,23 @@ const ROLE_LABEL: Record<string, string> = {
   fallback: '保底',
 };
 
+function formatContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2);
+}
+
 export function RequestLogs() {
   const [params, setParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const logRange = useDayRange('all');
+  const providers = useAsync(() => adminApi.providers(), []);
 
-  // URL 是筛选条件的唯一来源，组件不另存一份 state，避免两者不同步
+  useEffect(() => {
+    setPage(1);
+  }, [logRange.range.from, logRange.range.to]);
+
+  // URL 保存可分享的离散筛选；日期范围由统一范围控件管理。
   const query = useMemo<RequestListQuery>(() => {
     const success = params.get('success');
     const result: RequestListQuery = {
@@ -58,12 +70,25 @@ export function RequestLogs() {
     if (model) result.requestedModel = model;
     const ip = params.get('ip');
     if (ip) result.ip = ip;
+    const providerId = Number(params.get('providerId'));
+    if (Number.isFinite(providerId) && providerId > 0) result.providerId = providerId;
+    if (logRange.range.from) result.from = `${logRange.range.from}T00:00:00.000Z`;
+    if (logRange.range.to) result.to = `${logRange.range.to}T23:59:59.999Z`;
     return result;
-  }, [params, page]);
+  }, [params, page, logRange.range.from, logRange.range.to]);
 
   const list = useAsync(
     () => adminApi.requests(query),
-    [query.limit, query.offset, query.success, query.requestedModel, query.ip],
+    [
+      query.limit,
+      query.offset,
+      query.success,
+      query.requestedModel,
+      query.ip,
+      query.providerId,
+      query.from,
+      query.to,
+    ],
   );
 
   const detail = useAsync(
@@ -99,6 +124,21 @@ export function RequestLogs() {
         title="请求日志"
         extra={
           <Space wrap>
+            <DayRangePicker {...logRange.control} />
+            <Select
+              size="small"
+              className="control-w-160"
+              value={params.get('providerId') ?? 'all'}
+              loading={providers.status === 'loading'}
+              onChange={(value) => patchFilter('providerId', value === 'all' ? null : value)}
+              options={[
+                { label: '全部 Provider', value: 'all' },
+                ...(providers.data ?? []).map((provider) => ({
+                  label: provider.displayName || provider.name,
+                  value: String(provider.id),
+                })),
+              ]}
+            />
             <Select
               size="small"
               className="control-w-110"
@@ -160,6 +200,7 @@ export function RequestLogs() {
                 <Space size={4}>
                   <Tag color={success ? 'green' : 'red'}>{success ? '成功' : '失败'}</Tag>
                   {row.httpStatus ? <span className="faint">{row.httpStatus}</span> : null}
+                  {row.cacheHit ? <Tag color="blue">复用缓存</Tag> : null}
                 </Space>
               ),
             },
@@ -269,6 +310,27 @@ export function RequestLogs() {
             {detail.data.errorMessage ? (
               <Alert type="warning" showIcon message={detail.data.errorMessage} />
             ) : null}
+
+            {detail.data.content ? (
+              <Card size="small" title="请求与响应内容">
+                <div className="content-log-stack">
+                  <section>
+                    <strong>客户端请求</strong>
+                    <pre className="content-log-body">{formatContent(detail.data.content.clientRequest)}</pre>
+                  </section>
+                  <section>
+                    <strong>实际上游请求</strong>
+                    <pre className="content-log-body">{formatContent(detail.data.content.upstreamRequest)}</pre>
+                  </section>
+                  <section>
+                    <strong>AI 响应</strong>
+                    <pre className="content-log-body">{formatContent(detail.data.content.aiResponse)}</pre>
+                  </section>
+                </div>
+              </Card>
+            ) : (
+              <Alert type="info" showIcon message="此请求未记录正文" description="正文记录未启用，或该日志产生于功能启用之前。" />
+            )}
 
             {/*
               尝试时间线：每一跳都在这里，包括旧实现只打 console.warn 就丢弃的

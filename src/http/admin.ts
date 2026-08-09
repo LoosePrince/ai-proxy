@@ -364,6 +364,18 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.logRetentionDays !== undefined) {
       patch.logRetentionDays = toNonNegativeInt(body.logRetentionDays, '日志保留天数');
     }
+    if (body.requestContentLoggingEnabled !== undefined) {
+      patch.requestContentLoggingEnabled = !!body.requestContentLoggingEnabled;
+    }
+    if (body.publicRequestContentStreamEnabled !== undefined) {
+      patch.publicRequestContentStreamEnabled = !!body.publicRequestContentStreamEnabled;
+    }
+    if (body.requestCacheEnabled !== undefined) {
+      patch.requestCacheEnabled = !!body.requestCacheEnabled;
+    }
+    if (body.requestCacheReuseHours !== undefined) {
+      patch.requestCacheReuseHours = toPositiveInt(body.requestCacheReuseHours, '请求缓存复用间隔');
+    }
 
     const settings = await saveSettings(patch);
     invalidateConfig();

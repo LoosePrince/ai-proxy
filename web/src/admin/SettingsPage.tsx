@@ -22,6 +22,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Switch,
   Table,
   Tooltip,
   Typography,
@@ -133,6 +134,42 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           tooltip="0 表示永不清理。清理只删请求明细，日聚合统计永久保留，因此面板上的历史趋势不会因清理而回退。"
         >
           <InputNumber min={0} className="control-full" />
+        </Form.Item>
+
+        <Form.Item
+          name="requestContentLoggingEnabled"
+          label="启用请求内容记录"
+          valuePropName="checked"
+          tooltip="保存客户端请求、实际发给上游的请求和 AI 响应正文。关闭后新日志不再保存正文，已有正文不受影响。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          name="publicRequestContentStreamEnabled"
+          label="启用公开请求内容流"
+          valuePropName="checked"
+          tooltip="开放 /api/request-content-stream。仅发布内存中的脱敏内容，不会因为开启此项而保存原始正文。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          name="requestCacheEnabled"
+          label="启用请求缓存"
+          valuePropName="checked"
+          tooltip="相同协议、请求参数和流式形态的成功响应会持久化复用。缓存记录默认不自动清理。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          name="requestCacheReuseHours"
+          label="请求缓存复用间隔（小时）"
+          rules={[{ required: true, message: '必填' }]}
+          tooltip="默认只命中 24 小时内生成的缓存。超过窗口的记录继续保留，但不会被复用。"
+        >
+          <InputNumber min={1} max={8760} className="control-full" />
         </Form.Item>
       </div>
 

@@ -23,7 +23,6 @@ import {
   fillDailyGaps,
   filterDailyRange,
   providerRequestSlices,
-  summarizeDaily,
 } from '../lib/analytics';
 import { formatCount, formatDateTime, formatPercent, formatTokens } from '../lib/format';
 import type { ProviderUsageDTO } from '@shared/api';
@@ -77,6 +76,10 @@ export function Dashboard() {
 
   // 日序列体量固定为“一天一行”，一次拉全量后由各板块独立切片，避免重复请求。
   const daily = useAsync(() => adminApi.dailyUsage(), []);
+  const metricsUsage = useAsync(
+    () => adminApi.dashboard(metricsRange.range),
+    [metricsRange.range.from, metricsRange.range.to],
+  );
   const pieUsage = useAsync(
     () => adminApi.providerUsage(pieRange.range),
     [pieRange.range.from, pieRange.range.to],
@@ -87,10 +90,16 @@ export function Dashboard() {
   );
   const runtime = useAsync(() => adminApi.runtime(), []);
 
-  const metrics = useMemo(
-    () => summarizeDaily(filterDailyRange(daily.data ?? [], metricsRange.range)),
-    [daily.data, metricsRange.range.from, metricsRange.range.to],
-  );
+  const metrics = metricsUsage.data ?? {
+    totalRequests: 0,
+    successRequests: 0,
+    failedRequests: 0,
+    successRate: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    providers: [],
+  };
   const trendRows = useMemo(
     () => fillDailyGaps(filterDailyRange(daily.data ?? [], trendRange.range), trendRange.range),
     [daily.data, trendRange.range.from, trendRange.range.to],
@@ -106,18 +115,19 @@ export function Dashboard() {
   const providerSlices = useMemo(() => providerRequestSlices(pieUsage.data ?? []), [pieUsage.data]);
   const reloadUsage = () => {
     daily.reload();
+    metricsUsage.reload();
     pieUsage.reload();
     tableUsage.reload();
   };
 
   return (
     <div className="stack">
-      {daily.status === 'error' || pieUsage.status === 'error' || tableUsage.status === 'error' ? (
+      {daily.status === 'error' || metricsUsage.status === 'error' || pieUsage.status === 'error' || tableUsage.status === 'error' ? (
         <Alert
           type="error"
           showIcon
           message="用量数据加载失败"
-          description={daily.error ?? pieUsage.error ?? tableUsage.error}
+          description={daily.error ?? metricsUsage.error ?? pieUsage.error ?? tableUsage.error}
           action={<Button onClick={reloadUsage}>重试</Button>}
         />
       ) : null}

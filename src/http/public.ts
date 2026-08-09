@@ -27,7 +27,8 @@ import {
   updateProvider,
 } from '../db/repo/providers';
 import { getPublicStats } from '../db/repo/usage';
-import { invalidateConfig } from '../runtime/config-cache';
+import { getConfig, invalidateConfig } from '../runtime/config-cache';
+import { subscribePublicContent } from '../runtime/public-content-stream';
 import type { ContributionModelResult, ContributionSubmitResult } from '../types/api';
 import { toContributionDTO } from './dto';
 import { assertPublicBaseUrl } from './ssrf';
@@ -53,6 +54,46 @@ router.get('/api/public-stats', async (_req: Request, res: Response) => {
     res.json(await getPublicStats());
   } catch (error) {
     failed(res, error);
+  }
+});
+
+router.get('/api/request-content-stream', async (req: Request, res: Response) => {
+  try {
+    const config = await getConfig();
+    if (!config.settings.publicRequestContentStreamEnabled) {
+      res.status(404).json({ error: { message: '公开请求内容流未启用' } });
+      return;
+    }
+
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    res.write('event: ready\ndata: {"ready":true}\n\n');
+
+    const unsubscribe = subscribePublicContent(res);
+    if (!unsubscribe) {
+      res.write('event: error\ndata: {"message":"订阅连接数已满"}\n\n');
+      res.end();
+      return;
+    }
+
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(': heartbeat\n\n');
+    }, 15_000);
+    heartbeat.unref?.();
+
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    req.once('close', cleanup);
+    res.once('close', cleanup);
+  } catch (error) {
+    if (!res.headersSent) failed(res, error);
+    else res.end();
   }
 });
 
