@@ -513,7 +513,89 @@
   gap: 18px;
 }
 
-.site .stat-card {
+/* 详细状态页是四张卡，自适应列数以免在窄屏被挤成一列 */
+.site .stat-grid.status-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+/* ---------------------------------------------------- 公开详细状态页 */
+
+.stats-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.status-back {
+  margin: -12px 0 22px;
+  font-size: 13px;
+}
+
+.site .status-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.outcome-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-subtle, var(--bg-elevated));
+}
+
+.outcome-item > span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.outcome-item > strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.outcome-item.tone-success {
+  border-left-color: var(--success);
+}
+
+.outcome-item.tone-info {
+  border-left-color: var(--primary);
+}
+
+.outcome-item.tone-danger {
+  border-left-color: var(--danger);
+}
+
+.outcome-item.tone-warning {
+  border-left-color: var(--warning);
+}
+
+/* 客户端取消是中性事件，不用红也不用绿，避免被读成故障 */
+.outcome-item.tone-muted {
+  border-left-color: var(--text-faint);
+}
+
+.status-footnote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.site .ant-card.stat-card {
   height: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -522,7 +604,7 @@
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.site .stat-card:hover {
+.site .ant-card.stat-card:hover {
   border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
   box-shadow: var(--shadow);
   transform: translateY(-3px);

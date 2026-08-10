@@ -12,6 +12,7 @@ import { migration002GlobalUsageDaily } from './migrations/002_global_usage_dail
 import { migration003RequestContentCache } from './migrations/003_request_content_cache';
 import { migration004ResponseCacheWireFormat } from './migrations/004_response_cache_wire_format';
 import { migration005BackfillLegacyGlobalUsageDaily } from './migrations/005_backfill_legacy_global_usage_daily';
+import { migration006RequestOutcome } from './migrations/006_request_outcome';
 
 export interface Migration {
   id: string;
@@ -24,6 +25,7 @@ const MIGRATIONS: Migration[] = [
   migration003RequestContentCache,
   migration004ResponseCacheWireFormat,
   migration005BackfillLegacyGlobalUsageDaily,
+  migration006RequestOutcome,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

@@ -21,6 +21,7 @@ import type {
   ProviderDTO,
   ProviderUpsertInput,
   ProviderUsageDTO,
+  PublicDetailedStatsDTO,
   PublicStatsDTO,
   RequestDetailDTO,
   RequestListQuery,
@@ -99,6 +100,8 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 
 export const publicApi = {
   stats: () => request<PublicStatsDTO>('/api/public-stats'),
+
+  detailedStats: () => request<PublicDetailedStatsDTO>('/api/public-stats/detailed'),
 
   contributions: () => request<ContributionListItemDTO[]>('/api/contributions'),
 

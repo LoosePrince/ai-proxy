@@ -11,7 +11,7 @@
  */
 
 import { useMemo } from 'react';
-import { Alert, Button, Card, Space, Spin, Table, Tag } from 'antd';
+import { Alert, Button, Card, Space, Spin, Table, Tag, Tooltip } from 'antd';
 
 import { adminApi } from '../api/client';
 import { DayRangeSelect, useDayRange } from '../components/DayRangePicker';
@@ -25,7 +25,7 @@ import {
   providerRequestSlices,
 } from '../lib/analytics';
 import { formatCount, formatDateTime, formatPercent, formatTokens } from '../lib/format';
-import type { ProviderUsageDTO } from '@shared/api';
+import type { DashboardSummaryDTO, ProviderUsageDTO } from '@shared/api';
 
 const RUNTIME_REFRESH_MS = 15_000;
 
@@ -51,14 +51,24 @@ function ProviderUsageTable({ rows }: { rows: ProviderUsageDTO[] }) {
             </Space>
           ),
         },
-        { title: '请求', dataIndex: 'requests', align: 'right', render: formatCount },
-        { title: '成功', dataIndex: 'success', align: 'right', render: formatCount },
-        { title: '失败', dataIndex: 'failed', align: 'right', render: formatCount },
+        { title: '上游调用', dataIndex: 'requests', align: 'right', render: formatCount },
+        { title: '成功', dataIndex: 'upstreamOk', align: 'right', render: formatCount },
+        { title: '失败', dataIndex: 'upstreamError', align: 'right', render: formatCount },
         {
-          title: '成功率',
+          title: '客户端取消',
+          dataIndex: 'clientAbort',
           align: 'right',
-          render: (_: unknown, row) =>
-            formatPercent(row.requests > 0 ? (row.success / row.requests) * 100 : 0),
+          render: (value: number) => (
+            <Tooltip title="客户端在响应完成前断开。不计入成功率，避免把用户行为算成上游故障。">
+              <span className={value > 0 ? 'faint' : undefined}>{formatCount(value)}</span>
+            </Tooltip>
+          ),
+        },
+        {
+          title: '上游成功率',
+          dataIndex: 'upstreamSuccessRate',
+          align: 'right',
+          render: (value: number) => formatPercent(value),
         },
         { title: 'Token', dataIndex: 'totalTokens', align: 'right', render: formatTokens },
       ]}
@@ -90,11 +100,18 @@ export function Dashboard() {
   );
   const runtime = useAsync(() => adminApi.runtime(), []);
 
-  const metrics = metricsUsage.data ?? {
+  const metrics: DashboardSummaryDTO = metricsUsage.data ?? {
     totalRequests: 0,
     successRequests: 0,
     failedRequests: 0,
-    successRate: 0,
+    requests: 0,
+    upstreamOk: 0,
+    cacheHit: 0,
+    upstreamError: 0,
+    clientAbort: 0,
+    rejected: 0,
+    serviceSuccessRate: 0,
+    upstreamSuccessRate: 0,
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
@@ -141,12 +158,22 @@ export function Dashboard() {
       </div>
 
       <div className="stat-grid">
-        <StatCard label="总请求数" value={formatCount(metrics.totalRequests)} hint="选定范围内调用" />
         <StatCard
-          label="成功率"
-          value={formatPercent(metrics.successRate)}
-          hint={`成功 ${formatCount(metrics.successRequests)} / 失败 ${formatCount(metrics.failedRequests)}`}
-          tone={metrics.successRate >= 95 ? 'success' : 'warning'}
+          label="总请求数"
+          value={formatCount(metrics.totalRequests)}
+          hint={`缓存复用 ${formatCount(metrics.cacheHit)} · 客户端取消 ${formatCount(metrics.clientAbort)}`}
+        />
+        <StatCard
+          label="交付率"
+          value={formatPercent(metrics.serviceSuccessRate)}
+          hint={`缓存复用计入成功，客户端取消不计入分母（成功 ${formatCount(metrics.successRequests)} / 失败 ${formatCount(metrics.failedRequests)}）`}
+          tone={metrics.serviceSuccessRate >= 95 ? 'success' : 'warning'}
+        />
+        <StatCard
+          label="上游成功率"
+          value={formatPercent(metrics.upstreamSuccessRate)}
+          hint={`只统计真正打到上游的 ${formatCount(metrics.upstreamOk + metrics.upstreamError)} 次调用`}
+          tone={metrics.upstreamSuccessRate >= 95 ? 'success' : 'warning'}
         />
         <StatCard
           label="总 Token"
@@ -195,6 +222,13 @@ export function Dashboard() {
           </Space>
         }
       >
+        <Alert
+          type="info"
+          showIcon
+          className="mb-12"
+          message="这里只统计真正发生的上游调用"
+          description="命中缓存的请求不计入任何 Provider：缓存里的 Provider 本次并未被调用，计入会同时虚高它的请求数与成功率。客户端取消也不归属到 Provider。"
+        />
         {tableUsage.status === 'loading' && !tableUsage.data ? (
           <Spin />
         ) : (

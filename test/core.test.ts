@@ -25,6 +25,7 @@ import {
   withFirstResponse,
   withFallbackTriggered,
   toRequestEvent,
+  type TraceOutcome,
 } from '../src/core/trace';
 import {
   contributionProviderName,
@@ -44,7 +45,12 @@ import {
 } from '../src/core/request-content';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
 import { buildIngestStatements, type RequestEventInput } from '../src/db/repo/requests';
-import { aggregateWeekly, fillDailyGaps, providerRequestSlices } from '../web/src/lib/analytics';
+import {
+  aggregateWeekly,
+  fillDailyGaps,
+  providerRequestSlices,
+  successRatesOf,
+} from '../web/src/lib/analytics';
 import type { ProviderUsageDTO, SettingsDTO, UsageDailyDTO } from '../src/types/api';
 
 /** 确定性游标，避免测试依赖随机或共享状态 */
@@ -274,45 +280,134 @@ describe('routing/findSpecialProvider', () => {
 });
 
 describe('usage daily aggregation', () => {
-  const daily = (day: string, requests: number, success = requests): UsageDailyDTO => ({
-    day,
-    requests,
-    success,
-    failed: requests - success,
-    successRate: requests > 0 ? (success / requests) * 100 : 0,
-    promptTokens: requests * 10,
-    completionTokens: requests * 5,
-    totalTokens: requests * 15,
+  const daily = (day: string, requests: number, success = requests): UsageDailyDTO => {
+    const breakdown = {
+      requests,
+      upstreamOk: success,
+      cacheHit: 0,
+      upstreamError: requests - success,
+      clientAbort: 0,
+      rejected: 0,
+    };
+    return {
+      day,
+      ...breakdown,
+      ...successRatesOf(breakdown),
+      success,
+      failed: requests - success,
+      promptTokens: requests * 10,
+      completionTokens: requests * 5,
+      totalTokens: requests * 15,
+    };
+  };
+
+  /** 落库事件的最小骨架，各用例只覆盖它关心的字段 */
+  const event = (patch: Partial<RequestEventInput>): RequestEventInput => ({
+    traceId: 'trace-daily',
+    startedAt: '2026-08-09T12:00:00.000Z',
+    firstResponseAt: null,
+    completedAt: '2026-08-09T12:00:01.000Z',
+    ttfbMs: null,
+    totalMs: 1_000,
+    ip: null,
+    requestedModel: 'm1',
+    finalModel: null,
+    finalProviderId: null,
+    finalProviderName: null,
+    finalRole: null,
+    stream: false,
+    outcome: 'upstream_error',
+    cacheHit: false,
+    success: false,
+    httpStatus: 503,
+    errorCode: 'all_failed',
+    errorMessage: 'all failed',
+    promptTokens: 12,
+    completionTokens: 3,
+    fallbackTriggered: true,
+    attempts: [],
+    ...patch,
   });
 
-  it('每个请求都写入全站日聚合，包括没有最终 Provider 的失败请求', () => {
-    const event: RequestEventInput = {
-      traceId: 'trace-daily',
-      startedAt: '2026-08-09T12:00:00.000Z',
-      firstResponseAt: null,
-      completedAt: '2026-08-09T12:00:01.000Z',
-      ttfbMs: null,
-      totalMs: 1_000,
-      ip: null,
-      requestedModel: 'm1',
-      finalModel: null,
-      finalProviderId: null,
-      finalProviderName: null,
-      finalRole: null,
-      stream: false,
-      success: false,
-      httpStatus: 503,
-      errorCode: 'all_failed',
-      errorMessage: 'all failed',
-      promptTokens: 12,
-      completionTokens: 3,
-      fallbackTriggered: true,
-      attempts: [],
-    };
-
-    const statement = buildIngestStatements([event]).find((item) => item.sql.includes('insert into global_usage_daily'));
+  const dailyParamsOf = (input: RequestEventInput): unknown[] => {
+    const statement = buildIngestStatements([input]).find((item) =>
+      item.sql.includes('insert into global_usage_daily'),
+    );
     assert.ok(statement);
-    assert.deepEqual(statement.params, ['2026-08-09', 0, 1, 12, 3]);
+    return statement.params as unknown[];
+  };
+
+  it('每个请求都写入全站日聚合，包括没有最终 Provider 的失败请求', () => {
+    // [day, success, failed, cache_hits, client_aborts, rejected, prompt, completion]
+    assert.deepEqual(dailyParamsOf(event({})), ['2026-08-09', 0, 1, 0, 0, 0, 12, 3]);
+  });
+
+  it('缓存复用算成功并单独计数，客户端取消既不算成功也不算失败', () => {
+    assert.deepEqual(
+      dailyParamsOf(event({ outcome: 'cache_hit', cacheHit: true, success: true, httpStatus: 200 })),
+      ['2026-08-09', 1, 0, 1, 0, 0, 12, 3],
+    );
+
+    assert.deepEqual(
+      dailyParamsOf(event({ outcome: 'client_abort', httpStatus: 499 })),
+      ['2026-08-09', 0, 0, 0, 1, 0, 12, 3],
+    );
+
+    assert.deepEqual(
+      dailyParamsOf(event({ outcome: 'rejected', httpStatus: 429 })),
+      ['2026-08-09', 0, 1, 0, 0, 1, 12, 3],
+    );
+  });
+
+  it('缓存命中不写入 Provider 维度：该 Provider 本次并未被调用', () => {
+    const cached = event({
+      outcome: 'cache_hit',
+      cacheHit: true,
+      success: true,
+      httpStatus: 200,
+      finalProviderId: 7,
+      finalProviderName: 'p7',
+    });
+    assert.equal(
+      buildIngestStatements([cached]).some((item) => item.sql.includes('insert into provider_usage_daily')),
+      false,
+    );
+
+    const real = event({ outcome: 'upstream_ok', success: true, httpStatus: 200, finalProviderId: 7, finalProviderName: 'p7' });
+    assert.equal(
+      buildIngestStatements([real]).some((item) => item.sql.includes('insert into provider_usage_daily')),
+      true,
+    );
+  });
+
+  it('交付率含缓存复用且排除客户端取消，上游成功率只看真实上游调用', () => {
+    // 10 次请求：6 次上游成功、2 次缓存复用、1 次上游失败、1 次客户端取消
+    const rates = successRatesOf({
+      requests: 10,
+      upstreamOk: 6,
+      cacheHit: 2,
+      upstreamError: 1,
+      clientAbort: 1,
+      rejected: 0,
+    });
+
+    // 交付 8 次，分母剔除取消后为 9
+    assert.equal(rates.serviceSuccessRate.toFixed(1), '88.9');
+    // 真正打到上游 7 次，成功 6 次
+    assert.equal(rates.upstreamSuccessRate.toFixed(1), '85.7');
+  });
+
+  it('全部请求都被客户端取消时成功率不被判为 0：分母为空', () => {
+    const rates = successRatesOf({
+      requests: 3,
+      upstreamOk: 0,
+      cacheHit: 0,
+      upstreamError: 0,
+      clientAbort: 3,
+      rejected: 0,
+    });
+    assert.equal(rates.serviceSuccessRate, 0);
+    assert.equal(rates.upstreamSuccessRate, 0);
   });
 
   it('连续日序列会补零，并按周一聚合为周视图', () => {
@@ -338,6 +433,13 @@ describe('usage daily aggregation', () => {
       kind: 'primary',
       enabled: true,
       requests: 70 - index * 10,
+      upstreamOk: 70 - index * 10,
+      cacheHit: 0,
+      upstreamError: 0,
+      clientAbort: 0,
+      rejected: 0,
+      serviceSuccessRate: 100,
+      upstreamSuccessRate: 100,
       success: 70 - index * 10,
       failed: 0,
       promptTokens: 0,
@@ -458,7 +560,7 @@ describe('trace', () => {
     const event = toRequestEvent(
       trace,
       {
-        success: true,
+        outcome: 'upstream_ok',
         httpStatus: 200,
         finalProviderId: 7,
         finalProviderName: 'p7',
@@ -478,6 +580,29 @@ describe('trace', () => {
     assert.equal(event.fallbackTriggered, true);
     assert.equal(event.stream, true);
     assert.equal(event.ip, '1.2.3.4');
+    assert.equal(event.outcome, 'upstream_ok');
+    assert.equal(event.cacheHit, false);
+  });
+
+  it('success 与 cacheHit 由 outcome 派生，不会互相矛盾', () => {
+    const trace = createTrace(base);
+    const eventOf = (outcome: TraceOutcome['outcome']) =>
+      toRequestEvent(trace, { outcome, httpStatus: 200 }, base.nowMs + 10);
+
+    assert.deepEqual(
+      (['upstream_ok', 'cache_hit', 'upstream_error', 'client_abort', 'rejected'] as const).map((outcome) => {
+        const event = eventOf(outcome);
+        return [event.outcome, event.success, event.cacheHit];
+      }),
+      [
+        ['upstream_ok', true, false],
+        // 缓存命中是有效交付，因此 success 为 true
+        ['cache_hit', true, true],
+        ['upstream_error', false, false],
+        ['client_abort', false, false],
+        ['rejected', false, false],
+      ],
+    );
   });
 
   it('trace id 互不重复', () => {

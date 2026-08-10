@@ -155,6 +155,15 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
         </Form.Item>
 
         <Form.Item
+          name="publicDetailedStatsEnabled"
+          label="启用公开详细统计"
+          valuePropName="checked"
+          tooltip="开放 /api/public-stats/detailed 与首页的「详细状态页」入口。只披露聚合口径，不包含 IP、Provider 名称与请求正文。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
           name="requestCacheEnabled"
           label="启用请求缓存"
           valuePropName="checked"

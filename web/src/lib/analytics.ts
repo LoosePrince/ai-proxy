@@ -1,11 +1,34 @@
-import type { ProviderUsageDTO, UsageDailyDTO } from '@shared/api';
+import type {
+  OutcomeBreakdown,
+  ProviderUsageDTO,
+  SuccessRates,
+  UsageDailyDTO,
+} from '@shared/api';
 
 export interface WeeklyUsage {
   weekStart: string;
   requests: number;
   success: number;
   failed: number;
+  /** 客户端取消单独成列：它既不是成功也不是失败，堆叠图需要第三段 */
+  clientAbort: number;
   totalTokens: number;
+}
+
+/**
+ * 由分类计数派生成功率。与后端 usage.ts 的 successRatesOf 保持同一口径：
+ *   交付率   缓存复用算成功，客户端取消不计入分母
+ *   上游健康度 只统计真正打到上游的调用
+ */
+export function successRatesOf(breakdown: OutcomeBreakdown): SuccessRates {
+  const delivered = breakdown.upstreamOk + breakdown.cacheHit;
+  const attributable = Math.max(breakdown.requests - breakdown.clientAbort, 0);
+  const upstreamCalls = breakdown.upstreamOk + breakdown.upstreamError;
+
+  return {
+    serviceSuccessRate: attributable > 0 ? (delivered / attributable) * 100 : 0,
+    upstreamSuccessRate: upstreamCalls > 0 ? (breakdown.upstreamOk / upstreamCalls) * 100 : 0,
+  };
 }
 
 export interface ChartSlice {
@@ -18,7 +41,13 @@ const EMPTY_DAILY = (day: string): UsageDailyDTO => ({
   requests: 0,
   success: 0,
   failed: 0,
-  successRate: 0,
+  upstreamOk: 0,
+  cacheHit: 0,
+  upstreamError: 0,
+  clientAbort: 0,
+  rejected: 0,
+  serviceSuccessRate: 0,
+  upstreamSuccessRate: 0,
   promptTokens: 0,
   completionTokens: 0,
   totalTokens: 0,
@@ -56,11 +85,10 @@ export function fillDailyGaps(
   return result;
 }
 
-export interface DailySummary {
+export interface DailySummary extends OutcomeBreakdown, SuccessRates {
   totalRequests: number;
   successRequests: number;
   failedRequests: number;
-  successRate: number;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -76,17 +104,33 @@ export function filterDailyRange(
 export function summarizeDaily(rows: UsageDailyDTO[]): DailySummary {
   const totals = rows.reduce(
     (acc, row) => ({
-      totalRequests: acc.totalRequests + row.requests,
-      successRequests: acc.successRequests + row.success,
-      failedRequests: acc.failedRequests + row.failed,
+      requests: acc.requests + row.requests,
+      upstreamOk: acc.upstreamOk + row.upstreamOk,
+      cacheHit: acc.cacheHit + row.cacheHit,
+      upstreamError: acc.upstreamError + row.upstreamError,
+      clientAbort: acc.clientAbort + row.clientAbort,
+      rejected: acc.rejected + row.rejected,
       promptTokens: acc.promptTokens + row.promptTokens,
       completionTokens: acc.completionTokens + row.completionTokens,
     }),
-    { totalRequests: 0, successRequests: 0, failedRequests: 0, promptTokens: 0, completionTokens: 0 },
+    {
+      requests: 0,
+      upstreamOk: 0,
+      cacheHit: 0,
+      upstreamError: 0,
+      clientAbort: 0,
+      rejected: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+    },
   );
+
   return {
     ...totals,
-    successRate: totals.totalRequests > 0 ? (totals.successRequests / totals.totalRequests) * 100 : 0,
+    ...successRatesOf(totals),
+    totalRequests: totals.requests,
+    successRequests: totals.upstreamOk + totals.cacheHit,
+    failedRequests: totals.upstreamError + totals.rejected,
     totalTokens: totals.promptTokens + totals.completionTokens,
   };
 }
@@ -107,11 +151,13 @@ export function aggregateWeekly(rows: UsageDailyDTO[]): WeeklyUsage[] {
       requests: 0,
       success: 0,
       failed: 0,
+      clientAbort: 0,
       totalTokens: 0,
     };
     current.requests += row.requests;
-    current.success += row.success;
-    current.failed += row.failed;
+    current.success += row.upstreamOk + row.cacheHit;
+    current.failed += row.upstreamError + row.rejected;
+    current.clientAbort += row.clientAbort;
     current.totalTokens += row.totalTokens;
     weeks.set(weekStart, current);
   }

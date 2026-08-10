@@ -26,7 +26,7 @@ import {
   listContributions,
   updateProvider,
 } from '../db/repo/providers';
-import { getPublicStats } from '../db/repo/usage';
+import { getPublicDetailedStats, getPublicStats } from '../db/repo/usage';
 import { getConfig, invalidateConfig } from '../runtime/config-cache';
 import { subscribePublicContent } from '../runtime/public-content-stream';
 import type { ContributionModelResult, ContributionSubmitResult } from '../types/api';
@@ -51,7 +51,25 @@ function failed(res: Response, error: unknown): void {
 
 router.get('/api/public-stats', async (_req: Request, res: Response) => {
   try {
-    res.json(await getPublicStats());
+    const config = await getConfig();
+    res.json(await getPublicStats(config.settings.publicDetailedStatsEnabled));
+  } catch (error) {
+    failed(res, error);
+  }
+});
+
+/**
+ * 公开详细统计。默认关闭：披露的粒度比首页三个数字大得多，
+ * 是否对外开放应由运营者显式决定，而不是随服务上线自动生效。
+ */
+router.get('/api/public-stats/detailed', async (_req: Request, res: Response) => {
+  try {
+    const config = await getConfig();
+    if (!config.settings.publicDetailedStatsEnabled) {
+      res.status(404).json({ error: { message: '公开详细统计未启用' } });
+      return;
+    }
+    res.json(await getPublicDetailedStats());
   } catch (error) {
     failed(res, error);
   }

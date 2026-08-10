@@ -370,6 +370,9 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.publicRequestContentStreamEnabled !== undefined) {
       patch.publicRequestContentStreamEnabled = !!body.publicRequestContentStreamEnabled;
     }
+    if (body.publicDetailedStatsEnabled !== undefined) {
+      patch.publicDetailedStatsEnabled = !!body.publicDetailedStatsEnabled;
+    }
     if (body.requestCacheEnabled !== undefined) {
       patch.requestCacheEnabled = !!body.requestCacheEnabled;
     }

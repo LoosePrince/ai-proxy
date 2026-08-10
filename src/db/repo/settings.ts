@@ -24,6 +24,7 @@ const HARD_DEFAULTS: SettingsDTO = {
   logRetentionDays: 0,
   requestContentLoggingEnabled: false,
   publicRequestContentStreamEnabled: false,
+  publicDetailedStatsEnabled: false,
   requestCacheEnabled: false,
   requestCacheReuseHours: 24,
 };
@@ -75,6 +76,10 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
     publicRequestContentStreamEnabled: normalizeBoolean(
       raw.publicRequestContentStreamEnabled,
       HARD_DEFAULTS.publicRequestContentStreamEnabled,
+    ),
+    publicDetailedStatsEnabled: normalizeBoolean(
+      raw.publicDetailedStatsEnabled,
+      HARD_DEFAULTS.publicDetailedStatsEnabled,
     ),
     requestCacheEnabled: normalizeBoolean(raw.requestCacheEnabled, HARD_DEFAULTS.requestCacheEnabled),
     requestCacheReuseHours: normalizePositiveInt(
@@ -155,6 +160,7 @@ export async function seedSettingsFromEnv(): Promise<void> {
     logRetentionDays: normalizeNonNegativeInt(env.LOG_RETENTION_DAYS, HARD_DEFAULTS.logRetentionDays),
     requestContentLoggingEnabled: HARD_DEFAULTS.requestContentLoggingEnabled,
     publicRequestContentStreamEnabled: HARD_DEFAULTS.publicRequestContentStreamEnabled,
+    publicDetailedStatsEnabled: HARD_DEFAULTS.publicDetailedStatsEnabled,
     requestCacheEnabled: HARD_DEFAULTS.requestCacheEnabled,
     requestCacheReuseHours: HARD_DEFAULTS.requestCacheReuseHours,
   };

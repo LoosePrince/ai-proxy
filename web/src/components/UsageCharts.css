@@ -1,0 +1,75 @@
+/*
+ * UsageCharts 的共享样式。
+ *
+ * 图表既用于后台，也用于公开 /status。此前样式只存在于 admin.css，
+ * 导致公开页没有填充规则与线条颜色，SVG polyline 回退为黑色填充。
+ * 样式随组件导入，调用方不再依赖某个页面外壳的 CSS 副作用。
+ */
+
+.trend-chart-wrap {
+  min-width: 0;
+  min-height: 250px;
+  overflow-x: auto;
+}
+
+.trend-chart {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  overflow: visible;
+}
+
+.chart-grid-line {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.trend-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.trend-line.requests {
+  stroke: var(--primary);
+}
+
+.trend-line.rate {
+  stroke: var(--success);
+  stroke-dasharray: 5 4;
+}
+
+.trend-point {
+  fill: var(--bg-elevated);
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.inline-chart-legend {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.inline-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-chart-legend .legend-primary {
+  background: var(--primary);
+}
+
+.inline-chart-legend .legend-success {
+  background: var(--success);
+}

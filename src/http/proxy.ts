@@ -86,6 +86,18 @@ class ClientDisconnectedError extends Error {
 }
 
 /**
+ * 把一次失败归类成 client_abort 还是 upstream_error。
+ *
+ * 判定以 clientSignal 为准而不是只看错误类型：客户端断开后，上游调用往下
+ * 抛出的往往是被 abort 连带触发的网络错误，而不是 ClientDisconnectedError 本身。
+ * 如果只匹配错误类型，这些请求会被误记为上游故障。
+ */
+function failureOutcome(signal: AbortSignal, error: unknown): 'client_abort' | 'upstream_error' {
+  if (signal.aborted) return 'client_abort';
+  return error instanceof ClientDisconnectedError ? 'client_abort' : 'upstream_error';
+}
+
+/**
  * 对单个 provider 依次尝试其候选模型。
  *
  * trace 以不可变方式累积：每次尝试（含失败与被抢占）都记录下来。
@@ -324,7 +336,7 @@ async function handleProxyRequest(
   if (!rate.allowed) {
     res.setHeader('Retry-After', String(rate.retryAfterSec));
     const message = `请求过于频繁，同 IP 每分钟最多 ${rate.limit} 次请求，请 ${rate.retryAfterSec} 秒后重试`;
-    finish({ success: false, httpStatus: 429, errorCode: 'rate_limit_exceeded', errorMessage: message });
+    finish({ outcome: 'rejected', httpStatus: 429, errorCode: 'rate_limit_exceeded', errorMessage: message });
     res.status(429).json({ error: { message, type: 'rate_limit_exceeded' } });
     return;
   }
@@ -346,7 +358,7 @@ async function handleProxyRequest(
 
         finish(
           {
-            success: true,
+            outcome: 'cache_hit',
             httpStatus: 200,
             finalProviderId: cached.finalProviderId,
             finalProviderName: cached.finalProviderName,
@@ -354,7 +366,6 @@ async function handleProxyRequest(
             finalModel: cached.actualModel,
             promptTokens: cached.promptTokens,
             completionTokens: cached.completionTokens,
-            cacheHit: true,
           },
           {
             clientRequest: originalPayload,
@@ -383,7 +394,7 @@ async function handleProxyRequest(
 
   if (chain.length === 0 && !parallelProvider && !fallbackProvider) {
     const message = 'No available AI providers configured';
-    finish({ success: false, httpStatus: 503, errorCode: 'no_provider', errorMessage: message });
+    finish({ outcome: 'upstream_error', httpStatus: 503, errorCode: 'no_provider', errorMessage: message });
     res.status(503).json({ error: { message } });
     return;
   }
@@ -424,7 +435,7 @@ async function handleProxyRequest(
 
     finish(
       {
-        success: true,
+        outcome: 'upstream_ok',
         httpStatus: 200,
         finalProviderId: outcome.provider.id,
         finalProviderName: outcome.provider.name,
@@ -487,14 +498,26 @@ async function handleProxyRequest(
       return;
     }
     if (outcome.responseSettled) {
+      const failure = failureOutcome(clientController.signal, outcome.error);
+      /*
+       * 客户端自己断开时不把 provider 记为责任方：它会被写进 provider_usage_daily，
+       * 让一个正常工作的上游看起来在失败。归属只在真正的上游故障时才建立。
+       */
+      const attribution =
+        failure === 'client_abort'
+          ? {}
+          : {
+              finalProviderId: outcome.provider.id,
+              finalProviderName: outcome.provider.name,
+              finalRole: outcome.role,
+            };
+
       finish({
-        success: false,
+        outcome: failure,
         httpStatus: errorStatus(outcome.error),
         errorCode: errorCode(outcome.error),
         errorMessage: errorMessage(outcome.error),
-        finalProviderId: outcome.provider.id,
-        finalProviderName: outcome.provider.name,
-        finalRole: outcome.role,
+        ...attribution,
       });
       return;
     }
@@ -509,7 +532,7 @@ async function handleProxyRequest(
     }
     if (res.headersSent || res.writableEnded) {
       finish({
-        success: false,
+        outcome: failureOutcome(clientController.signal, outcome.error),
         httpStatus: errorStatus(outcome.error),
         errorCode: errorCode(outcome.error),
         errorMessage: errorMessage(outcome.error),
@@ -530,7 +553,7 @@ async function handleProxyRequest(
 
   if (res.writableEnded) {
     finish({
-      success: false,
+      outcome: failureOutcome(clientController.signal, lastError),
       httpStatus: errorStatus(lastError),
       errorCode: errorCode(lastError),
       errorMessage: errorMessage(lastError),
@@ -540,7 +563,12 @@ async function handleProxyRequest(
 
   const status = errorStatus(lastError);
   const message = lastError ? errorMessage(lastError) : 'All providers failed';
-  finish({ success: false, httpStatus: status, errorCode: errorCode(lastError), errorMessage: message });
+  finish({
+    outcome: failureOutcome(clientController.signal, lastError),
+    httpStatus: status,
+    errorCode: errorCode(lastError),
+    errorMessage: message,
+  });
 
   if (res.headersSent) {
     if (!res.writableEnded) writeStreamError(res, message, protocol);

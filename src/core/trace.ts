@@ -10,7 +10,7 @@
  * 最终由 `toRequestEvent` 一次性物化成待落盘事件。纯函数，无 IO。
  */
 
-import type { AttemptRole, AttemptStatus } from '../types/api';
+import type { AttemptRole, AttemptStatus, RequestOutcome } from '../types/api';
 import type { AttemptEventInput, RequestEventInput } from '../db/repo/requests';
 
 export interface TraceAttemptInput {
@@ -38,8 +38,14 @@ export interface Trace {
   readonly fallbackTriggered: boolean;
 }
 
+/**
+ * 请求的最终结局。
+ *
+ * 这里只接受 `outcome` 分类，`success` 与 `cacheHit` 都由它派生，
+ * 因此不存在「outcome 说是缓存命中、success 却是 false」这种自相矛盾的状态。
+ */
 export interface TraceOutcome {
-  success: boolean;
+  outcome: RequestOutcome;
   httpStatus: number | null;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -49,7 +55,16 @@ export interface TraceOutcome {
   finalModel?: string | null;
   promptTokens?: number;
   completionTokens?: number;
-  cacheHit?: boolean;
+}
+
+/** 成功 = 客户端确实拿到了完整结果，无论它来自上游还是缓存 */
+export function isDelivered(outcome: RequestOutcome): boolean {
+  return outcome === 'upstream_ok' || outcome === 'cache_hit';
+}
+
+/** 是否真的产生了一次上游调用。缓存命中与限流拒绝都没有触达上游。 */
+export function touchedUpstream(outcome: RequestOutcome): boolean {
+  return outcome === 'upstream_ok' || outcome === 'upstream_error';
 }
 
 let traceCounter = 0;
@@ -135,8 +150,9 @@ export function toRequestEvent(
     finalProviderName: outcome.finalProviderName ?? null,
     finalRole: outcome.finalRole ?? null,
     stream: trace.stream,
-    cacheHit: outcome.cacheHit ?? false,
-    success: outcome.success,
+    outcome: outcome.outcome,
+    cacheHit: outcome.outcome === 'cache_hit',
+    success: isDelivered(outcome.outcome),
     httpStatus: outcome.httpStatus,
     errorCode: outcome.errorCode ?? null,
     errorMessage: outcome.errorMessage ?? null,

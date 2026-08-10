@@ -4,6 +4,7 @@ import { Tooltip } from 'antd';
 import { formatCount, formatPercent, formatTokens } from '../lib/format';
 import type { ChartSlice, WeeklyUsage } from '../lib/analytics';
 import type { UsageDailyDTO } from '@shared/api';
+import './UsageCharts.css';
 
 const SERIES_COLORS = [
   'var(--primary)',
@@ -77,7 +78,7 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
   const points: Point[] = rows.map((row, index) => ({
     x: xAt(index),
     requestsY: padding.top + plotHeight - (row.requests / maxRequests) * plotHeight,
-    rateY: padding.top + plotHeight - (row.successRate / 100) * plotHeight,
+    rateY: padding.top + plotHeight - (row.serviceSuccessRate / 100) * plotHeight,
     row,
   }));
   const requestPath = points.map((point) => `${point.x},${point.requestsY}`).join(' ');
@@ -110,12 +111,12 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
           );
         })}
         <path d={areaPath} fill="url(#requestArea)" />
-        <polyline className="trend-line requests" points={requestPath} />
-        <polyline className="trend-line rate" points={ratePath} />
+        <polyline className="trend-line requests" points={requestPath} fill="none" />
+        <polyline className="trend-line rate" points={ratePath} fill="none" />
         {points.length <= 45
           ? points.map((point) => (
               <circle className="trend-point" cx={point.x} cy={point.requestsY} r="3" key={point.row.day}>
-                <title>{`${point.row.day}：${point.row.requests} 次请求，成功率 ${formatPercent(point.row.successRate)}`}</title>
+                <title>{`${point.row.day}：${point.row.requests} 次请求，交付率 ${formatPercent(point.row.serviceSuccessRate)}`}</title>
               </circle>
             ))
           : null}
@@ -124,7 +125,7 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
       </svg>
       <div className="inline-chart-legend">
         <span><i className="legend-primary" />每日请求</span>
-        <span><i className="legend-success" />成功率</span>
+        <span><i className="legend-success" />交付率</span>
       </div>
     </div>
   );
@@ -191,20 +192,23 @@ export function WeeklyUsageChart({ weeks }: { weeks: WeeklyUsage[] }) {
     <div className="weekly-chart" role="img" aria-label="最近十二周请求量">
       {visible.map((week) => {
         const totalHeight = (week.requests / max) * 100;
-        const successHeight = week.requests > 0 ? (week.success / week.requests) * 100 : 0;
+        const share = (value: number) => (week.requests > 0 ? (value / week.requests) * 100 : 0);
+        const successHeight = share(week.success);
+        const abortHeight = share(week.clientAbort);
         return (
           <div className="week-column" key={week.weekStart}>
             <span className="week-value">{formatCount(week.requests)}</span>
             <div className="week-bar-track">
               <Tooltip
-                title={`${week.weekStart} 起：${week.requests} 次，成功 ${week.success}，失败 ${week.failed}`}
+                title={`${week.weekStart} 起：${week.requests} 次，成功 ${week.success}，失败 ${week.failed}，客户端取消 ${week.clientAbort}`}
                 placement="top"
                 autoAdjustOverflow
                 mouseEnterDelay={0.08}
               >
                 <div className="week-bar" style={{ height: `${totalHeight}%` }}>
                   <i className="week-success" style={{ height: `${successHeight}%` }} />
-                  <i className="week-failed" style={{ height: `${100 - successHeight}%` }} />
+                  <i className="week-aborted" style={{ height: `${abortHeight}%` }} />
+                  <i className="week-failed" style={{ height: `${Math.max(100 - successHeight - abortHeight, 0)}%` }} />
                 </div>
               </Tooltip>
             </div>

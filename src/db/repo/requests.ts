@@ -22,6 +22,7 @@ import type {
   RequestAttemptDTO,
   RequestDetailDTO,
   RequestListQuery,
+  RequestOutcome,
   RequestSummaryDTO,
 } from '../../types/api';
 
@@ -60,6 +61,7 @@ export interface RequestEventInput {
   finalProviderName: string | null;
   finalRole: AttemptRole | null;
   stream: boolean;
+  outcome: RequestOutcome;
   cacheHit: boolean;
   success: boolean;
   httpStatus: number | null;
@@ -81,6 +83,38 @@ function dayOf(isoTimestamp: string): string {
 
 function bool(value: boolean): number {
   return value ? 1 : 0;
+}
+
+/** 聚合表的分类计数列。所有累加语句共用这一处口径定义。 */
+interface OutcomeCounters {
+  success: number;
+  failed: number;
+  cacheHits: number;
+  clientAborts: number;
+  rejected: number;
+}
+
+/**
+ * outcome -> 聚合列增量。
+ *
+ * 关键口径：client_abort 只进 client_aborts，既不算成功也不算失败 ——
+ * 客户端自己挂断不构成服务故障，把它记为 failed 会让上游看起来在坏。
+ */
+function countersOf(outcome: RequestOutcome): OutcomeCounters {
+  const zero: OutcomeCounters = { success: 0, failed: 0, cacheHits: 0, clientAborts: 0, rejected: 0 };
+
+  switch (outcome) {
+    case 'upstream_ok':
+      return { ...zero, success: 1 };
+    case 'cache_hit':
+      return { ...zero, success: 1, cacheHits: 1 };
+    case 'upstream_error':
+      return { ...zero, failed: 1 };
+    case 'client_abort':
+      return { ...zero, clientAborts: 1 };
+    case 'rejected':
+      return { ...zero, failed: 1, rejected: 1 };
+  }
 }
 
 /**
@@ -131,18 +165,19 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
   for (const event of events) {
     const day = dayOf(event.startedAt);
     const tokens = event.promptTokens + event.completionTokens;
+    const counters = countersOf(event.outcome);
 
     statements.push({
       sql: `insert into requests (
               trace_id, started_at, first_response_at, completed_at, ttfb_ms, total_ms,
               ip_id, requested_model, final_model, final_provider_id, final_provider_name,
-              final_role, stream, cache_hit, success, http_status, error_code, error_message,
+              final_role, stream, cache_hit, success, outcome, http_status, error_code, error_message,
               prompt_tokens, completion_tokens, fallback_triggered,
               client_request_body, upstream_request_body, ai_response_body
             ) values (
               ?, ?, ?, ?, ?, ?,
               (select id from ips where ip = ?), ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?,
               ?, ?, ?, ?, ?, ?
             )
             on conflict (trace_id) do nothing`,
@@ -162,6 +197,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         bool(event.stream),
         bool(event.cacheHit),
         bool(event.success),
+        event.outcome,
         event.httpStatus,
         event.errorCode,
         event.errorMessage,
@@ -211,12 +247,18 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
               requests = requests + 1,
               success = success + ?,
               failed = failed + ?,
+              cache_hits = cache_hits + ?,
+              client_aborts = client_aborts + ?,
+              rejected = rejected + ?,
               prompt_tokens = prompt_tokens + ?,
               completion_tokens = completion_tokens + ?
             where id = 1`,
       params: [
-        bool(event.success),
-        bool(!event.success),
+        counters.success,
+        counters.failed,
+        counters.cacheHits,
+        counters.clientAborts,
+        counters.rejected,
         event.promptTokens,
         event.completionTokens,
       ],
@@ -226,35 +268,51 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
     // 全站日聚合：图表只读固定粒度数据，不扫描可能被保留策略清理的请求明细
     statements.push({
       sql: `insert into global_usage_daily (
-              day, requests, success, failed, prompt_tokens, completion_tokens
-            ) values (?, 1, ?, ?, ?, ?)
+              day, requests, success, failed, cache_hits, client_aborts, rejected,
+              prompt_tokens, completion_tokens
+            ) values (?, 1, ?, ?, ?, ?, ?, ?, ?)
             on conflict (day) do update set
               requests = global_usage_daily.requests + excluded.requests,
               success = global_usage_daily.success + excluded.success,
               failed = global_usage_daily.failed + excluded.failed,
+              cache_hits = global_usage_daily.cache_hits + excluded.cache_hits,
+              client_aborts = global_usage_daily.client_aborts + excluded.client_aborts,
+              rejected = global_usage_daily.rejected + excluded.rejected,
               prompt_tokens = global_usage_daily.prompt_tokens + excluded.prompt_tokens,
               completion_tokens = global_usage_daily.completion_tokens + excluded.completion_tokens`,
       params: [
         day,
-        bool(event.success),
-        bool(!event.success),
+        counters.success,
+        counters.failed,
+        counters.cacheHits,
+        counters.clientAborts,
+        counters.rejected,
         event.promptTokens,
         event.completionTokens,
       ],
       mode: 'write',
     });
 
-    // provider 维度：provider_name 反规范化保存，provider 删除后历史仍可读
-    if (event.finalProviderId !== null) {
+    /*
+     * provider 维度：provider_name 反规范化保存，provider 删除后历史仍可读。
+     *
+     * 缓存命中带的 finalProviderId 是**写入缓存时**那个 provider，本次并未调用它，
+     * 因此不能计入它的用量，否则该 provider 的请求数与成功率都会被虚高。
+     * 缓存命中的归属只保留在请求明细里，聚合层面归到全站的 cache_hits。
+     */
+    if (event.finalProviderId !== null && event.outcome !== 'cache_hit') {
       statements.push({
         sql: `insert into provider_usage_daily (
                 provider_id, provider_name, day, requests, success, failed,
+                cache_hits, client_aborts, rejected,
                 prompt_tokens, completion_tokens
-              ) values (?, ?, ?, 1, ?, ?, ?, ?)
+              ) values (?, ?, ?, 1, ?, ?, 0, ?, ?, ?, ?)
               on conflict (provider_id, day) do update set
                 requests = provider_usage_daily.requests + excluded.requests,
                 success = provider_usage_daily.success + excluded.success,
                 failed = provider_usage_daily.failed + excluded.failed,
+                client_aborts = provider_usage_daily.client_aborts + excluded.client_aborts,
+                rejected = provider_usage_daily.rejected + excluded.rejected,
                 prompt_tokens = provider_usage_daily.prompt_tokens + excluded.prompt_tokens,
                 completion_tokens = provider_usage_daily.completion_tokens + excluded.completion_tokens,
                 provider_name = excluded.provider_name`,
@@ -262,8 +320,10 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
           event.finalProviderId,
           event.finalProviderName ?? '',
           day,
-          bool(event.success),
-          bool(!event.success),
+          counters.success,
+          counters.failed,
+          counters.clientAborts,
+          counters.rejected,
           event.promptTokens,
           event.completionTokens,
         ],
@@ -325,6 +385,7 @@ interface RequestRow {
   stream: number;
   cache_hit: number;
   success: number;
+  outcome: string | null;
   http_status: number | null;
   error_code: string | null;
   error_message: string | null;
@@ -340,9 +401,32 @@ interface RequestRow {
 const REQUEST_SELECT = `
   r.id, r.trace_id, r.started_at, r.completed_at, r.ttfb_ms, r.total_ms,
   i.ip as ip, r.requested_model, r.final_model, r.final_provider_name, r.final_role,
-  r.stream, r.cache_hit, r.success, r.http_status, r.error_code, r.error_message,
+  r.stream, r.cache_hit, r.success, r.outcome, r.http_status, r.error_code, r.error_message,
   r.prompt_tokens, r.completion_tokens, r.fallback_triggered,
   (select count(*) from request_attempts a where a.request_id = r.id) as attempt_count`;
+
+const OUTCOMES: readonly RequestOutcome[] = [
+  'upstream_ok',
+  'cache_hit',
+  'upstream_error',
+  'client_abort',
+  'rejected',
+];
+
+/**
+ * outcome 列由 006 引入并已回填，但保留一层兜底：
+ * 极旧行或人工写入的行可能为空，此时按同样的规则从既有字段推导，
+ * 避免查询侧出现 `undefined` 这种前端无法渲染的第三态。
+ */
+function toOutcome(row: RequestRow): RequestOutcome {
+  const stored = row.outcome as RequestOutcome | null;
+  if (stored && OUTCOMES.includes(stored)) return stored;
+
+  if (row.cache_hit === 1) return 'cache_hit';
+  if (row.error_code === 'CLIENT_DISCONNECTED' || row.http_status === 499) return 'client_abort';
+  if (row.error_code === 'rate_limit_exceeded' || row.http_status === 429) return 'rejected';
+  return row.success === 1 ? 'upstream_ok' : 'upstream_error';
+}
 
 function toSummary(row: RequestRow): RequestSummaryDTO {
   return {
@@ -360,6 +444,7 @@ function toSummary(row: RequestRow): RequestSummaryDTO {
     stream: row.stream === 1,
     cacheHit: row.cache_hit === 1,
     success: row.success === 1,
+    outcome: toOutcome(row),
     httpStatus: row.http_status,
     errorMessage: row.error_message,
     promptTokens: row.prompt_tokens,
@@ -377,6 +462,10 @@ function buildFilter(query: RequestListQuery): { sql: string; params: unknown[] 
   if (query.success !== undefined) {
     parts.push('r.success = ?');
     params.push(query.success ? 1 : 0);
+  }
+  if (query.outcome) {
+    parts.push('r.outcome = ?');
+    params.push(query.outcome);
   }
   if (query.requestedModel) {
     parts.push('r.requested_model = ?');
