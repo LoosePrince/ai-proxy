@@ -72,20 +72,29 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
   const padding = { left: 44, right: 44, top: 20, bottom: 34 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const maxRequests = Math.max(1, ...rows.map((row) => row.requests));
+  const realRows = rows.filter((row) => !row.isHistorical);
+  const maxRealRequests = Math.max(0, ...realRows.map((row) => row.requests));
+  const maxRequests = Math.max(1, maxRealRequests);
+  const displayedRequests = (row: UsageDailyDTO) =>
+    row.isHistorical ? Math.min(row.requests, maxRealRequests) : row.requests;
   const xAt = (index: number) =>
     padding.left + (rows.length <= 1 ? plotWidth / 2 : (index / (rows.length - 1)) * plotWidth);
   const points: Point[] = rows.map((row, index) => ({
     x: xAt(index),
-    requestsY: padding.top + plotHeight - (row.requests / maxRequests) * plotHeight,
+    requestsY: padding.top + plotHeight - (displayedRequests(row) / maxRequests) * plotHeight,
     rateY: padding.top + plotHeight - (row.serviceSuccessRate / 100) * plotHeight,
     row,
   }));
-  const requestPath = points.map((point) => `${point.x},${point.requestsY}`).join(' ');
-  const ratePath = points.map((point) => `${point.x},${point.rateY}`).join(' ');
-  const first = points[0]!;
-  const last = points.at(-1)!;
-  const areaPath = `M ${first.x} ${padding.top + plotHeight} L ${requestPath.replaceAll(',', ' ')} L ${last.x} ${padding.top + plotHeight} Z`;
+  const segments = points.slice(1).map((to, index) => {
+    const from = points[index]!;
+    return { from, to, historical: from.row.isHistorical || to.row.isHistorical };
+  });
+  const requestAreaPaths = segments
+    .filter((segment) => !segment.historical)
+    .map(
+      ({ from, to }) =>
+        `M ${from.x} ${padding.top + plotHeight} L ${from.x} ${from.requestsY} L ${to.x} ${to.requestsY} L ${to.x} ${padding.top + plotHeight} Z`,
+    );
 
   return (
     <div className="trend-chart-wrap">
@@ -110,13 +119,39 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
             </g>
           );
         })}
-        <path d={areaPath} fill="url(#requestArea)" />
-        <polyline className="trend-line requests" points={requestPath} fill="none" />
-        <polyline className="trend-line rate" points={ratePath} fill="none" />
+        {requestAreaPaths.map((path) => <path d={path} fill="url(#requestArea)" key={path} />)}
+        {segments.map(({ from, to, historical }) => (
+          <line
+            className={`trend-line requests${historical ? ' historical' : ''}`}
+            x1={from.x}
+            x2={to.x}
+            y1={from.requestsY}
+            y2={to.requestsY}
+            key={`requests-${to.row.day}`}
+          />
+        ))}
+        {segments.map(({ from, to, historical }) => (
+          <line
+            className={`trend-line rate${historical ? ' historical' : ''}`}
+            x1={from.x}
+            x2={to.x}
+            y1={from.rateY}
+            y2={to.rateY}
+            key={`rate-${to.row.day}`}
+          />
+        ))}
         {points.length <= 45
           ? points.map((point) => (
-              <circle className="trend-point" cx={point.x} cy={point.requestsY} r="3" key={point.row.day}>
-                <title>{`${point.row.day}：${point.row.requests} 次请求，交付率 ${formatPercent(point.row.serviceSuccessRate)}`}</title>
+              <circle
+                className={`trend-point${point.row.isHistorical ? ' historical' : ''}`}
+                cx={point.x}
+                cy={point.requestsY}
+                r="3"
+                key={point.row.day}
+              >
+                <title>
+                  {`${point.row.day}：${point.row.requests} 次请求，交付率 ${formatPercent(point.row.serviceSuccessRate)}${point.row.isHistorical ? `。历史累计导入，图中请求高度按真实日最高 ${formatCount(maxRealRequests)} 次封顶` : ''}`}
+                </title>
               </circle>
             ))
           : null}
@@ -126,6 +161,7 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
       <div className="inline-chart-legend">
         <span><i className="legend-primary" />每日请求</span>
         <span><i className="legend-success" />交付率</span>
+        {rows.some((row) => row.isHistorical) ? <span className="legend-historical"><i />历史累计（高度已封顶）</span> : null}
       </div>
     </div>
   );
@@ -143,7 +179,10 @@ function heatLevel(value: number, max: number): number {
 export function CalendarHeatmap({ rows }: { rows: UsageDailyDTO[] }) {
   if (rows.length === 0) return <EmptyChart />;
   const visible = rows.slice(-371);
-  const max = Math.max(0, ...visible.map((row) => row.requests));
+  const realMax = Math.max(0, ...visible.filter((row) => !row.isHistorical).map((row) => row.requests));
+  const max = Math.max(1, realMax);
+  const displayedRequests = (row: UsageDailyDTO) =>
+    row.isHistorical ? Math.min(row.requests, realMax) : row.requests;
   const firstWeekday = new Date(`${visible[0]!.day}T00:00:00.000Z`).getUTCDay();
   const leading = firstWeekday === 0 ? 6 : firstWeekday - 1;
   const months = visible.flatMap((row, index) => {
@@ -167,48 +206,60 @@ export function CalendarHeatmap({ rows }: { rows: UsageDailyDTO[] }) {
           {visible.map((row) => (
             <Tooltip
               key={row.day}
-              title={`${row.day}：${formatCount(row.requests)} 次请求，${formatTokens(row.totalTokens)} Token`}
+              title={`${row.day}：${formatCount(row.requests)} 次请求，${formatTokens(row.totalTokens)} Token${row.isHistorical ? `。历史累计导入，颜色强度按真实日最高 ${formatCount(realMax)} 次封顶` : ''}`}
               placement="top"
               autoAdjustOverflow
               mouseEnterDelay={0.08}
             >
-              <i className={`heat-cell level-${heatLevel(row.requests, max)}`} />
+              <i className={`heat-cell level-${heatLevel(displayedRequests(row), max)}${row.isHistorical ? ' historical' : ''}`} />
             </Tooltip>
           ))}
           </div>
         </div>
       </div>
-      <div className="heatmap-legend"><span>少</span>{[0, 1, 2, 3, 4].map((level) => <i className={`heat-cell level-${level}`} key={level} />)}<span>多</span></div>
+      <div className="heatmap-legend">
+        <span>少</span>{[0, 1, 2, 3, 4].map((level) => <i className={`heat-cell level-${level}`} key={level} />)}<span>多</span>
+        {visible.some((row) => row.isHistorical) ? <span className="heatmap-historical"><i className="heat-cell historical" />历史累计</span> : null}
+      </div>
     </div>
   );
 }
 
 export function WeeklyUsageChart({ weeks }: { weeks: WeeklyUsage[] }) {
   const visible = weeks.slice(-12);
-  const max = Math.max(0, ...visible.map((week) => week.requests));
-  if (visible.length === 0 || max === 0) return <EmptyChart />;
+  const realMax = Math.max(0, ...visible.map((week) => week.realRequests));
+  const max = Math.max(1, realMax);
+  if (visible.length === 0 || (realMax === 0 && !visible.some((week) => week.isHistorical))) return <EmptyChart />;
 
   return (
     <div className="weekly-chart" role="img" aria-label="最近十二周请求量">
       {visible.map((week) => {
-        const totalHeight = (week.requests / max) * 100;
-        const share = (value: number) => (week.requests > 0 ? (value / week.requests) * 100 : 0);
-        const successHeight = share(week.success);
-        const abortHeight = share(week.clientAbort);
+        const normalHeight = (week.realRequests / max) * 100;
+        // 历史累计没有可靠的时间粒度，灰段以正常数据等高占位，避免把累计量伪装成当周流量。
+        const historicalHeight = week.isHistorical ? normalHeight : 0;
+        const totalVisualHeight = normalHeight + historicalHeight;
+        const normalShare = totalVisualHeight > 0 ? (normalHeight / totalVisualHeight) * 100 : 0;
+        const historicalShare = totalVisualHeight > 0 ? (historicalHeight / totalVisualHeight) * 100 : 0;
+        const shareOfNormal = (value: number) =>
+          week.realRequests > 0 ? (value / week.realRequests) * normalShare : 0;
+        const successHeight = shareOfNormal(week.realSuccess);
+        const abortHeight = shareOfNormal(week.realClientAbort);
+        const failedHeight = Math.max(normalShare - successHeight - abortHeight, 0);
         return (
-          <div className="week-column" key={week.weekStart}>
+          <div className={`week-column${week.isHistorical ? ' historical' : ''}`} key={week.weekStart}>
             <span className="week-value">{formatCount(week.requests)}</span>
             <div className="week-bar-track">
               <Tooltip
-                title={`${week.weekStart} 起：${week.requests} 次，成功 ${week.success}，失败 ${week.failed}，客户端取消 ${week.clientAbort}`}
+                title={`${week.weekStart} 起：${week.requests} 次，正常数据 ${week.realRequests} 次${week.isHistorical ? `，历史累计 ${week.historicalRequests} 次（灰段与正常数据等高）` : ''}，成功 ${week.success}，失败 ${week.failed}，客户端取消 ${week.clientAbort}`}
                 placement="top"
                 autoAdjustOverflow
                 mouseEnterDelay={0.08}
               >
-                <div className="week-bar" style={{ height: `${totalHeight}%` }}>
+                <div className={`week-bar${week.isHistorical ? ' historical' : ''}`} style={{ height: `${totalVisualHeight}%` }}>
                   <i className="week-success" style={{ height: `${successHeight}%` }} />
                   <i className="week-aborted" style={{ height: `${abortHeight}%` }} />
-                  <i className="week-failed" style={{ height: `${Math.max(100 - successHeight - abortHeight, 0)}%` }} />
+                  <i className="week-failed" style={{ height: `${failedHeight}%` }} />
+                  {week.isHistorical ? <i className="week-historical" style={{ height: `${historicalShare}%` }} /> : null}
                 </div>
               </Tooltip>
             </div>

@@ -46,10 +46,19 @@
   stroke-dasharray: 5 4;
 }
 
+.trend-line.historical {
+  stroke: var(--text-faint);
+  stroke-dasharray: 4 4;
+}
+
 .trend-point {
   fill: var(--bg-elevated);
   stroke: var(--primary);
   stroke-width: 2;
+}
+
+.trend-point.historical {
+  stroke: var(--text-faint);
 }
 
 .inline-chart-legend {
@@ -72,4 +81,12 @@
 
 .inline-chart-legend .legend-success {
   background: var(--success);
+}
+
+.inline-chart-legend .legend-historical {
+  color: var(--text-faint);
+}
+
+.inline-chart-legend .legend-historical i {
+  background: var(--text-faint);
 }

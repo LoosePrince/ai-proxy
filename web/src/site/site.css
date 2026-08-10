@@ -595,6 +595,10 @@
   line-height: 1.7;
 }
 
+.historical-day {
+  color: var(--text-faint);
+}
+
 .site .ant-card.stat-card {
   height: 100%;
   border: 1px solid var(--border);

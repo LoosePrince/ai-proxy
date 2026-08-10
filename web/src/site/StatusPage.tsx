@@ -34,6 +34,7 @@ const REFRESH_MS = 60_000;
 function toChartRow(row: PublicDailyStatsDTO): UsageDailyDTO {
   return {
     day: row.day,
+    isHistorical: row.isHistorical,
     requests: row.requests,
     success: row.success,
     failed: row.failed,
@@ -59,7 +60,16 @@ function OutcomeTable({ rows }: { rows: PublicDailyStatsDTO[] }) {
       scroll={{ x: 'max-content', y: 420 }}
       dataSource={[...rows].reverse()}
       columns={[
-        { title: '日期', dataIndex: 'day', width: 120 },
+        {
+          title: '日期',
+          dataIndex: 'day',
+          width: 150,
+          render: (value: string, row) => (
+            <span className={row.isHistorical ? 'historical-day' : undefined}>
+              {value}{row.isHistorical ? ' · 历史累计' : ''}
+            </span>
+          ),
+        },
         { title: '请求', dataIndex: 'requests', align: 'right', render: formatCount },
         { title: '成功', dataIndex: 'success', align: 'right', render: formatCount },
         { title: '失败', dataIndex: 'failed', align: 'right', render: formatCount },
@@ -104,7 +114,7 @@ function ModelTable({ rows }: { rows: PublicModelStatsDTO[] }) {
       scroll={{ x: 'max-content' }}
       dataSource={rows}
       columns={[
-        { title: '真实模型', dataIndex: 'model' },
+        { title: '模型', dataIndex: 'model' },
         { title: '请求数', dataIndex: 'requests', align: 'right', render: formatCount },
         {
           title: '占比',
@@ -232,7 +242,7 @@ export function StatusPage() {
                 {data.daily.length > 0 ? <OutcomeTable rows={data.daily} /> : <Empty description="暂无数据" />}
               </Card>
 
-              <Card title="真实模型用量" bordered={false} className="status-card">
+              <Card title="模型用量" bordered={false} className="status-card">
                 {data.models.length > 0 ? <ModelTable rows={data.models} /> : <Empty description="暂无数据" />}
               </Card>
 

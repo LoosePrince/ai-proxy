@@ -7,11 +7,22 @@ import type {
 
 export interface WeeklyUsage {
   weekStart: string;
+  /** 包含历史累计桶的原始周总量，仅用于数值展示与提示。 */
   requests: number;
+  /** 该周可确认属于真实日期的请求量，用于视觉标尺。 */
+  realRequests: number;
+  /** 该周旧系统导入的历史累计请求量，仅用于识别与提示。 */
+  historicalRequests: number;
+  /** 该周是否混入了旧系统导入的历史累计。 */
+  isHistorical: boolean;
+  /** 原始周总量中的成功、失败和取消，用于提示。 */
   success: number;
   failed: number;
   /** 客户端取消单独成列：它既不是成功也不是失败，堆叠图需要第三段 */
   clientAbort: number;
+  /** 仅真实日期的结果拆分，用于保留正常数据的彩色柱段。 */
+  realSuccess: number;
+  realClientAbort: number;
   totalTokens: number;
 }
 
@@ -38,6 +49,7 @@ export interface ChartSlice {
 
 const EMPTY_DAILY = (day: string): UsageDailyDTO => ({
   day,
+  isHistorical: false,
   requests: 0,
   success: 0,
   failed: 0,
@@ -149,14 +161,29 @@ export function aggregateWeekly(rows: UsageDailyDTO[]): WeeklyUsage[] {
     const current = weeks.get(weekStart) ?? {
       weekStart,
       requests: 0,
+      realRequests: 0,
+      historicalRequests: 0,
+      isHistorical: false,
       success: 0,
       failed: 0,
       clientAbort: 0,
+      realSuccess: 0,
+      realClientAbort: 0,
       totalTokens: 0,
     };
     current.requests += row.requests;
-    current.success += row.upstreamOk + row.cacheHit;
-    current.failed += row.upstreamError + row.rejected;
+    const success = row.upstreamOk + row.cacheHit;
+    const failed = row.upstreamError + row.rejected;
+    if (row.isHistorical) {
+      current.isHistorical = true;
+      current.historicalRequests += row.requests;
+    } else {
+      current.realRequests += row.requests;
+      current.realSuccess += success;
+      current.realClientAbort += row.clientAbort;
+    }
+    current.success += success;
+    current.failed += failed;
     current.clientAbort += row.clientAbort;
     current.totalTokens += row.totalTokens;
     weeks.set(weekStart, current);

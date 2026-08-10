@@ -72,7 +72,7 @@ export function ModelStats() {
           columns={[
             { title: '请求模型', dataIndex: 'requestedModel' },
             {
-              title: '真实模型数',
+              title: '模型数',
               align: 'right',
               render: (_: unknown, row) => row.actualResolved.length,
             },

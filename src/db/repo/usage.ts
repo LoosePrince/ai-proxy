@@ -210,13 +210,18 @@ interface DailyUsageRow extends Record<string, unknown> {
   rejected: number;
   prompt_tokens: number;
   completion_tokens: number;
+  historical_import: number;
 }
 
 /** 全站每日序列。按日升序返回，缺失日期由展示层补零。 */
 export async function getDailyUsage(range: UsageRange = {}): Promise<UsageDailyDTO[]> {
   const { sql: whereSql, params } = dayRange(range);
   const rows = await getDb().select<DailyUsageRow>(
-    `select day, ${AGGREGATE_COLUMNS}, prompt_tokens, completion_tokens
+    `select day, ${AGGREGATE_COLUMNS}, prompt_tokens, completion_tokens,
+            exists (
+              select 1 from usage_daily_provenance p
+               where p.day = global_usage_daily.day and p.kind = 'historical_import'
+            ) as historical_import
        from global_usage_daily
        ${whereSql}
        order by day asc`,
@@ -230,6 +235,7 @@ export async function getDailyUsage(range: UsageRange = {}): Promise<UsageDailyD
 
     return {
       day: row.day,
+      isHistorical: Boolean(row.historical_import),
       ...breakdown,
       ...successRatesOf(breakdown),
       success: num(row.success),
@@ -401,6 +407,7 @@ const PUBLIC_MODEL_LIMIT = 12;
 function toPublicDaily(row: UsageDailyDTO): PublicDailyStatsDTO {
   return {
     day: row.day,
+    isHistorical: row.isHistorical,
     requests: row.requests,
     success: row.upstreamOk + row.cacheHit,
     failed: row.upstreamError + row.rejected,

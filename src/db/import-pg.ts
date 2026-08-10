@@ -292,6 +292,15 @@ function globalUsageDailyStatement(day: string, usage: LegacyUsage): LsqliteStat
   };
 }
 
+function historicalUsageProvenanceStatement(day: string, createdAt: string): LsqliteStatement {
+  return {
+    sql: `insert into usage_daily_provenance (day, kind, created_at) values (?, 'historical_import', ?)
+          on conflict (day) do update set kind = excluded.kind, created_at = excluded.created_at`,
+    params: [day, createdAt],
+    mode: 'write',
+  };
+}
+
 /**
  * 模型统计展开。
  *
@@ -602,6 +611,7 @@ function buildPlan(rows: LegacyRow[]): Plan {
       mode: 'write',
     });
     statements.push(globalUsageDailyStatement(legacyDay, globalUsage));
+    statements.push(historicalUsageProvenanceStatement(legacyDay, now));
     summary.push(
       `global_usage requests=${toNumber(globalUsage.totalRequests)} success=${toNumber(globalUsage.successRequests)} tokens=${toNumber(globalUsage.totalPromptTokens) + toNumber(globalUsage.totalCompletionTokens)}`,
     );

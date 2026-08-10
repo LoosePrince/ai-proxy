@@ -213,6 +213,8 @@ export interface Paged<T> {
 
 export interface UsageDailyDTO extends OutcomeBreakdown, SuccessRates {
   day: string;
+  /** 旧系统累计统计导入的占位日，不代表真实发生日期。 */
+  isHistorical: boolean;
   /** = upstreamOk + cacheHit，即成功交付给客户端的请求数 */
   success: number;
   /** = upstreamError + rejected，不含 clientAbort */
@@ -290,6 +292,8 @@ export interface PublicDetailedStatsDTO {
 
 export interface PublicDailyStatsDTO extends SuccessRates {
   day: string;
+  /** 旧系统累计统计导入的占位日，不代表真实发生日期。 */
+  isHistorical: boolean;
   requests: number;
   success: number;
   failed: number;
