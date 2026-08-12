@@ -255,6 +255,12 @@ export interface ModelUsageDTO {
   actualResolved: Array<{ model: string; requests: number }>;
 }
 
+export interface IpBlacklistDTO {
+  ip: string;
+  note: string | null;
+  createdAt: string;
+}
+
 export interface IpUsageDTO {
   ip: string;
   requests: number;
@@ -318,11 +324,10 @@ export interface ContributionListItemDTO {
   contributorType: ContributorType;
   /** 与公开 contributor 使用相同脱敏规则 */
   displayName: string;
-  /** 邮箱类型固定为 null，防止头像 URL 泄露原始 ID */
+  /** QQ 与 GitHub 使用公开头像，其他邮箱为 null。 */
   avatarUrl: string | null;
-  /** 只保留 origin + pathname */
-  baseUrl: string;
   modelCount: number;
+  /** 已验证且会被记录的模型 */
   models: string[];
   enabled: boolean;
   updatedAt: string;

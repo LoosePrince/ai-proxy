@@ -13,12 +13,14 @@
 
 import { loadRoutingSnapshot, type PriorityGroupRecord, type ProviderRecord } from '../db/repo/providers';
 import { loadSettings } from '../db/repo/settings';
+import { loadBlacklistedIps } from '../db/repo/ip-blacklist';
 import type { SettingsDTO } from '../types/api';
 
 export interface ConfigSnapshot {
   providers: ProviderRecord[];
   groups: Map<number, PriorityGroupRecord>;
   settings: SettingsDTO;
+  blacklistedIps: ReadonlySet<string>;
   loadedAtMs: number;
 }
 
@@ -27,12 +29,17 @@ let loading: Promise<ConfigSnapshot> | null = null;
 
 async function build(): Promise<ConfigSnapshot> {
   // 两次查询并发，重建成本约等于一次往返
-  const [routing, settings] = await Promise.all([loadRoutingSnapshot(), loadSettings()]);
+  const [routing, settings, blacklistedIps] = await Promise.all([
+    loadRoutingSnapshot(),
+    loadSettings(),
+    loadBlacklistedIps(),
+  ]);
 
   return {
     providers: routing.providers,
     groups: routing.groups,
     settings,
+    blacklistedIps,
     loadedAtMs: Date.now(),
   };
 }

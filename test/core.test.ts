@@ -28,6 +28,7 @@ import {
   type TraceOutcome,
 } from '../src/core/trace';
 import {
+  contributorAvatarUrl,
   contributionProviderName,
   contributorDisplayName,
   maskBaseUrl,
@@ -775,7 +776,7 @@ describe('contribution/其他', () => {
     assert.equal(contributorDisplayName('LoosePrince', 'github'), 'LoosePrince');
   });
 
-  it('公开贡献 DTO 不泄露原始邮箱或可反查 QQ ID 的头像', () => {
+  it('公开贡献 DTO 隐藏原始邮箱，但修复 QQ 与 GitHub 头像', () => {
     const dto = toContributionDTO(
       provider({
         id: 20,
@@ -788,8 +789,9 @@ describe('contribution/其他', () => {
 
     assert.equal(dto.contributor, '1****6');
     assert.equal(dto.displayName, '1****6');
-    assert.equal(dto.avatarUrl, null);
+    assert.equal(dto.avatarUrl, contributorAvatarUrl('123456@qq.com', 'email'));
+    assert.match(dto.avatarUrl ?? '', /q\.qlogo\.cn/);
+    assert.match(contributorAvatarUrl('Loose-Prince', 'github') ?? '', /github\.com\/Loose-Prince\.png/);
     assert.equal(JSON.stringify(dto).includes('@qq.com'), false);
-    assert.equal(JSON.stringify(dto).includes('123456'), false);
   });
 });

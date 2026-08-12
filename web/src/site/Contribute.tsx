@@ -11,7 +11,7 @@
  */
 
 import { useState } from 'react';
-import { Avatar, Button, Empty, Form, Input, List, Skeleton, Space, Tag, Tooltip } from 'antd';
+import { Avatar, Button, Empty, Form, Input, List, Skeleton, Tag, Tooltip } from 'antd';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { ApiError, publicApi } from '../api/client';
@@ -95,12 +95,9 @@ function ContributionList() {
             }
             title={item.displayName}
             description={
-              <Space size={4} wrap>
-                <Tooltip title={item.models.join('、') || '未公开模型'}>
-                  <Tag>{item.modelCount ? `${formatCount(item.modelCount)} 个模型` : '未公开模型'}</Tag>
-                </Tooltip>
-                <span className="contribution-base">{item.baseUrl}</span>
-              </Space>
+              <Tooltip title={item.models.join('、') || '未公开模型'}>
+                <Tag>{item.modelCount ? `${formatCount(item.modelCount)} 个模型` : '未公开模型'}</Tag>
+              </Tooltip>
             }
           />
         </List.Item>
@@ -122,7 +119,7 @@ export function Contribute() {
       form.resetFields();
       setState({
         kind: 'ok',
-        message: `${result.action === 'updated' ? '贡献已更新' : '贡献已创建'}，全部模型验证通过。该 Provider 默认关闭，等待管理员启用。`,
+        message: `${result.action === 'updated' ? '贡献已更新' : '贡献已创建'}，已记录 ${result.provider.modelCount} 个可用模型。该 Provider 默认关闭，等待管理员启用。`,
         results: result.results,
       });
       // 列表重挂载以拉取最新数据
@@ -143,7 +140,7 @@ export function Contribute() {
       <SectionHead
         kicker="Contribute"
         title="贡献 API 服务"
-        desc="提交可用的 OpenAI 兼容 API。系统会逐个真实调用你填写的模型，全部通过后保存为待启用的贡献 Provider。"
+        desc="提交可用的 OpenAI 兼容 API。系统会逐个真实调用你填写的模型，并仅记录验证通过的模型为待启用的贡献 Provider。"
       />
 
       <div className="contribution-card">
@@ -180,7 +177,7 @@ export function Contribute() {
           <Form.Item
             name="models"
             label="模型列表"
-            extra="逗号或换行分隔，最多 20 个。每个模型都会被真实调用一次以确认可用。"
+            extra="逗号或换行分隔，最多 20 个。每个新模型都会被真实调用一次，只有验证通过的模型会被记录。重复提交时，已验证模型会跳过探测。"
             rules={[{ required: true, message: '至少填写一个模型名' }]}
           >
             <Input.TextArea rows={3} placeholder={'model-a, model-b'} />

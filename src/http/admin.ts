@@ -12,6 +12,8 @@
  * 所有写操作后必须 invalidateConfig()，否则热路径继续读旧快照。
  */
 
+import { isIP } from 'node:net';
+
 import express, { type NextFunction, type Request, type Response } from 'express';
 import session from 'express-session';
 
@@ -26,6 +28,7 @@ import {
   updateProvider,
   type ProviderRecord,
 } from '../db/repo/providers';
+import { addIpBlacklist, listIpBlacklist, removeIpBlacklist } from '../db/repo/ip-blacklist';
 import { getRequestDetail, queryRequests } from '../db/repo/requests';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
@@ -144,6 +147,23 @@ function toNonNegativeInt(value: unknown, label: string): number {
   const num = Number(value);
   if (!Number.isFinite(num) || num < 0) throw new BadRequest(`${label} 必须是大于等于 0 的整数`);
   return Math.round(num);
+}
+
+function normalizeIp(value: string): string {
+  return value.replace(/^::ffff:/i, '');
+}
+
+function toIp(value: unknown): string {
+  const ip = normalizeIp(requireString(value, 'IP'));
+  if (!isIP(ip)) throw new BadRequest('IP 必须是有效的 IPv4 或 IPv6 地址');
+  return ip;
+}
+
+function toOptionalNote(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const note = String(value).trim();
+  if (note.length > 200) throw new BadRequest('备注不能超过 200 个字符');
+  return note || null;
 }
 
 // ------------------------------------------------------------------ 登录态
@@ -319,6 +339,36 @@ router.put('/api/priority-groups/:priority', requireAuth, async (req: Request, r
     }
 
     await savePriorityGroup(priority, patch);
+    invalidateConfig();
+    res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// ------------------------------------------------------------------ IP 黑名单
+
+router.get('/api/ip-blacklist', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json(await listIpBlacklist());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.put('/api/ip-blacklist/:ip', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const record = await addIpBlacklist(toIp(req.params.ip), toOptionalNote(req.body?.note));
+    invalidateConfig();
+    res.json(record);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.delete('/api/ip-blacklist/:ip', requireAuth, async (req: Request, res: Response) => {
+  try {
+    await removeIpBlacklist(toIp(req.params.ip));
     invalidateConfig();
     res.json({ success: true });
   } catch (error) {

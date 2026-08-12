@@ -14,6 +14,7 @@ import type {
   ContributionSubmitInput,
   ContributionSubmitResult,
   DashboardSummaryDTO,
+  IpBlacklistDTO,
   IpUsageDTO,
   ModelUsageDTO,
   Paged,
@@ -164,6 +165,17 @@ export const adminApi = {
 
   ipUsage: (range: { from?: string; to?: string } = {}) =>
     request<IpUsageDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'ip' })}`),
+
+  ipBlacklist: () => request<IpBlacklistDTO[]>('/admin/api/ip-blacklist'),
+
+  addIpBlacklist: (ip: string, note: string | null) =>
+    request<IpBlacklistDTO>(`/admin/api/ip-blacklist/${encodeURIComponent(ip)}`, {
+      method: 'PUT',
+      ...json({ note }),
+    }),
+
+  removeIpBlacklist: (ip: string) =>
+    request<{ success: true }>(`/admin/api/ip-blacklist/${encodeURIComponent(ip)}`, { method: 'DELETE' }),
 
   runtime: () =>
     request<{

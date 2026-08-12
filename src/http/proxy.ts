@@ -54,12 +54,16 @@ interface AttemptResult {
   responseSettled: boolean;
 }
 
+function normalizeIp(value: string): string {
+  return value.replace(/^::ffff:/i, '');
+}
+
 function getClientIp(req: Request): string {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded) {
-    return forwarded.split(',')[0]?.trim() || 'unknown';
+    return normalizeIp(forwarded.split(',')[0]?.trim() || 'unknown');
   }
-  return req.ip || 'unknown';
+  return normalizeIp(req.ip || 'unknown');
 }
 
 function errorStatus(error: unknown): number {
@@ -326,6 +330,13 @@ async function handleProxyRequest(
   const { settings } = config;
   contentLoggingEnabled = settings.requestContentLoggingEnabled;
   publicContentStreamEnabled = settings.publicRequestContentStreamEnabled;
+
+  if (config.blacklistedIps.has(ip)) {
+    const message = '该 IP 已被禁止访问';
+    finish({ outcome: 'rejected', httpStatus: 403, errorCode: 'ip_blacklisted', errorMessage: message });
+    res.status(403).json({ error: { message, type: 'ip_blacklisted' } });
+    return;
+  }
 
   // ---- 限流（内存滑动窗口，阈值来自配置快照）----
   const rate = checkRateLimit(ip, settings.ipRateLimitRpm);
