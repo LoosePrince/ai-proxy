@@ -117,9 +117,11 @@ function bestProviderModelScore(provider: ProviderRecord, requestedModel: string
 }
 
 /**
- * 候选筛选：始终只考虑启用的 primary provider。
- * 指定模型时优先选择最接近的普通候选；没有达到阈值时退化为未指定模型的
- * 正常路由集合，而不是返回空链后提前触发昂贵的 fallback provider。
+ * 候选筛选只负责找出指定模型的最佳匹配 Provider。
+ * 没有指定模型或没有达到匹配阈值时返回全部启用的 primary Provider。
+ *
+ * 注意：这里的匹配结果只用于“优先尝试谁”，不能作为完整主链；否则最佳
+ * Provider 失败后会跳过其余正常路由，直接落到 fallback。
  */
 export function selectCandidates(
   providers: ProviderRecord[],
@@ -132,7 +134,7 @@ export function selectCandidates(
   const bestScore = Math.max(0, ...scored.map((item) => item.score));
   if (bestScore < 72) return primary;
 
-  // 同一模型可能配置在多个 provider；保留同档最佳候选以继续应用组路由规则。
+  // 同一模型可能配置在多个 provider；保留同档最佳候选。
   return scored.filter((item) => item.score >= bestScore - 1).map((item) => item.provider);
 }
 
@@ -168,8 +170,11 @@ function groupKey(groups: PriorityGroup[]): string {
 }
 
 /**
- * 构建扁平尝试链。
- * 返回顺序即实际尝试顺序，调用方按 maxPrimaryAttempts 截断。
+ * 构建完整主路由尝试链。
+ *
+ * 所有启用的 primary Provider 都先按全局和组内规则排序；指定模型的最佳匹配
+ * 只提升到链首，不会删除其余 Provider。这样首选模型失败后仍会继续正常的
+ * priority/random/average 路由，调用方最后再按 maxPrimaryAttempts 截断。
  */
 export function buildAttemptChain(
   providers: ProviderRecord[],
@@ -178,17 +183,51 @@ export function buildAttemptChain(
   globalRule: RoutingRule,
   cursor: RotationCursor,
 ): ProviderRecord[] {
-  const candidates = selectCandidates(providers, requestedModel);
-  if (candidates.length === 0) return [];
+  const primary = providers.filter((provider) => provider.kind === 'primary' && provider.enabled);
+  if (primary.length === 0) return [];
 
-  const groups = groupByPriority(candidates, groupConfig);
+  const groups = groupByPriority(primary, groupConfig);
   const orderedGroups = applyRule(groups, globalRule, `global:${groupKey(groups)}`, cursor);
-
-  return orderedGroups.flatMap((group) =>
+  const ordered = orderedGroups.flatMap((group) =>
     applyRule(
       group.providers,
       group.rule,
       `group:${group.priority}:${group.providers.map((p) => p.id).join(',')}`,
+      cursor,
+    ),
+  );
+
+  if (!requestedModel) return ordered;
+  const preferredIds = new Set(selectCandidates(primary, requestedModel).map((provider) => provider.id));
+  if (preferredIds.size === primary.length) return ordered;
+
+  return [
+    ...ordered.filter((provider) => preferredIds.has(provider.id)),
+    ...ordered.filter((provider) => !preferredIds.has(provider.id)),
+  ];
+}
+
+/**
+ * 构建特殊 Provider 链。多个 fallback 按与主链相同的全局/组内规则排序，
+ * 代理层可以依次失败转移，不再只取数据库顺序中的第一项。
+ */
+export function buildSpecialProviderChain(
+  providers: ProviderRecord[],
+  groupConfig: Map<number, PriorityGroupRecord>,
+  kind: 'fallback' | 'parallel',
+  globalRule: RoutingRule,
+  cursor: RotationCursor,
+): ProviderRecord[] {
+  const enabled = providers.filter((provider) => provider.kind === kind && provider.enabled);
+  if (enabled.length === 0) return [];
+
+  const groups = groupByPriority(enabled, groupConfig);
+  const orderedGroups = applyRule(groups, globalRule, `${kind}:global:${groupKey(groups)}`, cursor);
+  return orderedGroups.flatMap((group) =>
+    applyRule(
+      group.providers,
+      group.rule,
+      `${kind}:group:${group.priority}:${group.providers.map((provider) => provider.id).join(',')}`,
       cursor,
     ),
   );

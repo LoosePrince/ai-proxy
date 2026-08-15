@@ -12,6 +12,7 @@ import {
   applyRule,
   buildAttemptChain,
   buildModelCandidates,
+  buildSpecialProviderChain,
   findSpecialProvider,
   groupByPriority,
   selectCandidates,
@@ -206,6 +207,31 @@ describe('routing/buildAttemptChain', () => {
     assert.deepEqual(buildAttemptChain(list, groups([]), null, 'average', cursor).map((p) => p.id), [3, 1, 2]);
   });
 
+  it('指定模型命中时优先匹配 Provider，但保留其余正常路由作为失败转移', () => {
+    const mixed = [
+      provider({ id: 10, priority: 0, models: ['other-a'] }),
+      provider({ id: 11, priority: 0, models: ['target-model'] }),
+      provider({ id: 12, priority: 1, models: ['other-b'] }),
+    ];
+
+    assert.deepEqual(
+      buildAttemptChain(mixed, groups([]), 'target-model', 'priority', createCursor()).map((p) => p.id),
+      [11, 10, 12],
+    );
+  });
+
+  it('指定模型命中后，其余 Provider 仍保留组内随机路由结果', () => {
+    const mixed = [
+      provider({ id: 20, models: ['other-a'] }),
+      provider({ id: 21, models: ['target-model'] }),
+      provider({ id: 22, models: ['other-b'] }),
+    ];
+    const chain = buildAttemptChain(mixed, groups([[0, { rule: 'random' }]]), 'target-model', 'priority', createCursor());
+
+    assert.equal(chain[0]?.id, 21);
+    assert.deepEqual(chain.slice(1).map((p) => p.id).sort((a, b) => a - b), [20, 22]);
+  });
+
   it('指定模型无匹配时按未指定模型方式构建普通尝试链', () => {
     assert.deepEqual(
       buildAttemptChain(list, groups([]), 'unknown-model', 'priority', createCursor()).map((p) => p.id),
@@ -273,6 +299,34 @@ describe('routing/findSpecialProvider', () => {
     ];
     assert.equal(findSpecialProvider(list, 'fallback')?.id, 2);
     assert.equal(findSpecialProvider(list, 'parallel'), null);
+  });
+});
+
+describe('routing/buildSpecialProviderChain', () => {
+  it('保留全部启用的兜底 Provider，并按优先级构建失败转移链', () => {
+    const list = [
+      provider({ id: 30, kind: 'fallback', priority: 1 }),
+      provider({ id: 31, kind: 'fallback', priority: 0 }),
+      provider({ id: 32, kind: 'fallback', priority: 0, enabled: false }),
+      provider({ id: 33, kind: 'primary', priority: 0 }),
+    ];
+
+    assert.deepEqual(
+      buildSpecialProviderChain(list, groups([]), 'fallback', 'priority', createCursor()).map((p) => p.id),
+      [31, 30],
+    );
+  });
+
+  it('多个兜底 Provider 应用组内轮转规则', () => {
+    const list = [
+      provider({ id: 40, kind: 'fallback' }),
+      provider({ id: 41, kind: 'fallback' }),
+    ];
+    const cursor = createCursor();
+    const config = groups([[0, { rule: 'average' }]]);
+
+    assert.deepEqual(buildSpecialProviderChain(list, config, 'fallback', 'priority', cursor).map((p) => p.id), [40, 41]);
+    assert.deepEqual(buildSpecialProviderChain(list, config, 'fallback', 'priority', cursor).map((p) => p.id), [41, 40]);
   });
 });
 

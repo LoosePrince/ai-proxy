@@ -20,7 +20,12 @@ import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '.
 import { inspectRequest, stripClientSystemPrompts } from '../core/request-policy';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
-import { buildAttemptChain, buildModelCandidates, findSpecialProvider } from '../core/routing';
+import {
+  buildAttemptChain,
+  buildModelCandidates,
+  buildSpecialProviderChain,
+  findSpecialProvider,
+} from '../core/routing';
 import { registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
 import { writeSyntheticSuccess } from './synthetic-response';
 import { resolveTimeoutMs } from '../core/timeout';
@@ -450,9 +455,15 @@ async function handleProxyRequest(
   ).slice(0, settings.maxPrimaryAttempts);
 
   const parallelProvider = findSpecialProvider(config.providers, 'parallel');
-  const fallbackProvider = findSpecialProvider(config.providers, 'fallback');
+  const fallbackChain = buildSpecialProviderChain(
+    config.providers,
+    config.groups,
+    'fallback',
+    settings.globalRule,
+    rotationCursor,
+  );
 
-  if (chain.length === 0 && !parallelProvider && !fallbackProvider) {
+  if (chain.length === 0 && !parallelProvider && fallbackChain.length === 0) {
     const message = 'No available AI providers configured';
     finish({ success: false, httpStatus: 503, errorCode: 'no_provider', errorMessage: message });
     res.status(503).json({ error: { message } });
@@ -589,13 +600,18 @@ async function handleProxyRequest(
     }
   }
 
-  // ---- 保底 provider：主链全败后的最后一跳 ----
-  if (fallbackProvider && !res.headersSent) {
+  // ---- 保底链：主链全败后按路由规则逐个失败转移 ----
+  if (fallbackChain.length > 0 && !res.headersSent) {
     trace = withFallbackTriggered(trace);
-    const outcome = await run(fallbackProvider, 'fallback');
-    if (outcome.ok) {
-      await succeed(outcome);
-      return;
+    for (const provider of fallbackChain) {
+      if (res.headersSent || res.writableEnded) break;
+
+      const outcome = await run(provider, 'fallback');
+      if (outcome.ok) {
+        await succeed(outcome);
+        return;
+      }
+      if (outcome.responseSettled) break;
     }
   }
 
