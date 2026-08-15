@@ -11,7 +11,13 @@
 import { getDb } from '../lsqlite';
 import type { LsqliteStatement } from '../lsqlite';
 import { upsert } from '../sql';
-import type { RoutingRule, SettingsDTO, SettingsPatch } from '../../types/api';
+import type {
+  MaliciousBehaviorAction,
+  RequestBehaviorAction,
+  RoutingRule,
+  SettingsDTO,
+  SettingsPatch,
+} from '../../types/api';
 
 const HARD_DEFAULTS: SettingsDTO = {
   globalRule: 'priority',
@@ -26,6 +32,10 @@ const HARD_DEFAULTS: SettingsDTO = {
   publicRequestContentStreamEnabled: false,
   requestCacheEnabled: false,
   requestCacheReuseHours: 24,
+  globalSystemPrompt: '',
+  ideRequestAction: 'ignore',
+  maliciousRequestAction: 'ignore',
+  maliciousResponse: '抱歉，我无法协助处理该请求。',
 };
 
 export function normalizeRoutingRule(value: unknown): RoutingRule {
@@ -49,6 +59,16 @@ function normalizeNonNegativeInt(value: unknown, fallback: number): number {
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
   if (value === undefined || value === null || value === '') return fallback;
   return value === true || value === 'true' || value === '1' || value === 1;
+}
+
+function normalizeIdeAction(value: unknown): RequestBehaviorAction {
+  if (value === 'error' || value === 'strip-system-prompt') return value;
+  return 'ignore';
+}
+
+function normalizeMaliciousAction(value: unknown): MaliciousBehaviorAction {
+  if (value === 'error' || value === 'response') return value;
+  return 'ignore';
 }
 
 /** 原始 key-value 行 -> 强类型 DTO，逐项做范围校验 */
@@ -81,6 +101,10 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
       raw.requestCacheReuseHours,
       HARD_DEFAULTS.requestCacheReuseHours,
     ),
+    globalSystemPrompt: raw.globalSystemPrompt ?? HARD_DEFAULTS.globalSystemPrompt,
+    ideRequestAction: normalizeIdeAction(raw.ideRequestAction),
+    maliciousRequestAction: normalizeMaliciousAction(raw.maliciousRequestAction),
+    maliciousResponse: raw.maliciousResponse ?? HARD_DEFAULTS.maliciousResponse,
   };
 }
 
@@ -157,6 +181,10 @@ export async function seedSettingsFromEnv(): Promise<void> {
     publicRequestContentStreamEnabled: HARD_DEFAULTS.publicRequestContentStreamEnabled,
     requestCacheEnabled: HARD_DEFAULTS.requestCacheEnabled,
     requestCacheReuseHours: HARD_DEFAULTS.requestCacheReuseHours,
+    globalSystemPrompt: HARD_DEFAULTS.globalSystemPrompt,
+    ideRequestAction: HARD_DEFAULTS.ideRequestAction,
+    maliciousRequestAction: HARD_DEFAULTS.maliciousRequestAction,
+    maliciousResponse: HARD_DEFAULTS.maliciousResponse,
   };
 
   const statements: LsqliteStatement[] = Object.entries(seeds).map(([key, value]) =>

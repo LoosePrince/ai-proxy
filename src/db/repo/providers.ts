@@ -26,6 +26,7 @@ export interface ProviderRecord {
   name: string;
   baseUrl: string;
   apiKey: string;
+  systemPrompt: string;
   models: string[];
   kind: ProviderKind;
   source: ProviderSource;
@@ -53,6 +54,7 @@ interface ProviderRow {
   name: string;
   base_url: string;
   api_key: string;
+  system_prompt: string;
   kind: string;
   source: string;
   priority: number;
@@ -66,7 +68,7 @@ interface ProviderRow {
 }
 
 const PROVIDER_COLUMNS = `
-  p.id, p.name, p.base_url, p.api_key, p.kind, p.source, p.priority, p.enabled,
+  p.id, p.name, p.base_url, p.api_key, p.system_prompt, p.kind, p.source, p.priority, p.enabled,
   p.contributor, p.contributor_type, p.created_at, p.updated_at,
   (select group_concat(m.model, char(10))
      from (select model from provider_models
@@ -87,6 +89,7 @@ function toProviderRecord(row: ProviderRow): ProviderRecord {
     name: row.name,
     baseUrl: row.base_url,
     apiKey: row.api_key,
+    systemPrompt: row.system_prompt ?? '',
     models: row.models ? row.models.split('\n').filter(Boolean) : [],
     kind: normalizeKind(row.kind),
     source: normalizeSource(row.source),
@@ -168,6 +171,7 @@ export interface CreateProviderInput {
   name: string;
   baseUrl: string;
   apiKey: string;
+  systemPrompt?: string;
   models: string[];
   kind?: ProviderKind;
   source?: ProviderSource;
@@ -184,6 +188,7 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
     name: input.name,
     base_url: input.baseUrl,
     api_key: input.apiKey,
+    system_prompt: input.systemPrompt ?? '',
     kind: input.kind ?? 'primary',
     source: input.source ?? 'managed',
     priority: input.priority ?? 0,
@@ -220,6 +225,7 @@ export interface UpdateProviderInput {
   baseUrl?: string;
   /** 省略表示保留原值 */
   apiKey?: string;
+  systemPrompt?: string;
   models?: string[];
   kind?: ProviderKind;
   priority?: number;
@@ -235,6 +241,7 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   if (input.name !== undefined) fields.name = input.name;
   if (input.baseUrl !== undefined) fields.base_url = input.baseUrl;
   if (input.apiKey) fields.api_key = input.apiKey;
+  if (input.systemPrompt !== undefined) fields.system_prompt = input.systemPrompt;
   if (input.kind !== undefined) fields.kind = input.kind;
   if (input.priority !== undefined) fields.priority = input.priority;
   if (input.enabled !== undefined) fields.enabled = input.enabled;
@@ -321,6 +328,7 @@ export interface EnvProviderSpec {
   name: string;
   baseUrl: string;
   apiKey: string;
+  systemPrompt?: string;
   models?: string[];
   rule?: string;
   priority?: number;
@@ -349,6 +357,7 @@ export async function syncEnvProviders(specs: EnvProviderSpec[]): Promise<void> 
       await updateProvider(existing.id, {
         baseUrl: spec.baseUrl,
         apiKey: spec.apiKey,
+        systemPrompt: spec.systemPrompt,
         models: spec.models ?? [],
         priority,
       });
@@ -360,6 +369,7 @@ export async function syncEnvProviders(specs: EnvProviderSpec[]): Promise<void> 
         name: spec.name,
         baseUrl: spec.baseUrl,
         apiKey: spec.apiKey,
+        systemPrompt: spec.systemPrompt,
         models: spec.models ?? [],
         source: 'env',
         priority,

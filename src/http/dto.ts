@@ -52,6 +52,7 @@ export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule
     contributor: record.contributor,
     contributorType,
     avatarUrl: avatarOf(record.contributor, contributorType),
+    systemPrompt: record.systemPrompt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

@@ -61,6 +61,7 @@ function parseEnvProviders(raw: string | undefined): EnvProviderSpec[] {
         name: String(spec.name ?? ''),
         baseUrl: String(spec.baseUrl ?? ''),
         apiKey: String(spec.apiKey ?? ''),
+        systemPrompt: spec.systemPrompt === undefined ? undefined : String(spec.systemPrompt),
         models: Array.isArray(spec.models) ? spec.models.map((m) => String(m)) : [],
         rule: spec.rule === undefined ? undefined : String(spec.rule),
         priority: Number(spec.priority ?? 0) || 0,

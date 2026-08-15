@@ -19,6 +19,7 @@ import {
   Button,
   Card,
   Form,
+  Input,
   InputNumber,
   Select,
   Space,
@@ -32,12 +33,30 @@ import { Link } from 'react-router-dom';
 
 import { adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import type { PriorityGroupDTO, RoutingRule, SettingsDTO } from '@shared/api';
+import type {
+  MaliciousBehaviorAction,
+  PriorityGroupDTO,
+  RequestBehaviorAction,
+  RoutingRule,
+  SettingsDTO,
+} from '@shared/api';
 
 const RULE_OPTIONS: Array<{ label: string; value: RoutingRule }> = [
   { label: 'priority（按顺序）', value: 'priority' },
   { label: 'random（随机）', value: 'random' },
   { label: 'average（轮转）', value: 'average' },
+];
+
+const IDE_ACTION_OPTIONS: Array<{ label: string; value: RequestBehaviorAction }> = [
+  { label: '忽略请求（200 + 空消息）', value: 'ignore' },
+  { label: '失败（返回错误码）', value: 'error' },
+  { label: '去除用户提供的系统提示词后继续', value: 'strip-system-prompt' },
+];
+
+const MALICIOUS_ACTION_OPTIONS: Array<{ label: string; value: MaliciousBehaviorAction }> = [
+  { label: '忽略请求（200 + 空消息）', value: 'ignore' },
+  { label: '失败（返回错误码）', value: 'error' },
+  { label: '返回指定响应内容', value: 'response' },
 ];
 
 function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () => void }) {
@@ -172,6 +191,48 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           <InputNumber min={1} max={8760} className="control-full" />
         </Form.Item>
       </div>
+
+      <Card size="small" title="全局系统提示词" className="nested-settings-card">
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          该内容会以服务端强制规则的形式注入到每个 Provider 上游请求的第一条消息，优先于客户端消息。
+        </Typography.Paragraph>
+        <Form.Item
+          name="globalSystemPrompt"
+          label="内置系统提示词"
+          extra="留空表示不注入全局提示词。请只填写稳定、可长期适用的规则。"
+        >
+          <Input.TextArea autoSize={{ minRows: 5, maxRows: 14 }} placeholder="例如：始终使用简体中文回答，并遵守以下业务规则……" />
+        </Form.Item>
+      </Card>
+
+      <Card size="small" title="特定 AI 行为处理" className="nested-settings-card">
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          代理会在限流、缓存和上游调用前检查请求。检测规则是服务端启发式规则，误判时可调整处理方式。
+        </Typography.Paragraph>
+        <div className="settings-grid">
+          <Form.Item
+            name="ideRequestAction"
+            label="检测到 IDE 环境或工具链请求"
+            tooltip="检查 system/developer 消息、工具定义和常见 IDE 工具名称。"
+          >
+            <Select options={IDE_ACTION_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="maliciousRequestAction"
+            label="检测到恶意行为内容"
+            tooltip="覆盖逆序、越狱、破解、攻击和明显违法内容等模式。"
+          >
+            <Select options={MALICIOUS_ACTION_OPTIONS} />
+          </Form.Item>
+        </div>
+        <Form.Item
+          name="maliciousResponse"
+          label="恶意内容指定响应"
+          extra="仅当上方选择“返回指定响应内容”时生效。"
+        >
+          <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} placeholder="请输入要返回给客户端的内容" />
+        </Form.Item>
+      </Card>
 
       <Space>
         <Button type="primary" htmlType="submit" loading={saving}>

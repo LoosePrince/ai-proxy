@@ -17,9 +17,12 @@ import express, { type Request, type Response } from 'express';
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
 import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
+import { inspectRequest, stripClientSystemPrompts } from '../core/request-policy';
+import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import { buildAttemptChain, buildModelCandidates, findSpecialProvider } from '../core/routing';
 import { registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
+import { writeSyntheticSuccess } from './synthetic-response';
 import { resolveTimeoutMs } from '../core/timeout';
 import {
   createTrace,
@@ -153,6 +156,11 @@ async function attemptProvider(args: {
     };
   }
 
+  const upstreamPayload = prependBuiltInSystemPrompt(
+    payload,
+    config.settings.globalSystemPrompt,
+    provider.systemPrompt,
+  );
   const client = getUpstreamClient(provider);
   const owner = `${role}:${provider.id}`;
   let lastError: unknown = null;
@@ -164,7 +172,7 @@ async function attemptProvider(args: {
       const result = await invokeUpstream(
         {
           client,
-          payload,
+          payload: upstreamPayload,
           responseRequest,
           protocol,
           model,
@@ -268,7 +276,7 @@ async function handleProxyRequest(
   const originalPayload = (req.body ?? {}) as JsonRecord;
   const requestedModel = typeof originalPayload.model === 'string' ? originalPayload.model : null;
   const stream = originalPayload.stream === true;
-  const payload =
+  let payload =
     protocol === 'responses' ? responsesPayloadToChat(originalPayload) : normalizeChatPayload(originalPayload);
   const ip = getClientIp(req);
 
@@ -315,6 +323,60 @@ async function handleProxyRequest(
   contentLoggingEnabled = settings.requestContentLoggingEnabled;
   publicContentStreamEnabled = settings.publicRequestContentStreamEnabled;
 
+  const respondLocally = (content: string, reason: 'ide_request' | 'malicious_request'): void => {
+    trace = withFirstResponse(trace);
+    const synthetic = writeSyntheticSuccess(
+      res,
+      protocol,
+      originalPayload,
+      requestedModel ?? 'ai-proxy-policy',
+      stream,
+      content,
+    );
+    finish(
+      {
+        success: true,
+        httpStatus: 200,
+        finalModel: requestedModel,
+      },
+      {
+        clientRequest: originalPayload,
+        upstreamRequest: { forwarded: false, handledBy: reason },
+        aiResponse: synthetic.responseBody,
+      },
+    );
+  };
+
+  const rejectByPolicy = (code: string, message: string): void => {
+    finish({ success: false, httpStatus: 403, errorCode: code, errorMessage: message });
+    res.status(403).json({ error: { message, code } });
+  };
+
+  const inspection = inspectRequest(payload);
+  if (inspection.isMalicious) {
+    if (settings.maliciousRequestAction === 'error') {
+      rejectByPolicy('malicious_request_blocked', '请求包含被安全策略拒绝的内容');
+      return;
+    }
+    respondLocally(
+      settings.maliciousRequestAction === 'response' ? settings.maliciousResponse : '',
+      'malicious_request',
+    );
+    return;
+  }
+
+  if (inspection.isIdeRequest) {
+    if (settings.ideRequestAction === 'error') {
+      rejectByPolicy('ide_request_blocked', '检测到来自 IDE 环境或工具链的请求');
+      return;
+    }
+    if (settings.ideRequestAction === 'ignore') {
+      respondLocally('', 'ide_request');
+      return;
+    }
+    payload = stripClientSystemPrompts(payload);
+  }
+
   // ---- 限流（内存滑动窗口，阈值来自配置快照）----
   const rate = checkRateLimit(ip, settings.ipRateLimitRpm);
   if (rate.limit > 0) {
@@ -329,7 +391,16 @@ async function handleProxyRequest(
     return;
   }
 
-  const cacheKey = settings.requestCacheEnabled ? createRequestCacheKey(protocol, originalPayload) : null;
+  const cachePayload = {
+    ...payload,
+    __aiProxyPolicy: {
+      globalSystemPrompt: settings.globalSystemPrompt,
+      providerSystemPrompts: config.providers
+        .filter((provider) => provider.enabled && provider.systemPrompt)
+        .map((provider) => [provider.id, provider.systemPrompt]),
+    },
+  };
+  const cacheKey = settings.requestCacheEnabled ? createRequestCacheKey(protocol, cachePayload) : null;
   if (cacheKey) {
     try {
       const cached = await findReusableResponse(cacheKey, settings.requestCacheReuseHours);

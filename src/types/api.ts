@@ -5,6 +5,10 @@
 
 export type RoutingRule = 'priority' | 'random' | 'average';
 
+export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt';
+
+export type MaliciousBehaviorAction = 'ignore' | 'error' | 'response';
+
 /** primary 参与常规路由；fallback / parallel 是单例特殊角色，DB 里同样是真实行 */
 export type ProviderKind = 'primary' | 'fallback' | 'parallel';
 
@@ -32,6 +36,8 @@ export interface ProviderDTO {
   contributor: string | null;
   contributorType: ContributorType | null;
   avatarUrl: string | null;
+  /** Provider 级内置系统提示词，不包含 apiKey 等敏感信息 */
+  systemPrompt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +48,8 @@ export interface ProviderUpsertInput {
   /** 省略或空串表示保留原值 */
   apiKey?: string;
   models: string[];
+  /** Provider 级内置系统提示词 */
+  systemPrompt?: string;
   kind?: ProviderKind;
   priority?: number;
   enabled?: boolean;
@@ -73,6 +81,14 @@ export interface SettingsDTO {
   requestCacheEnabled: boolean;
   /** 只命中此时间窗口内写入的缓存；缓存行本身不自动删除 */
   requestCacheReuseHours: number;
+  /** 所有 Provider 共享的内置强制系统提示词 */
+  globalSystemPrompt: string;
+  /** 检测到 IDE 环境或工具链请求后的处理方式 */
+  ideRequestAction: RequestBehaviorAction;
+  /** 检测到恶意内容后的处理方式 */
+  maliciousRequestAction: MaliciousBehaviorAction;
+  /** maliciousRequestAction=response 时返回的文本 */
+  maliciousResponse: string;
 }
 
 export type SettingsPatch = Partial<SettingsDTO>;

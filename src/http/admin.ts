@@ -43,6 +43,8 @@ import { upstreamClientCount } from '../upstream/client';
 import type {
   PriorityGroupDTO,
   ProviderKind,
+  RequestBehaviorAction,
+  MaliciousBehaviorAction,
   RequestListQuery,
   RoutingRule,
   SettingsPatch,
@@ -146,6 +148,16 @@ function toNonNegativeInt(value: unknown, label: string): number {
   return Math.round(num);
 }
 
+function toIdeAction(value: unknown): RequestBehaviorAction {
+  if (value === 'ignore' || value === 'error' || value === 'strip-system-prompt') return value;
+  throw new BadRequest('IDE 请求处理方式无效');
+}
+
+function toMaliciousAction(value: unknown): MaliciousBehaviorAction {
+  if (value === 'ignore' || value === 'error' || value === 'response') return value;
+  throw new BadRequest('恶意请求处理方式无效');
+}
+
 // ------------------------------------------------------------------ 登录态
 
 router.post('/api/login', (req: Request, res: Response) => {
@@ -202,6 +214,7 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
       baseUrl: requireHttpUrl(body.baseUrl, 'baseUrl'),
       apiKey: requireString(body.apiKey, 'apiKey'),
       models: toModels(body.models),
+      systemPrompt: body.systemPrompt === undefined ? '' : String(body.systemPrompt).trim(),
       kind,
       source: 'managed',
       priority: toPriority(body.priority),
@@ -241,6 +254,7 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
     // 留空表示保持原 key 不变
     if (body.apiKey) patch.apiKey = requireString(body.apiKey, 'apiKey');
     if (body.models !== undefined) patch.models = toModels(body.models);
+    if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt).trim();
     if (body.kind !== undefined) patch.kind = toKind(body.kind);
     if (body.priority !== undefined) patch.priority = toPriority(body.priority);
     if (body.enabled !== undefined) patch.enabled = !!body.enabled;
@@ -376,6 +390,12 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.requestCacheReuseHours !== undefined) {
       patch.requestCacheReuseHours = toPositiveInt(body.requestCacheReuseHours, '请求缓存复用间隔');
     }
+    if (body.globalSystemPrompt !== undefined) patch.globalSystemPrompt = String(body.globalSystemPrompt);
+    if (body.ideRequestAction !== undefined) patch.ideRequestAction = toIdeAction(body.ideRequestAction);
+    if (body.maliciousRequestAction !== undefined) {
+      patch.maliciousRequestAction = toMaliciousAction(body.maliciousRequestAction);
+    }
+    if (body.maliciousResponse !== undefined) patch.maliciousResponse = String(body.maliciousResponse);
 
     const settings = await saveSettings(patch);
     invalidateConfig();

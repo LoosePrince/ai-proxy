@@ -68,6 +68,7 @@ interface FormValues {
   baseUrl: string;
   apiKey?: string;
   models: string[];
+  systemPrompt: string;
   kind: ProviderKind;
   priority: number;
   enabled: boolean;
@@ -81,6 +82,7 @@ export function Providers() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<FormValues>();
+  const modelValues = Form.useWatch('models', form) ?? [];
 
   const reloadAll = useCallback(() => {
     providers.reload();
@@ -93,6 +95,7 @@ export function Providers() {
       baseUrl: '',
       apiKey: '',
       models: [],
+      systemPrompt: '',
       kind: 'primary',
       priority: 0,
       enabled: true,
@@ -109,6 +112,7 @@ export function Providers() {
         // 留空表示保持原 key，不预填任何占位字符
         apiKey: '',
         models: record.models,
+        systemPrompt: record.systemPrompt,
         kind: record.kind,
         priority: record.priority,
         enabled: record.enabled,
@@ -427,7 +431,15 @@ export function Providers() {
           </Form.Item>
 
           <Form.Item name="models" label="模型列表" extra="留空表示直接透传请求中的模型名">
-            <ModelChipEditor value={[]} onChange={() => undefined} />
+            <ModelChipEditor value={modelValues} onChange={(models) => form.setFieldValue('models', models)} />
+          </Form.Item>
+
+          <Form.Item
+            name="systemPrompt"
+            label="Provider 内置系统提示词"
+            extra="会与全局系统提示词合并，并作为上游第一条强制规则消息。"
+          >
+            <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} placeholder="留空表示不配置 Provider 级规则" />
           </Form.Item>
 
           <Form.Item name="kind" label="角色" extra="保底与并行各自只应启用一个">
