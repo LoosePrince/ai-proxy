@@ -26,7 +26,7 @@ import {
   listContributions,
   updateProvider,
 } from '../db/repo/providers';
-import { getPublicStats } from '../db/repo/usage';
+import { getPublicDetailedStats, getPublicStats } from '../db/repo/usage';
 import { getConfig, invalidateConfig } from '../runtime/config-cache';
 import { subscribePublicContent } from '../runtime/public-content-stream';
 import type { ContributionModelResult, ContributionSubmitResult } from '../types/api';
@@ -51,7 +51,25 @@ function failed(res: Response, error: unknown): void {
 
 router.get('/api/public-stats', async (_req: Request, res: Response) => {
   try {
-    res.json(await getPublicStats());
+    const config = await getConfig();
+    res.json(await getPublicStats(config.settings.publicDetailedStatsEnabled));
+  } catch (error) {
+    failed(res, error);
+  }
+});
+
+/**
+ * 公开详细统计。默认关闭：披露的粒度比首页三个数字大得多，
+ * 是否对外开放应由运营者显式决定，而不是随服务上线自动生效。
+ */
+router.get('/api/public-stats/detailed', async (_req: Request, res: Response) => {
+  try {
+    const config = await getConfig();
+    if (!config.settings.publicDetailedStatsEnabled) {
+      res.status(404).json({ error: { message: '公开详细统计未启用' } });
+      return;
+    }
+    res.json(await getPublicDetailedStats());
   } catch (error) {
     failed(res, error);
   }
@@ -158,30 +176,45 @@ router.post('/api/contributions', async (req: Request, res: Response) => {
      */
     const client = new OpenAI({ baseURL: baseUrl, apiKey, maxRetries: 0, timeout: MODEL_PROBE_TIMEOUT_MS });
 
-    // 串行验证：并发打同一个上游更容易触发对方限流，反而造成误判
-    const results: ContributionModelResult[] = [];
-    for (const model of models) {
-      results.push(await probeModel(client, model));
+    // 同一 apiKey 视为同一份贡献。已有模型已经验证过，本次不再重复请求。
+    const existing = await findContributedByApiKey(apiKey);
+    const verifiedModels = new Set(existing?.models ?? []);
+    const modelsToProbe = models.filter((model) => !verifiedModels.has(model));
+
+    /*
+     * 只探测新增模型。已有模型即使本次上游短暂异常，也不应被重复验证覆盖。
+     * 串行验证可以减少触发对方限流导致的误判。
+     */
+    const results: ContributionModelResult[] = models.map((model) =>
+      verifiedModels.has(model)
+        ? { model, ok: true, reply: '已有记录，跳过验证' }
+        : { model, ok: false, error: '尚未验证' },
+    );
+    for (const model of modelsToProbe) {
+      const result = await probeModel(client, model);
+      const index = results.findIndex((item) => item.model === model);
+      if (index >= 0) results[index] = result;
     }
 
-    const rejected = results.filter((result) => !result.ok);
-    if (rejected.length > 0) {
+    const availableModels = [...new Set([
+      ...(existing?.models ?? []),
+      ...results.filter((result) => result.ok).map((result) => result.model),
+    ])];
+    if (availableModels.length === 0) {
       res.status(422).json({
         success: false,
-        error: { message: '贡献验证失败，所有模型都必须通过验证' },
+        error: { message: '没有验证通过的模型，贡献未保存' },
         results,
       });
       return;
     }
 
-    // 同一 apiKey 视为同一份贡献：重复提交是更新而非新建
-    const existing = await findContributedByApiKey(apiKey);
-
+    // 只保存已有记录与本次验证通过的模型，失败模型不会进入路由池。
     const record = existing
       ? await updateProvider(existing.id, {
           baseUrl,
           apiKey,
-          models,
+          models: availableModels,
           contributor: identity.contributor,
           contributorType: identity.contributorType,
         })
@@ -189,7 +222,7 @@ router.post('/api/contributions', async (req: Request, res: Response) => {
           name: contributionProviderName(apiKey),
           baseUrl,
           apiKey,
-          models,
+          models: availableModels,
           source: 'contributed',
           priority: CONTRIBUTED_PRIORITY,
           // 贡献记录默认停用，由管理员审核后启用

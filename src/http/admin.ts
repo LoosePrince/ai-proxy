@@ -12,6 +12,8 @@
  * 所有写操作后必须 invalidateConfig()，否则热路径继续读旧快照。
  */
 
+import { isIP } from 'node:net';
+
 import express, { type NextFunction, type Request, type Response } from 'express';
 import session from 'express-session';
 
@@ -26,6 +28,7 @@ import {
   updateProvider,
   type ProviderRecord,
 } from '../db/repo/providers';
+import { addIpBlacklist, listIpBlacklist, removeIpBlacklist } from '../db/repo/ip-blacklist';
 import { getRequestDetail, queryRequests } from '../db/repo/requests';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
@@ -156,6 +159,23 @@ function toIdeAction(value: unknown): RequestBehaviorAction {
 function toMaliciousAction(value: unknown): MaliciousBehaviorAction {
   if (value === 'ignore' || value === 'error' || value === 'response') return value;
   throw new BadRequest('恶意请求处理方式无效');
+}
+
+function normalizeIp(value: string): string {
+  return value.replace(/^::ffff:/i, '');
+}
+
+function toIp(value: unknown): string {
+  const ip = normalizeIp(requireString(value, 'IP'));
+  if (!isIP(ip)) throw new BadRequest('IP 必须是有效的 IPv4 或 IPv6 地址');
+  return ip;
+}
+
+function toOptionalNote(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const note = String(value).trim();
+  if (note.length > 200) throw new BadRequest('备注不能超过 200 个字符');
+  return note || null;
 }
 
 // ------------------------------------------------------------------ 登录态
@@ -340,6 +360,36 @@ router.put('/api/priority-groups/:priority', requireAuth, async (req: Request, r
   }
 });
 
+// ------------------------------------------------------------------ IP 黑名单
+
+router.get('/api/ip-blacklist', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json(await listIpBlacklist());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.put('/api/ip-blacklist/:ip', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const record = await addIpBlacklist(toIp(req.params.ip), toOptionalNote(req.body?.note));
+    invalidateConfig();
+    res.json(record);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.delete('/api/ip-blacklist/:ip', requireAuth, async (req: Request, res: Response) => {
+  try {
+    await removeIpBlacklist(toIp(req.params.ip));
+    invalidateConfig();
+    res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
 // ------------------------------------------------------------------ 全局设置
 
 router.get('/api/settings', requireAuth, async (_req: Request, res: Response) => {
@@ -383,6 +433,9 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     }
     if (body.publicRequestContentStreamEnabled !== undefined) {
       patch.publicRequestContentStreamEnabled = !!body.publicRequestContentStreamEnabled;
+    }
+    if (body.publicDetailedStatsEnabled !== undefined) {
+      patch.publicDetailedStatsEnabled = !!body.publicDetailedStatsEnabled;
     }
     if (body.requestCacheEnabled !== undefined) {
       patch.requestCacheEnabled = !!body.requestCacheEnabled;

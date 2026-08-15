@@ -82,6 +82,7 @@ npm run dev:web   # 前端 Vite dev server
 - Chat Completions `http://localhost:3000/v1/chat/completions` 或 `/chat/completions`
 - Responses `http://localhost:3000/v1/responses` 或 `/responses`
 - 首页 `http://localhost:3000/`
+- 公开详细状态页 `http://localhost:3000/status`（需在后台启用）
 - 后台 `http://localhost:3000/admin`
 
 服务启动时会自动执行迁移（幂等），无需手工建表。也可单独运行：
@@ -154,7 +155,8 @@ curl -X POST http://localhost:3000/responses \
 
 - `GET /v1/models` — 聚合所有启用 Provider 的模型
 - `GET /healthz` — 服务与 Lsqlite 连通性
-- `GET /api/public-stats` — 首页公开统计
+- `GET /api/public-stats` — 首页公开统计；成功率含缓存复用，不含客户端主动取消
+- `GET /api/public-stats/detailed` — 近 30 天公开详细状态；仅在后台启用「公开详细统计」后开放
 - `GET|POST /api/contributions` — 公开贡献列表与提交
 
 ## 贡献 API
@@ -192,6 +194,15 @@ Admin API：
 | `POST /admin/api/retention/sweep` | 手动触发明细清理 |
 
 `apiKey` 永不出站，接口只返回 `hasApiKey: boolean`。
+
+### 统计口径
+
+请求结局分为 `upstream_ok`、`cache_hit`、`upstream_error`、`client_abort` 与 `rejected`。后台会同时展示两个不同的问题，避免把用户行为或缓存效果误判为上游质量：
+
+- **交付率** = `(上游成功 + 缓存复用) / (总请求 - 客户端取消)`。这是首页「成功率」的口径。
+- **上游成功率** = `上游成功 / (上游成功 + 上游失败)`。只看实际打到上游的调用，缓存复用不会虚高这个数。
+
+「公开详细统计」在后台的 **全局设置** 中启用。它只公开近 30 天的聚合趋势、请求结局和模型用量；不会公开 IP、Provider 名称、请求正文或 API Key。
 
 `source=env` 的 Provider 可在后台停用，但不可修改连接信息、不可删除。
 

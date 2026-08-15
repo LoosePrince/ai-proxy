@@ -9,15 +9,101 @@
  * 不会把该 IP 的全生命周期时间误显示成当前筛选区间的结果。
  */
 
-import { Alert, Button, Card, Input, Space, Table } from 'antd';
 import { useMemo, useState } from 'react';
+import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Space, Table, message } from 'antd';
 import { Link } from 'react-router-dom';
 
 import { adminApi } from '../api/client';
 import { DayRangePicker, useDayRange } from '../components/DayRangePicker';
 import { useAsync } from '../hooks/useAsync';
 import { formatCount, formatDateTime, formatTokens } from '../lib/format';
-import type { IpUsageDTO } from '@shared/api';
+import type { IpBlacklistDTO, IpUsageDTO } from '@shared/api';
+
+function IpBlacklistPanel() {
+  const blacklist = useAsync(() => adminApi.ipBlacklist(), []);
+  const [form] = Form.useForm<{ ip: string; note?: string }>();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const add = async (values: { ip: string; note?: string }) => {
+    setSaving(true);
+    try {
+      await adminApi.addIpBlacklist(values.ip.trim(), values.note?.trim() || null);
+      form.resetFields();
+      setOpen(false);
+      message.success('IP 已加入黑名单');
+      blacklist.reload();
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (ip: string) => {
+    try {
+      await adminApi.removeIpBlacklist(ip);
+      message.success('IP 已移出黑名单');
+      blacklist.reload();
+    } catch (error) {
+      message.error((error as Error).message);
+    }
+  };
+
+  return (
+    <Card
+      title="IP 黑名单"
+      extra={
+        <Space>
+          <Button size="small" onClick={blacklist.reload}>刷新</Button>
+          <Button size="small" type="primary" onClick={() => setOpen(true)}>添加 IP</Button>
+        </Space>
+      }
+    >
+      <Table<IpBlacklistDTO>
+        rowKey="ip"
+        dataSource={blacklist.data ?? []}
+        loading={blacklist.status === 'loading'}
+        size="small"
+        pagination={false}
+        locale={{ emptyText: '暂无黑名单 IP' }}
+        columns={[
+          { title: 'IP', dataIndex: 'ip', render: (ip: string) => <span className="mono">{ip}</span> },
+          { title: '备注', dataIndex: 'note', render: (note: string | null) => note || '—' },
+          { title: '添加时间', dataIndex: 'createdAt', render: formatDateTime },
+          {
+            title: '',
+            align: 'right',
+            render: (_: unknown, row) => (
+              <Popconfirm title={`确认解除 ${row.ip} 的封禁？`} onConfirm={() => void remove(row.ip)}>
+                <Button size="small" danger>解除封禁</Button>
+              </Popconfirm>
+            ),
+          },
+        ]}
+      />
+
+      <Modal title="添加 IP 黑名单" open={open} onCancel={() => setOpen(false)} footer={null} destroyOnClose>
+        <Form form={form} layout="vertical" onFinish={add}>
+          <Form.Item
+            name="ip"
+            label="IP 地址"
+            rules={[{ required: true, message: '请填写 IP 地址' }]}
+          >
+            <Input placeholder="例如 203.0.113.10 或 2001:db8::1" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="note" label="备注">
+            <Input maxLength={200} placeholder="可选，最多 200 个字符" />
+          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={saving}>确认封禁</Button>
+            <Button onClick={() => setOpen(false)} disabled={saving}>取消</Button>
+          </Space>
+        </Form>
+      </Modal>
+    </Card>
+  );
+}
 
 export function IpStats() {
   const { range, control } = useDayRange();
@@ -33,6 +119,8 @@ export function IpStats() {
 
   return (
     <div className="stack">
+      <IpBlacklistPanel />
+
       {usage.status === 'error' ? (
         <Alert
           type="error"

@@ -1,11 +1,45 @@
-import type { ProviderUsageDTO, UsageDailyDTO } from '@shared/api';
+import type {
+  OutcomeBreakdown,
+  ProviderUsageDTO,
+  SuccessRates,
+  UsageDailyDTO,
+} from '@shared/api';
 
 export interface WeeklyUsage {
   weekStart: string;
+  /** 包含历史累计桶的原始周总量，仅用于数值展示与提示。 */
   requests: number;
+  /** 该周可确认属于真实日期的请求量，用于视觉标尺。 */
+  realRequests: number;
+  /** 该周旧系统导入的历史累计请求量，仅用于识别与提示。 */
+  historicalRequests: number;
+  /** 该周是否混入了旧系统导入的历史累计。 */
+  isHistorical: boolean;
+  /** 原始周总量中的成功、失败和取消，用于提示。 */
   success: number;
   failed: number;
+  /** 客户端取消单独成列：它既不是成功也不是失败，堆叠图需要第三段 */
+  clientAbort: number;
+  /** 仅真实日期的结果拆分，用于保留正常数据的彩色柱段。 */
+  realSuccess: number;
+  realClientAbort: number;
   totalTokens: number;
+}
+
+/**
+ * 由分类计数派生成功率。与后端 usage.ts 的 successRatesOf 保持同一口径：
+ *   交付率   缓存复用算成功，客户端取消不计入分母
+ *   上游健康度 只统计真正打到上游的调用
+ */
+export function successRatesOf(breakdown: OutcomeBreakdown): SuccessRates {
+  const delivered = breakdown.upstreamOk + breakdown.cacheHit;
+  const attributable = Math.max(breakdown.requests - breakdown.clientAbort, 0);
+  const upstreamCalls = breakdown.upstreamOk + breakdown.upstreamError;
+
+  return {
+    serviceSuccessRate: attributable > 0 ? (delivered / attributable) * 100 : 0,
+    upstreamSuccessRate: upstreamCalls > 0 ? (breakdown.upstreamOk / upstreamCalls) * 100 : 0,
+  };
 }
 
 export interface ChartSlice {
@@ -15,10 +49,17 @@ export interface ChartSlice {
 
 const EMPTY_DAILY = (day: string): UsageDailyDTO => ({
   day,
+  isHistorical: false,
   requests: 0,
   success: 0,
   failed: 0,
-  successRate: 0,
+  upstreamOk: 0,
+  cacheHit: 0,
+  upstreamError: 0,
+  clientAbort: 0,
+  rejected: 0,
+  serviceSuccessRate: 0,
+  upstreamSuccessRate: 0,
   promptTokens: 0,
   completionTokens: 0,
   totalTokens: 0,
@@ -56,11 +97,10 @@ export function fillDailyGaps(
   return result;
 }
 
-export interface DailySummary {
+export interface DailySummary extends OutcomeBreakdown, SuccessRates {
   totalRequests: number;
   successRequests: number;
   failedRequests: number;
-  successRate: number;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -76,17 +116,33 @@ export function filterDailyRange(
 export function summarizeDaily(rows: UsageDailyDTO[]): DailySummary {
   const totals = rows.reduce(
     (acc, row) => ({
-      totalRequests: acc.totalRequests + row.requests,
-      successRequests: acc.successRequests + row.success,
-      failedRequests: acc.failedRequests + row.failed,
+      requests: acc.requests + row.requests,
+      upstreamOk: acc.upstreamOk + row.upstreamOk,
+      cacheHit: acc.cacheHit + row.cacheHit,
+      upstreamError: acc.upstreamError + row.upstreamError,
+      clientAbort: acc.clientAbort + row.clientAbort,
+      rejected: acc.rejected + row.rejected,
       promptTokens: acc.promptTokens + row.promptTokens,
       completionTokens: acc.completionTokens + row.completionTokens,
     }),
-    { totalRequests: 0, successRequests: 0, failedRequests: 0, promptTokens: 0, completionTokens: 0 },
+    {
+      requests: 0,
+      upstreamOk: 0,
+      cacheHit: 0,
+      upstreamError: 0,
+      clientAbort: 0,
+      rejected: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+    },
   );
+
   return {
     ...totals,
-    successRate: totals.totalRequests > 0 ? (totals.successRequests / totals.totalRequests) * 100 : 0,
+    ...successRatesOf(totals),
+    totalRequests: totals.requests,
+    successRequests: totals.upstreamOk + totals.cacheHit,
+    failedRequests: totals.upstreamError + totals.rejected,
     totalTokens: totals.promptTokens + totals.completionTokens,
   };
 }
@@ -105,13 +161,30 @@ export function aggregateWeekly(rows: UsageDailyDTO[]): WeeklyUsage[] {
     const current = weeks.get(weekStart) ?? {
       weekStart,
       requests: 0,
+      realRequests: 0,
+      historicalRequests: 0,
+      isHistorical: false,
       success: 0,
       failed: 0,
+      clientAbort: 0,
+      realSuccess: 0,
+      realClientAbort: 0,
       totalTokens: 0,
     };
     current.requests += row.requests;
-    current.success += row.success;
-    current.failed += row.failed;
+    const success = row.upstreamOk + row.cacheHit;
+    const failed = row.upstreamError + row.rejected;
+    if (row.isHistorical) {
+      current.isHistorical = true;
+      current.historicalRequests += row.requests;
+    } else {
+      current.realRequests += row.requests;
+      current.realSuccess += success;
+      current.realClientAbort += row.clientAbort;
+    }
+    current.success += success;
+    current.failed += failed;
+    current.clientAbort += row.clientAbort;
     current.totalTokens += row.totalTokens;
     weeks.set(weekStart, current);
   }

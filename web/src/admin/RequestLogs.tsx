@@ -18,9 +18,41 @@ import { adminApi } from '../api/client';
 import { DayRangePicker, useDayRange } from '../components/DayRangePicker';
 import { useAsync } from '../hooks/useAsync';
 import { formatDateTime, formatMs, formatTokens } from '../lib/format';
-import type { AttemptStatus, RequestListQuery, RequestSummaryDTO } from '@shared/api';
+import type {
+  AttemptStatus,
+  RequestListQuery,
+  RequestOutcome,
+  RequestSummaryDTO,
+} from '@shared/api';
 
 const PAGE_SIZE = 20;
+
+/**
+ * 结局分类的展示口径。
+ *
+ * 之所以直接展示分类而不是「成功/失败」两态：缓存复用与客户端取消
+ * 在旧口径下分别被塞进成功与失败，排查时无法区分「上游真的坏了」
+ * 和「用户自己按了停止」。
+ */
+const OUTCOME_VIEW: Record<RequestOutcome, { label: string; color: string; hint: string }> = {
+  upstream_ok: { label: '成功', color: 'green', hint: '真实调用上游并成功返回' },
+  cache_hit: { label: '复用缓存', color: 'blue', hint: '命中持久化缓存，本次未触达上游' },
+  upstream_error: { label: '上游失败', color: 'red', hint: '上游失败、超时或无可用 Provider' },
+  client_abort: {
+    label: '客户端取消',
+    color: 'default',
+    hint: '客户端在响应完成前断开。不计入成功率，也不归属到任何 Provider。',
+  },
+  rejected: { label: '网关拒绝', color: 'orange', hint: '被网关自身拒绝（如限流），未触达上游' },
+};
+
+const OUTCOME_FILTER_OPTIONS = [
+  { label: '全部结局', value: '' },
+  ...(Object.keys(OUTCOME_VIEW) as RequestOutcome[]).map((outcome) => ({
+    label: OUTCOME_VIEW[outcome].label,
+    value: outcome,
+  })),
+];
 
 const STATUS_COLOR: Record<AttemptStatus, string> = {
   success: 'green',
@@ -66,6 +98,8 @@ export function RequestLogs() {
     };
     if (success === 'true') result.success = true;
     if (success === 'false') result.success = false;
+    const outcome = params.get('outcome');
+    if (outcome && outcome in OUTCOME_VIEW) result.outcome = outcome as RequestOutcome;
     const model = params.get('requestedModel');
     if (model) result.requestedModel = model;
     const ip = params.get('ip');
@@ -83,6 +117,7 @@ export function RequestLogs() {
       query.limit,
       query.offset,
       query.success,
+      query.outcome,
       query.requestedModel,
       query.ip,
       query.providerId,
@@ -141,14 +176,10 @@ export function RequestLogs() {
             />
             <Select
               size="small"
-              className="control-w-110"
-              value={params.get('success') ?? 'all'}
-              onChange={(value) => patchFilter('success', value === 'all' ? null : value)}
-              options={[
-                { label: '全部状态', value: 'all' },
-                { label: '仅成功', value: 'true' },
-                { label: '仅失败', value: 'false' },
-              ]}
+              className="control-w-160"
+              value={params.get('outcome') ?? ''}
+              onChange={(value) => patchFilter('outcome', value || null)}
+              options={OUTCOME_FILTER_OPTIONS}
             />
             <Input.Search
               size="small"
@@ -195,14 +226,18 @@ export function RequestLogs() {
             },
             {
               title: '状态',
-              dataIndex: 'success',
-              render: (success: boolean, row) => (
-                <Space size={4}>
-                  <Tag color={success ? 'green' : 'red'}>{success ? '成功' : '失败'}</Tag>
-                  {row.httpStatus ? <span className="faint">{row.httpStatus}</span> : null}
-                  {row.cacheHit ? <Tag color="blue">复用缓存</Tag> : null}
-                </Space>
-              ),
+              dataIndex: 'outcome',
+              render: (outcome: RequestOutcome, row) => {
+                const view = OUTCOME_VIEW[outcome];
+                return (
+                  <Space size={4}>
+                    <Tooltip title={view.hint}>
+                      <Tag color={view.color}>{view.label}</Tag>
+                    </Tooltip>
+                    {row.httpStatus ? <span className="faint">{row.httpStatus}</span> : null}
+                  </Space>
+                );
+              },
             },
             {
               title: '模型',

@@ -8,6 +8,8 @@
 
 import type { ReactNode } from 'react';
 
+import './StatCard.css';
+
 export function StatCard({
   label,
   value,

@@ -39,16 +39,27 @@ function qqAvatarUrl(email: string): string | null {
   return `https://q.qlogo.cn/headimg_dl?dst_uin=${match[1]}&spec=100`;
 }
 
+/** 公开头像由可验证的身份标识确定，不依赖第三方资料查询。 */
+export function contributorAvatarUrl(
+  contributor: string,
+  contributorType: ContributorType,
+): string | null {
+  if (contributorType === 'github') {
+    return `https://github.com/${encodeURIComponent(contributor)}.png?size=100`;
+  }
+  return qqAvatarUrl(contributor);
+}
+
 export function normalizeContributor(raw: unknown): NormalizedContributor {
   const value = String(raw ?? '').trim();
   if (!value) throw new ValidationError('邮箱或 GitHub 用户 ID 不能为空');
 
   const lowered = value.toLowerCase();
   if (EMAIL_RE.test(lowered)) {
-    return { contributor: lowered, contributorType: 'email', avatarUrl: qqAvatarUrl(lowered) };
+    return { contributor: lowered, contributorType: 'email', avatarUrl: contributorAvatarUrl(lowered, 'email') };
   }
   if (GITHUB_RE.test(value)) {
-    return { contributor: value, contributorType: 'github', avatarUrl: null };
+    return { contributor: value, contributorType: 'github', avatarUrl: contributorAvatarUrl(value, 'github') };
   }
 
   throw new ValidationError('请输入有效邮箱或 GitHub 用户 ID');

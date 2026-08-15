@@ -8,7 +8,7 @@
  */
 
 import type { ProviderRecord } from '../db/repo/providers';
-import { contributorDisplayName, maskBaseUrl } from '../core/contribution';
+import { contributorAvatarUrl, contributorDisplayName } from '../core/contribution';
 import type {
   ContributionListItemDTO,
   ContributorType,
@@ -20,11 +20,8 @@ function asContributorType(value: string | null): ContributorType | null {
   return value === 'email' || value === 'github' ? value : null;
 }
 
-/** QQ 邮箱可推导公开头像，其余返回 null 由前端用首字母兜底 */
 function avatarOf(contributor: string | null, type: ContributorType | null): string | null {
-  if (!contributor || type !== 'email') return null;
-  const match = /^([1-9]\d{4,11})@qq\.com$/.exec(contributor);
-  return match ? `https://q.qlogo.cn/headimg_dl?dst_uin=${match[1]}&spec=100` : null;
+  return contributor && type ? contributorAvatarUrl(contributor, type) : null;
 }
 
 function displayNameOf(record: ProviderRecord): string {
@@ -70,9 +67,8 @@ export function toContributionDTO(record: ProviderRecord): ContributionListItemD
     contributor: publicContributor,
     contributorType,
     displayName: publicContributor,
-    // QQ 头像地址包含完整数字 ID，公开接口不能在脱敏后通过头像 URL 反向泄露。
-    avatarUrl: contributorType === 'email' ? null : avatarOf(record.contributor, contributorType),
-    baseUrl: maskBaseUrl(record.baseUrl),
+    avatarUrl: avatarOf(record.contributor, contributorType),
+    // 节点地址不进入公开 DTO。
     modelCount: record.models.length,
     models: record.models,
     enabled: record.enabled,

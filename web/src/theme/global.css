@@ -244,6 +244,10 @@ code {
   margin-top: 16px;
 }
 
+.mb-12 {
+  margin-bottom: 12px;
+}
+
 .control-full {
   width: 100%;
 }

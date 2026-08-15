@@ -6,9 +6,15 @@
  */
 
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Alert, Card, Skeleton } from 'antd';
-import { ApiOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Skeleton } from 'antd';
+import {
+  ApiOutlined,
+  ArrowRightOutlined,
+  CheckCircleOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
 
 import { publicApi } from '../api/client';
 import { SectionHead } from '../components/SectionHead';
@@ -45,7 +51,8 @@ export function PublicStats() {
     {
       label: '成功率',
       value: stats.data ? formatPercent(stats.data.successRate) : '--',
-      hint: '已完成请求的成功占比',
+      // 明确写出口径，避免访客把它误读成「上游可用率」
+      hint: '含缓存复用，不含客户端主动取消',
       icon: <CheckCircleOutlined />,
       tone: 'success',
     },
@@ -88,6 +95,18 @@ export function PublicStats() {
           ))}
         </div>
       )}
+
+      {/* 入口由后台开关控制：详细页披露的粒度更大，未启用时连入口都不出现 */}
+      {stats.data?.detailedStatsEnabled ? (
+        <div className="stats-more">
+          <Link to="/status">
+            <Button type="default" size="large" icon={<ArrowRightOutlined />} iconPosition="end">
+              查看详细运行状态
+            </Button>
+          </Link>
+          <span className="faint">近 30 天趋势、结局分布与模型用量</span>
+        </div>
+      ) : null}
     </section>
   );
 }

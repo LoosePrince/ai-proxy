@@ -13,6 +13,9 @@ import { migration003RequestContentCache } from './migrations/003_request_conten
 import { migration004ResponseCacheWireFormat } from './migrations/004_response_cache_wire_format';
 import { migration005BackfillLegacyGlobalUsageDaily } from './migrations/005_backfill_legacy_global_usage_daily';
 import { migration006PromptAndBehavior } from './migrations/006_prompt_and_behavior';
+import { migration006RequestOutcome } from './migrations/006_request_outcome';
+import { migrationHistoricalUsageProvenance } from './migrations/historical_usage_provenance';
+import { migration007IpBlacklist } from './migrations/007_ip_blacklist';
 
 export interface Migration {
   id: string;
@@ -26,6 +29,9 @@ const MIGRATIONS: Migration[] = [
   migration004ResponseCacheWireFormat,
   migration005BackfillLegacyGlobalUsageDaily,
   migration006PromptAndBehavior,
+  migration006RequestOutcome,
+  migrationHistoricalUsageProvenance,
+  migration007IpBlacklist,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

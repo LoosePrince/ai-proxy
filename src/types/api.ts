@@ -19,6 +19,28 @@ export type AttemptStatus = 'success' | 'failed' | 'claimed-by-other';
 
 export type AttemptRole = 'primary' | 'parallel' | 'fallback';
 
+/**
+ * 请求结局分类。
+ *
+ * 取代原先单一的 `success` 布尔：布尔只能表达「成/败」，无法区分
+ * 「上游真的失败了」与「客户端自己挂断了」「结果来自缓存复用」，
+ * 而这三者对可用性的含义完全不同，混在一起会同时污染两个方向：
+ *   - 缓存命中会虚高 provider 的成功率与请求数（该 provider 本次没被调用）
+ *   - 客户端取消会被记成上游故障，把用户行为算成服务质量问题
+ *
+ *   upstream_ok     真实调用上游并成功返回
+ *   cache_hit       命中持久化缓存，未触达上游
+ *   upstream_error  上游失败 / 超时 / 无可用 provider
+ *   client_abort    客户端在响应完成前断开
+ *   rejected        网关自己拒绝（如限流），未触达上游
+ */
+export type RequestOutcome =
+  | 'upstream_ok'
+  | 'cache_hit'
+  | 'upstream_error'
+  | 'client_abort'
+  | 'rejected';
+
 export interface ProviderDTO {
   id: number;
   name: string;
@@ -77,6 +99,8 @@ export interface SettingsDTO {
   requestContentLoggingEnabled: boolean;
   /** 开放仅包含脱敏快照的实时 SSE 端点 */
   publicRequestContentStreamEnabled: boolean;
+  /** 开放 /api/public-stats/detailed 与首页的详细状态页入口 */
+  publicDetailedStatsEnabled: boolean;
   /** 允许相同协议与传输形态的请求复用持久化响应 */
   requestCacheEnabled: boolean;
   /** 只命中此时间窗口内写入的缓存；缓存行本身不自动删除 */
@@ -97,11 +121,42 @@ export interface RequestListQuery {
   limit?: number;
   offset?: number;
   success?: boolean;
+  outcome?: RequestOutcome;
   requestedModel?: string;
   ip?: string;
   providerId?: number;
   from?: string;
   to?: string;
+}
+
+/**
+ * 一组结局计数。所有成功率都由它派生，避免各处各算一套口径。
+ *
+ * requests = upstreamOk + cacheHit + upstreamError + clientAbort + rejected
+ */
+export interface OutcomeBreakdown {
+  requests: number;
+  upstreamOk: number;
+  cacheHit: number;
+  upstreamError: number;
+  clientAbort: number;
+  rejected: number;
+}
+
+/**
+ * 两个口径刻意分开，因为它们回答的是不同的问题：
+ *
+ *   serviceSuccessRate  = (upstreamOk + cacheHit) / (requests - clientAbort)
+ *                         「用户发起的请求里，有多少真的拿到了结果」
+ *                         缓存复用是有效交付，计入；客户端自己挂断不是服务的锅，剔除。
+ *
+ *   upstreamSuccessRate = upstreamOk / (upstreamOk + upstreamError)
+ *                         「真正打到上游的调用里，上游有多少次成功」
+ *                         缓存命中没有触达上游，必须排除，否则会虚高。
+ */
+export interface SuccessRates {
+  serviceSuccessRate: number;
+  upstreamSuccessRate: number;
 }
 
 export interface RequestSummaryDTO {
@@ -119,6 +174,7 @@ export interface RequestSummaryDTO {
   stream: boolean;
   cacheHit: boolean;
   success: boolean;
+  outcome: RequestOutcome;
   httpStatus: number | null;
   errorMessage: string | null;
   promptTokens: number;
@@ -171,34 +227,34 @@ export interface Paged<T> {
   offset: number;
 }
 
-export interface UsageDailyDTO {
+export interface UsageDailyDTO extends OutcomeBreakdown, SuccessRates {
   day: string;
-  requests: number;
+  /** 旧系统累计统计导入的占位日，不代表真实发生日期。 */
+  isHistorical: boolean;
+  /** = upstreamOk + cacheHit，即成功交付给客户端的请求数 */
   success: number;
+  /** = upstreamError + rejected，不含 clientAbort */
   failed: number;
-  successRate: number;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
 }
 
-export interface DashboardSummaryDTO {
+export interface DashboardSummaryDTO extends OutcomeBreakdown, SuccessRates {
   totalRequests: number;
   successRequests: number;
   failedRequests: number;
-  successRate: number;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   providers: ProviderUsageDTO[];
 }
 
-export interface ProviderUsageDTO {
+export interface ProviderUsageDTO extends OutcomeBreakdown, SuccessRates {
   providerId: number | null;
   name: string;
   kind: ProviderKind;
   enabled: boolean;
-  requests: number;
   success: number;
   failed: number;
   promptTokens: number;
@@ -215,6 +271,12 @@ export interface ModelUsageDTO {
   actualResolved: Array<{ model: string; requests: number }>;
 }
 
+export interface IpBlacklistDTO {
+  ip: string;
+  note: string | null;
+  createdAt: string;
+}
+
 export interface IpUsageDTO {
   ip: string;
   requests: number;
@@ -223,10 +285,49 @@ export interface IpUsageDTO {
   lastSeenAt: string | null;
 }
 
+/**
+ * 首页公开统计。
+ *
+ * successRate 采用 serviceSuccessRate 口径：缓存复用算成功，客户端取消不计入分母。
+ * detailedStatsEnabled 决定首页是否展示「详细状态页」入口，由后台开关控制。
+ */
 export interface PublicStatsDTO {
   totalRequests: number;
   totalTokens: number;
   successRate: number;
+  detailedStatsEnabled: boolean;
+}
+
+/** 公开详细状态页数据。只包含可对外披露的聚合口径，不含 IP、Provider 名称与请求正文。 */
+export interface PublicDetailedStatsDTO {
+  overall: OutcomeBreakdown & SuccessRates;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  /** 参与路由的 Provider 数量，只给规模感，不披露具体身份 */
+  activeProviders: number;
+  daily: PublicDailyStatsDTO[];
+  /** 真实模型分布（按实际路由到的 actual_model 聚合），按请求量降序 */
+  models: PublicModelStatsDTO[];
+  generatedAt: string;
+}
+
+export interface PublicDailyStatsDTO extends SuccessRates {
+  day: string;
+  /** 旧系统累计统计导入的占位日，不代表真实发生日期。 */
+  isHistorical: boolean;
+  requests: number;
+  success: number;
+  failed: number;
+  cacheHit: number;
+  clientAbort: number;
+  totalTokens: number;
+}
+
+export interface PublicModelStatsDTO {
+  model: string;
+  requests: number;
+  totalTokens: number;
 }
 
 export type ContributorType = 'email' | 'github';
@@ -239,11 +340,10 @@ export interface ContributionListItemDTO {
   contributorType: ContributorType;
   /** 与公开 contributor 使用相同脱敏规则 */
   displayName: string;
-  /** 邮箱类型固定为 null，防止头像 URL 泄露原始 ID */
+  /** QQ 与 GitHub 使用公开头像，其他邮箱为 null。 */
   avatarUrl: string | null;
-  /** 只保留 origin + pathname */
-  baseUrl: string;
   modelCount: number;
+  /** 已验证且会被记录的模型 */
   models: string[];
   enabled: boolean;
   updatedAt: string;
