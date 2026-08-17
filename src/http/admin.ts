@@ -38,11 +38,16 @@ import {
   getModelUsage,
   getProviderUsage,
 } from '../db/repo/usage';
+import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { getConfig, invalidateConfig, peekConfig } from '../runtime/config-cache';
+import { resolveTimeoutMs } from '../core/timeout';
+import { type JsonRecord } from '../core/protocol';
 import { counterStats } from '../runtime/counters';
 import { getWriteQueueStats } from '../runtime/write-queue';
 import { runRetentionSweep } from '../runtime/retention';
-import { upstreamClientCount } from '../upstream/client';
+import { executeProviderScript } from '../upstream/script';
+import { getUpstreamClient, upstreamClientCount } from '../upstream/client';
+import { withTimeout } from '../core/timeout';
 import type {
   PriorityGroupDTO,
   ProviderKind,
@@ -51,6 +56,8 @@ import type {
   RequestListQuery,
   RoutingRule,
   SettingsPatch,
+  ProviderRequestMode,
+  ProviderVariableDefinition,
 } from '../types/api';
 import { toProviderDTO } from './dto';
 
@@ -109,6 +116,16 @@ function fail(res: Response, error: unknown): void {
   res.status(500).json({ error: { message } });
 }
 
+function errorStatus(error: unknown): number {
+  if (error instanceof BadRequest) return 400;
+  const candidate = error as { status?: number; response?: { status?: number } };
+  return candidate?.status ?? candidate?.response?.status ?? 500;
+}
+
+function errorMessage(error: unknown): string {
+  return (error as Error)?.message ?? '请求测试失败';
+}
+
 function requireString(value: unknown, label: string): string {
   const text = String(value ?? '').trim();
   if (!text) throw new BadRequest(`${label} 不能为空`);
@@ -125,6 +142,48 @@ function toModels(value: unknown): string[] {
   if (value === undefined) return [];
   const list = Array.isArray(value) ? value : String(value).split(/[,\n]/);
   return [...new Set(list.map((item) => String(item ?? '').trim()).filter(Boolean))];
+}
+
+function toRequestMode(value: unknown): ProviderRequestMode {
+  if (value === undefined || value === 'openai') return 'openai';
+  if (value === 'script') return 'script';
+  throw new BadRequest('requestMode 只允许 openai / script');
+}
+
+function toVariables(value: unknown): ProviderVariableDefinition[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new BadRequest('variables 必须是数组');
+
+  const names = new Set<string>();
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') throw new BadRequest(`第 ${index + 1} 个变量无效`);
+    const item = raw as Record<string, unknown>;
+    const name = requireString(item.name, `第 ${index + 1} 个变量名`);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      throw new BadRequest(`变量 ${name} 只能使用字母、数字和下划线，且不能以数字开头`);
+    }
+    if (names.has(name)) throw new BadRequest(`变量 ${name} 重复`);
+    names.add(name);
+    const type = item.type;
+    if (!['text', 'password', 'number', 'switch'].includes(String(type))) {
+      throw new BadRequest(`变量 ${name} 类型无效`);
+    }
+    const defaultValue = item.defaultValue;
+    if (
+      typeof defaultValue !== 'string' &&
+      typeof defaultValue !== 'number' &&
+      typeof defaultValue !== 'boolean'
+    ) {
+      throw new BadRequest(`变量 ${name} 的默认值无效`);
+    }
+    return {
+      name,
+      label: requireString(item.label ?? name, `变量 ${name} 标签`),
+      type: type as ProviderVariableDefinition['type'],
+      defaultValue,
+      required: !!item.required,
+    };
+  });
 }
 
 function toKind(value: unknown): ProviderKind {
@@ -228,13 +287,17 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const kind = toKind(body.kind);
+    const requestMode = toRequestMode(body.requestMode);
 
     const record = await createProvider({
       name: requireString(body.name, 'name'),
-      baseUrl: requireHttpUrl(body.baseUrl, 'baseUrl'),
-      apiKey: requireString(body.apiKey, 'apiKey'),
+      baseUrl: requestMode === 'openai' ? requireHttpUrl(body.baseUrl, 'baseUrl') : String(body.baseUrl ?? '').trim(),
+      apiKey: requestMode === 'openai' ? requireString(body.apiKey, 'apiKey') : String(body.apiKey ?? '').trim(),
       models: toModels(body.models),
       systemPrompt: body.systemPrompt === undefined ? '' : String(body.systemPrompt).trim(),
+      requestMode,
+      requestScript: body.requestScript === undefined ? '' : String(body.requestScript),
+      variables: toVariables(body.variables),
       kind,
       source: 'managed',
       priority: toPriority(body.priority),
@@ -246,6 +309,104 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
     res.status(201).json(toProviderDTO(record, ruleOf(record)));
   } catch (error) {
     fail(res, error);
+  }
+});
+
+router.post('/api/providers/test', requireAuth, async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const existing = body.providerId === undefined ? null : await findProviderById(Number(body.providerId));
+    if (body.providerId !== undefined && !existing) throw new BadRequest('Provider 不存在');
+    const config = (body.provider ?? {}) as Record<string, unknown>;
+    const requestMode = toRequestMode(config.requestMode ?? existing?.requestMode);
+    const variables = config.variables === undefined ? existing?.variables ?? [] : toVariables(config.variables);
+    const provider: ProviderRecord = existing
+      ? {
+          ...existing,
+          name: config.name === undefined ? existing.name : requireString(config.name, 'name'),
+          baseUrl: config.baseUrl === undefined ? existing.baseUrl : requestMode === 'openai' ? requireHttpUrl(config.baseUrl, 'baseUrl') : String(config.baseUrl).trim(),
+          apiKey: config.apiKey ? String(config.apiKey) : existing.apiKey,
+          models: config.models === undefined ? existing.models : toModels(config.models),
+          systemPrompt: config.systemPrompt === undefined ? existing.systemPrompt : String(config.systemPrompt),
+          kind: config.kind === undefined ? existing.kind : toKind(config.kind),
+          priority: config.priority === undefined ? existing.priority : toPriority(config.priority),
+          requestMode,
+          requestScript: config.requestScript === undefined ? existing.requestScript : String(config.requestScript),
+          variables,
+        }
+      : {
+          id: -1,
+          name: requireString(config.name, 'name'),
+          baseUrl: requestMode === 'openai' ? requireHttpUrl(config.baseUrl, 'baseUrl') : String(config.baseUrl ?? '').trim(),
+          apiKey: String(config.apiKey ?? '').trim(),
+          systemPrompt: String(config.systemPrompt ?? ''),
+          requestMode,
+          requestScript: String(config.requestScript ?? ''),
+          variables,
+          models: toModels(config.models),
+          kind: toKind(config.kind),
+          source: 'managed',
+          priority: toPriority(config.priority),
+          enabled: true,
+          contributor: null,
+          contributorType: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+    const payload = (body.payload ?? {
+      model: body.model ?? provider.models[0] ?? 'test-model',
+      messages: [{ role: 'user', content: 'ping' }],
+    }) as JsonRecord;
+    const model = String(body.model ?? payload.model ?? provider.models[0] ?? 'test-model');
+    const testVariables = body.variables as Record<string, string | number | boolean> | undefined;
+    const configSnapshot = await getConfig();
+    const timeoutMs = resolveTimeoutMs(provider, configSnapshot.settings, configSnapshot.groups);
+    const upstreamPayload = prependBuiltInSystemPrompt(
+      { ...payload, model },
+      configSnapshot.settings.globalSystemPromptEnabled ? configSnapshot.settings.globalSystemPrompt : '',
+      provider.systemPrompt,
+    );
+
+    let status = 200;
+    let actualModel = model;
+    let responseBody: unknown;
+    if (provider.requestMode === 'script') {
+      const result = await executeProviderScript(provider, { payload: upstreamPayload, model, signal: new AbortController().signal, variables: testVariables }, timeoutMs);
+      status = result.status;
+      actualModel = result.actualModel;
+      responseBody = result.body;
+    } else {
+      if (!provider.apiKey) throw new BadRequest('OpenAI 模式必须配置 API Key');
+      const response = await withTimeout(
+        (signal) => getUpstreamClient(provider).chat.completions.create({ ...upstreamPayload, model, stream: false } as never, { signal }),
+        timeoutMs,
+        `Provider ${provider.name} test timed out after ${timeoutMs}ms`,
+      );
+      const raw = response as unknown as { model?: string };
+      actualModel = raw.model || model;
+      responseBody = response;
+    }
+
+    const ok = status >= 200 && status < 300;
+    res.json({
+      ok,
+      status,
+      elapsedMs: Date.now() - startedAt,
+      actualModel,
+      response: responseBody,
+      ...(ok ? {} : { error: `Provider 返回 HTTP ${status}` }),
+    });
+  } catch (error) {
+    res.json({
+      ok: false,
+      status: errorStatus(error),
+      elapsedMs: Date.now() - startedAt,
+      actualModel: null,
+      response: null,
+      error: errorMessage(error),
+    });
   }
 });
 
@@ -270,14 +431,26 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
 
     const patch: Parameters<typeof updateProvider>[1] = {};
     if (body.name !== undefined) patch.name = requireString(body.name, 'name');
-    if (body.baseUrl !== undefined) patch.baseUrl = requireHttpUrl(body.baseUrl, 'baseUrl');
+    if (body.baseUrl !== undefined) {
+      const nextMode = body.requestMode === undefined ? existing.requestMode : toRequestMode(body.requestMode);
+      patch.baseUrl = nextMode === 'openai' ? requireHttpUrl(body.baseUrl, 'baseUrl') : String(body.baseUrl).trim();
+    }
     // 留空表示保持原 key 不变
     if (body.apiKey) patch.apiKey = requireString(body.apiKey, 'apiKey');
     if (body.models !== undefined) patch.models = toModels(body.models);
     if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt).trim();
+    if (body.requestMode !== undefined) patch.requestMode = toRequestMode(body.requestMode);
+    if (body.requestScript !== undefined) patch.requestScript = String(body.requestScript);
+    if (body.variables !== undefined) patch.variables = toVariables(body.variables);
     if (body.kind !== undefined) patch.kind = toKind(body.kind);
     if (body.priority !== undefined) patch.priority = toPriority(body.priority);
     if (body.enabled !== undefined) patch.enabled = !!body.enabled;
+
+    const nextRequestMode = patch.requestMode ?? existing.requestMode;
+    const nextApiKey = patch.apiKey ?? existing.apiKey;
+    if (nextRequestMode === 'openai' && !nextApiKey) {
+      throw new BadRequest('OpenAI 模式必须配置 API Key');
+    }
 
     const record = await updateProvider(id, patch);
     if (!record) {

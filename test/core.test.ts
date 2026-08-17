@@ -47,6 +47,7 @@ import {
   createPublicContentEvent,
   createRequestCacheKey,
 } from '../src/core/request-content';
+import { executeProviderScript } from '../src/upstream/script';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
 import { buildIngestStatements, type RequestEventInput } from '../src/db/repo/requests';
 import {
@@ -75,6 +76,9 @@ function provider(overrides: Partial<ProviderRecord> & { id: number }): Provider
     baseUrl: 'https://upstream.invalid/v1',
     apiKey: 'sk-test',
     systemPrompt: '',
+    requestMode: 'openai',
+    requestScript: '',
+    variables: [],
     models: [],
     kind: 'primary',
     source: 'managed',
@@ -926,5 +930,51 @@ describe('contribution/其他', () => {
     assert.match(dto.avatarUrl ?? '', /q\.qlogo\.cn/);
     assert.match(contributorAvatarUrl('Loose-Prince', 'github') ?? '', /github\.com\/Loose-Prince\.png/);
     assert.equal(JSON.stringify(dto).includes('@qq.com'), false);
+  });
+});
+
+describe('provider script', () => {
+  it('同时支持 {{$变量}} 源码占位与 variables 上下文', async () => {
+    const scripted = provider({
+      id: 30,
+      requestMode: 'script',
+      requestScript: `module.exports = async ({ request, model, variables }) => ({
+        status: 201,
+        contentType: 'application/json',
+        body: { prefix: {{$prefix}}, token: variables.token, content: request.payload.messages[0].content },
+        actualModel: model + '-resolved',
+      });`,
+      variables: [
+        { name: 'prefix', label: '前缀', type: 'text', defaultValue: 'hello' },
+        { name: 'token', label: 'Token', type: 'password', defaultValue: 'default-token' },
+      ],
+    });
+
+    const result = await executeProviderScript(
+      scripted,
+      {
+        payload: { messages: [{ role: 'user', content: 'ping' }] },
+        model: 'test-model',
+        variables: { token: 'override-token' },
+        signal: new AbortController().signal,
+      },
+      1_000,
+    );
+
+    assert.equal(result.status, 201);
+    assert.equal(result.actualModel, 'test-model-resolved');
+    assert.deepEqual(result.body, { prefix: 'hello', token: 'override-token', content: 'ping' });
+  });
+
+  it('未通过 module.exports 导出函数时明确失败', async () => {
+    const scripted = provider({ id: 31, requestMode: 'script', requestScript: 'const value = 1;' });
+    await assert.rejects(
+      executeProviderScript(
+        scripted,
+        { payload: {}, model: 'test-model', signal: new AbortController().signal },
+        1_000,
+      ),
+      /module\.exports/,
+    );
   });
 });

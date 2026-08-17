@@ -16,7 +16,9 @@ import { insert, remove, select, update, upsert, whereEq } from '../sql';
 import { normalizeRoutingRule } from './settings';
 import type {
   ProviderKind,
+  ProviderRequestMode,
   ProviderSource,
+  ProviderVariableDefinition,
   RoutingRule,
 } from '../../types/api';
 
@@ -27,6 +29,9 @@ export interface ProviderRecord {
   baseUrl: string;
   apiKey: string;
   systemPrompt: string;
+  requestMode: ProviderRequestMode;
+  requestScript: string;
+  variables: ProviderVariableDefinition[];
   models: string[];
   kind: ProviderKind;
   source: ProviderSource;
@@ -55,6 +60,9 @@ interface ProviderRow {
   base_url: string;
   api_key: string;
   system_prompt: string;
+  request_mode: string;
+  request_script: string;
+  variables_json: string;
   kind: string;
   source: string;
   priority: number;
@@ -68,7 +76,8 @@ interface ProviderRow {
 }
 
 const PROVIDER_COLUMNS = `
-  p.id, p.name, p.base_url, p.api_key, p.system_prompt, p.kind, p.source, p.priority, p.enabled,
+  p.id, p.name, p.base_url, p.api_key, p.system_prompt, p.request_mode, p.request_script, p.variables_json,
+  p.kind, p.source, p.priority, p.enabled,
   p.contributor, p.contributor_type, p.created_at, p.updated_at,
   (select group_concat(m.model, char(10))
      from (select model from provider_models
@@ -83,6 +92,30 @@ function normalizeSource(value: unknown): ProviderSource {
   return value === 'env' || value === 'contributed' ? value : 'managed';
 }
 
+function normalizeRequestMode(value: unknown): ProviderRequestMode {
+  return value === 'script' ? 'script' : 'openai';
+}
+
+function normalizeVariables(value: unknown): ProviderVariableDefinition[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is ProviderVariableDefinition => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Record<string, unknown>;
+      return (
+        typeof candidate.name === 'string' &&
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(candidate.name) &&
+        typeof candidate.label === 'string' &&
+        ['text', 'password', 'number', 'switch'].includes(String(candidate.type))
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
 function toProviderRecord(row: ProviderRow): ProviderRecord {
   return {
     id: row.id,
@@ -90,6 +123,9 @@ function toProviderRecord(row: ProviderRow): ProviderRecord {
     baseUrl: row.base_url,
     apiKey: row.api_key,
     systemPrompt: row.system_prompt ?? '',
+    requestMode: normalizeRequestMode(row.request_mode),
+    requestScript: row.request_script ?? '',
+    variables: normalizeVariables(row.variables_json),
     models: row.models ? row.models.split('\n').filter(Boolean) : [],
     kind: normalizeKind(row.kind),
     source: normalizeSource(row.source),
@@ -172,6 +208,9 @@ export interface CreateProviderInput {
   baseUrl: string;
   apiKey: string;
   systemPrompt?: string;
+  requestMode?: ProviderRequestMode;
+  requestScript?: string;
+  variables?: ProviderVariableDefinition[];
   models: string[];
   kind?: ProviderKind;
   source?: ProviderSource;
@@ -189,6 +228,9 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
     base_url: input.baseUrl,
     api_key: input.apiKey,
     system_prompt: input.systemPrompt ?? '',
+    request_mode: input.requestMode ?? 'openai',
+    request_script: input.requestScript ?? '',
+    variables_json: JSON.stringify(input.variables ?? []),
     kind: input.kind ?? 'primary',
     source: input.source ?? 'managed',
     priority: input.priority ?? 0,
@@ -226,6 +268,9 @@ export interface UpdateProviderInput {
   /** 省略表示保留原值 */
   apiKey?: string;
   systemPrompt?: string;
+  requestMode?: ProviderRequestMode;
+  requestScript?: string;
+  variables?: ProviderVariableDefinition[];
   models?: string[];
   kind?: ProviderKind;
   priority?: number;
@@ -242,6 +287,9 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   if (input.baseUrl !== undefined) fields.base_url = input.baseUrl;
   if (input.apiKey) fields.api_key = input.apiKey;
   if (input.systemPrompt !== undefined) fields.system_prompt = input.systemPrompt;
+  if (input.requestMode !== undefined) fields.request_mode = input.requestMode;
+  if (input.requestScript !== undefined) fields.request_script = input.requestScript;
+  if (input.variables !== undefined) fields.variables_json = JSON.stringify(input.variables);
   if (input.kind !== undefined) fields.kind = input.kind;
   if (input.priority !== undefined) fields.priority = input.priority;
   if (input.enabled !== undefined) fields.enabled = input.enabled;

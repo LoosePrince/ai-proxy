@@ -16,6 +16,7 @@ import { migration006PromptAndBehavior } from './migrations/006_prompt_and_behav
 import { migration006RequestOutcome } from './migrations/006_request_outcome';
 import { migrationHistoricalUsageProvenance } from './migrations/historical_usage_provenance';
 import { migration007IpBlacklist } from './migrations/007_ip_blacklist';
+import { migration008ProviderRequestLogic } from './migrations/008_provider_request_logic';
 
 export interface Migration {
   id: string;
@@ -32,6 +33,7 @@ const MIGRATIONS: Migration[] = [
   migration006RequestOutcome,
   migrationHistoricalUsageProvenance,
   migration007IpBlacklist,
+  migration008ProviderRequestLogic,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

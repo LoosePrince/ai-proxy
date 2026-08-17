@@ -45,6 +45,7 @@ import { getConfig, type ConfigSnapshot } from '../runtime/config-cache';
 import { checkRateLimit, rotationCursor } from '../runtime/counters';
 import { publishPublicContent } from '../runtime/public-content-stream';
 import { enqueueRequestEvent } from '../runtime/write-queue';
+import { invokeProviderScript } from '../upstream/script';
 import { getUpstreamClient } from '../upstream/client';
 import { invokeUpstream, writeStreamError, type InvokeResult } from '../upstream/invoke';
 import type { AttemptRole } from '../types/api';
@@ -182,7 +183,7 @@ async function attemptProvider(args: {
     config.settings.globalSystemPromptEnabled ? config.settings.globalSystemPrompt : '',
     provider.systemPrompt,
   );
-  const client = getUpstreamClient(provider);
+  const client = provider.requestMode === 'openai' ? getUpstreamClient(provider) : null;
   const owner = `${role}:${provider.id}`;
   let lastError: unknown = null;
 
@@ -190,26 +191,49 @@ async function attemptProvider(args: {
     const startedAtMs = Date.now();
 
     try {
-      const result = await invokeUpstream(
-        {
-          client,
-          payload: upstreamPayload,
-          responseRequest,
-          protocol,
-          model,
-          res,
-          gate,
-          owner,
-          canClaim,
-          timeoutMs,
-          clientSignal,
-          onFirstResponse: () => {
-            trace = withFirstResponse(trace);
-          },
-          openEarly: role === 'fallback' && stream,
-        },
-        stream,
-      );
+      const result =
+        provider.requestMode === 'script'
+          ? await invokeProviderScript({
+              provider,
+              request: { payload: upstreamPayload, model, signal: clientSignal },
+              timeoutMs,
+              res,
+              gate,
+              owner,
+              canClaim,
+            }).then((scriptResult) => {
+              trace = withFirstResponse(trace);
+              return {
+                actualModel: scriptResult.actualModel,
+                promptTokens: scriptResult.promptTokens,
+                completionTokens: scriptResult.completionTokens,
+                upstreamRequest: { ...upstreamPayload, model },
+                capturedResponse: {
+                  contentType: scriptResult.contentType,
+                  body: typeof scriptResult.body === 'string' ? scriptResult.body : JSON.stringify(scriptResult.body),
+                },
+              };
+            })
+          : await invokeUpstream(
+              {
+                client: client!,
+                payload: upstreamPayload,
+                responseRequest,
+                protocol,
+                model,
+                res,
+                gate,
+                owner,
+                canClaim,
+                timeoutMs,
+                clientSignal,
+                onFirstResponse: () => {
+                  trace = withFirstResponse(trace);
+                },
+                openEarly: role === 'fallback' && stream,
+              },
+              stream,
+            );
 
       trace = withAttempt(trace, {
         role,
@@ -429,6 +453,9 @@ async function handleProxyRequest(
       providerSystemPrompts: config.providers
         .filter((provider) => provider.enabled && provider.systemPrompt)
         .map((provider) => [provider.id, provider.systemPrompt]),
+      providerRequestLogic: config.providers
+        .filter((provider) => provider.enabled)
+        .map((provider) => [provider.id, provider.requestMode, provider.requestScript, provider.variables]),
     },
   };
   const cacheKey = settings.requestCacheEnabled ? createRequestCacheKey(protocol, cachePayload) : null;

@@ -964,6 +964,25 @@
   }
 }
 
+.control-full {
+  width: 100%;
+}
+
+.provider-test-result {
+  max-height: 260px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 480px) {
   .admin-brand-copy {
     display: none;

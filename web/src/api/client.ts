@@ -21,6 +21,8 @@ import type {
   PriorityGroupDTO,
   ProviderDTO,
   ProviderUpsertInput,
+  ProviderTestInput,
+  ProviderTestResult,
   ProviderUsageDTO,
   PublicDetailedStatsDTO,
   PublicStatsDTO,
@@ -129,6 +131,9 @@ export const adminApi = {
 
   updateProvider: (id: number, input: Partial<ProviderUpsertInput>) =>
     request<ProviderDTO>(`/admin/api/providers/${id}`, { method: 'PUT', ...json(input) }),
+
+  testProvider: (input: ProviderTestInput & { providerId?: number; provider: ProviderUpsertInput }) =>
+    request<ProviderTestResult>('/admin/api/providers/test', { method: 'POST', ...json(input) }),
 
   deleteProvider: (id: number) =>
     request<{ success: boolean }>(`/admin/api/providers/${id}`, { method: 'DELETE' }),

@@ -15,6 +15,19 @@ export type ProviderKind = 'primary' | 'fallback' | 'parallel';
 /** 记录来源，取代旧实现里 isEnv / isContributed 两个布尔的组合语义 */
 export type ProviderSource = 'managed' | 'env' | 'contributed';
 
+/** Provider 的请求执行方式。script 模式由后台信任的 Node.js 源码完全接管请求。 */
+export type ProviderRequestMode = 'openai' | 'script';
+
+export type ProviderVariableType = 'text' | 'password' | 'number' | 'switch';
+
+export interface ProviderVariableDefinition {
+  name: string;
+  label: string;
+  type: ProviderVariableType;
+  defaultValue: string | number | boolean;
+  required?: boolean;
+}
+
 export type AttemptStatus = 'success' | 'failed' | 'claimed-by-other';
 
 export type AttemptRole = 'primary' | 'parallel' | 'fallback';
@@ -60,6 +73,9 @@ export interface ProviderDTO {
   avatarUrl: string | null;
   /** Provider 级内置系统提示词，不包含 apiKey 等敏感信息 */
   systemPrompt: string;
+  requestMode: ProviderRequestMode;
+  requestScript: string;
+  variables: ProviderVariableDefinition[];
   createdAt: string;
   updatedAt: string;
 }
@@ -72,9 +88,27 @@ export interface ProviderUpsertInput {
   models: string[];
   /** Provider 级内置系统提示词 */
   systemPrompt?: string;
+  requestMode?: ProviderRequestMode;
+  requestScript?: string;
+  variables?: ProviderVariableDefinition[];
   kind?: ProviderKind;
   priority?: number;
   enabled?: boolean;
+}
+
+export interface ProviderTestInput {
+  model?: string;
+  payload?: Record<string, unknown>;
+  variables?: Record<string, string | number | boolean>;
+}
+
+export interface ProviderTestResult {
+  ok: boolean;
+  status: number;
+  elapsedMs: number;
+  actualModel: string | null;
+  response: unknown;
+  error?: string;
 }
 
 export interface PriorityGroupDTO {

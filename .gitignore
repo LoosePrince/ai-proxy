@@ -11,3 +11,5 @@ dist/
 build/
 coverage/
 *.log
+
+temp

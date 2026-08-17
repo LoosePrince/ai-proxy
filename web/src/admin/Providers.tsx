@@ -37,7 +37,15 @@ import { adminApi } from '../api/client';
 import { ModelChipEditor } from '../components/ModelChipEditor';
 import { useAsync } from '../hooks/useAsync';
 import { formatDateTime } from '../lib/format';
-import type { PriorityGroupDTO, ProviderDTO, ProviderKind, RoutingRule } from '@shared/api';
+import type {
+  PriorityGroupDTO,
+  ProviderDTO,
+  ProviderKind,
+  ProviderRequestMode,
+  ProviderTestResult,
+  ProviderVariableDefinition,
+  RoutingRule,
+} from '@shared/api';
 
 const KIND_LABEL: Record<ProviderKind, string> = {
   primary: '主路由',
@@ -63,12 +71,34 @@ const RULE_LABEL: Record<RoutingRule, string> = {
   average: '轮转',
 };
 
+const DEFAULT_REQUEST_SCRIPT = `module.exports = async ({ request, model, variables, fetch, signal }) => {
+  const response = await fetch(variables.endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: \`Bearer \${variables.api_token}\`,
+    },
+    body: JSON.stringify({ ...request.payload, model }),
+    signal,
+  });
+
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type') || 'application/json',
+    body: await response.json(),
+    actualModel: model,
+  };
+};`;
+
 interface FormValues {
   name: string;
   baseUrl: string;
   apiKey?: string;
   models: string[];
   systemPrompt: string;
+  requestMode: ProviderRequestMode;
+  requestScript: string;
+  variables: ProviderVariableDefinition[];
   kind: ProviderKind;
   priority: number;
   enabled: boolean;
@@ -81,8 +111,13 @@ export function Providers() {
   const [editing, setEditing] = useState<ProviderDTO | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
+  const [testPayload, setTestPayload] = useState('{\n  "messages": [{"role": "user", "content": "ping"}]\n}');
   const [form] = Form.useForm<FormValues>();
   const modelValues = Form.useWatch('models', form) ?? [];
+  const requestMode = Form.useWatch('requestMode', form) ?? 'openai';
+  const variableValues = Form.useWatch('variables', form) ?? [];
 
   const reloadAll = useCallback(() => {
     providers.reload();
@@ -96,10 +131,14 @@ export function Providers() {
       apiKey: '',
       models: [],
       systemPrompt: '',
+      requestMode: 'openai',
+      requestScript: '',
+      variables: [],
       kind: 'primary',
       priority: 0,
       enabled: true,
     });
+    setTestResult(null);
     setEditing(null);
     setCreating(true);
   }, [form]);
@@ -113,10 +152,14 @@ export function Providers() {
         apiKey: '',
         models: record.models,
         systemPrompt: record.systemPrompt,
+        requestMode: record.requestMode,
+        requestScript: record.requestScript,
+        variables: record.variables,
         kind: record.kind,
         priority: record.priority,
         enabled: record.enabled,
       });
+      setTestResult(null);
       setEditing(record);
       setCreating(false);
     },
@@ -152,7 +195,49 @@ export function Providers() {
     }
   }, [closeModal, editing, form, reloadAll]);
 
-  /** 启停是高频操作，直接在列表里切换，不必进编辑弹窗 */
+  const testRequest = useCallback(async () => {
+    const values = await form.validateFields();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(testPayload) as Record<string, unknown>;
+    } catch {
+      message.error('测试请求 JSON 格式无效');
+      return;
+    }
+
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const variables = Object.fromEntries(
+        (values.variables ?? []).filter((item) => item.name).map((item) => [item.name, item.defaultValue]),
+      );
+      const result = await adminApi.testProvider({
+        providerId: editing?.id,
+        provider: {
+          name: values.name,
+          baseUrl: values.baseUrl,
+          apiKey: values.apiKey?.trim() || undefined,
+          models: values.models,
+          systemPrompt: values.systemPrompt,
+          requestMode: values.requestMode,
+          requestScript: values.requestScript,
+          variables: values.variables,
+          kind: values.kind,
+          priority: values.priority,
+          enabled: values.enabled,
+        },
+        model: typeof payload.model === 'string' ? payload.model : values.models[0],
+        payload,
+        variables,
+      });
+      setTestResult(result);
+    } catch (error) {
+      message.error((error as Error).message || '请求测试失败');
+    } finally {
+      setTesting(false);
+    }
+  }, [editing, form, testPayload]);
+
   const toggleEnabled = useCallback(
     async (record: ProviderDTO, enabled: boolean) => {
       try {
@@ -245,6 +330,12 @@ export function Providers() {
               title: '来源',
               dataIndex: 'source',
               render: (source: string) => <Tag>{SOURCE_LABEL[source] ?? source}</Tag>,
+            },
+            {
+              title: '请求模式',
+              dataIndex: 'requestMode',
+              render: (mode: ProviderRequestMode) =>
+                mode === 'script' ? <Tag color="purple">Node.js 脚本</Tag> : <Tag color="cyan">OpenAI 兼容</Tag>,
             },
             {
               title: 'Base URL',
@@ -383,9 +474,16 @@ export function Providers() {
 
       <Modal
         open={creating || !!editing}
+        width={900}
         title={editing ? `编辑 ${editing.name}` : '新增 Provider'}
         onCancel={closeModal}
-        onOk={() => void submit()}
+        footer={
+          <Space>
+            <Button onClick={closeModal}>取消</Button>
+            <Button loading={testing} onClick={() => void testRequest()}>请求测试</Button>
+            <Button type="primary" loading={saving} onClick={() => void submit()}>保存</Button>
+          </Space>
+        }
         confirmLoading={saving}
         destroyOnClose
         maskClosable={false}
@@ -400,33 +498,61 @@ export function Providers() {
             <Input disabled={editing?.source === 'env'} placeholder="provider-a" />
           </Form.Item>
 
+          <Form.Item name="requestMode" label="添加模式" extra="标准模式使用 OpenAI 兼容协议；脚本模式完全由 Node.js 源码决定请求方式。">
+            <Select<ProviderRequestMode>
+              onChange={(mode) => {
+                if (mode === 'script' && !form.getFieldValue('requestScript')) {
+                  form.setFieldValue('requestScript', DEFAULT_REQUEST_SCRIPT);
+                }
+                if (mode === 'script' && !(form.getFieldValue('variables') ?? []).length) {
+                  form.setFieldValue('variables', [
+                    { name: 'endpoint', label: '请求地址', type: 'text', defaultValue: '', required: true },
+                    { name: 'api_token', label: 'API Token', type: 'password', defaultValue: '', required: true },
+                  ]);
+                }
+              }}
+              options={[
+                { value: 'openai', label: 'OpenAI 兼容请求' },
+                { value: 'script', label: 'Node.js 脚本' },
+              ]}
+            />
+          </Form.Item>
+
           <Form.Item
             name="baseUrl"
-            label="Base URL"
+            label={requestMode === 'script' ? '默认 Base URL（可选）' : 'Base URL'}
             rules={[
-              { required: true, message: '请填写 Base URL' },
-              { pattern: /^https?:\/\//i, message: '必须以 http:// 或 https:// 开头' },
+              ...(requestMode === 'openai' ? [{ required: true, message: '请填写 Base URL' }] : []),
+              {
+                validator: async (_, value) => {
+                  if (!value || String(value).startsWith('http://') || String(value).startsWith('https://')) return;
+                  throw new Error('必须以 http:// 或 https:// 开头');
+                },
+              },
             ]}
+            extra={requestMode === 'script' ? '脚本可自行调用任意地址，此字段仅作为 Provider 元数据。' : undefined}
           >
-            <Input disabled={editing?.source === 'env'} placeholder="https://api.example.com/v1" />
+            <Input disabled={editing?.source === 'env'} placeholder={requestMode === 'script' ? '可留空' : 'https://api.example.com/v1'} />
           </Form.Item>
 
           <Form.Item
             name="apiKey"
             label="API Key"
-            rules={editing ? [] : [{ required: true, message: '请填写 API Key' }]}
+            rules={requestMode === 'openai' && (!editing || !editing.hasApiKey) ? [{ required: true, message: '请填写 API Key' }] : []}
             extra={
-              editing
-                ? editing.hasApiKey
-                  ? '留空表示保持当前 Key 不变'
-                  : '当前未配置 Key，请填写'
-                : undefined
+              requestMode === 'script'
+                ? '脚本模式不强制使用 API Key，可在源码或变量中自行处理认证。'
+                : editing
+                  ? editing.hasApiKey
+                    ? '留空表示保持当前 Key 不变'
+                    : '当前未配置 Key，请填写'
+                  : undefined
             }
           >
             <Input.Password
               disabled={editing?.source === 'env'}
               autoComplete="new-password"
-              placeholder={editing ? '留空则不修改' : 'sk-...'}
+              placeholder={requestMode === 'script' ? '可留空' : editing ? '留空则不修改' : 'sk-...'}
             />
           </Form.Item>
 
@@ -441,6 +567,93 @@ export function Providers() {
           >
             <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} placeholder="留空表示不配置 Provider 级规则" />
           </Form.Item>
+
+          {requestMode === 'script' ? (
+            <>
+              <Form.Item
+                name="requestScript"
+                label="Node.js 请求脚本"
+                rules={[{ required: true, message: '请填写 Node.js 请求脚本' }]}
+                extra="脚本通过 module.exports 导出 async 函数，参数为 { request, model, variables, fetch, signal }。后台脚本视为信任来源，可使用 Node.js 的 require。"
+              >
+                <Input.TextArea
+                  className="mono"
+                  autoSize={{ minRows: 12, maxRows: 28 }}
+                  disabled={editing?.source === 'env'}
+                  placeholder={'module.exports = async ({ request, model, variables, fetch, signal }) => {\n  // 返回 { status, body, contentType, actualModel }\n};'}
+                />
+              </Form.Item>
+
+              <Form.Item label="脚本变量" extra="源码中可将 {{$变量名}} 作为 JS 值直接使用（不要额外加引号），也可从 variables 参数读取。变量会显示为可配置表单控件。">
+                <Form.List name="variables">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" className="control-full">
+                      {fields.map((field) => {
+                        const type = variableValues[field.name]?.type;
+                        return (
+                          <Card key={field.key} size="small">
+                            <Space wrap>
+                              <Form.Item {...field} name={[field.name, 'name']} noStyle rules={[{ required: true, pattern: /^[A-Za-z_][A-Za-z0-9_]*$/, message: '变量名无效' }]}>
+                                <Input placeholder="变量名，如 api_token" />
+                              </Form.Item>
+                              <Form.Item {...field} name={[field.name, 'label']} noStyle rules={[{ required: true, message: '请填写标签' }]}>
+                                <Input placeholder="表单标签" />
+                              </Form.Item>
+                              <Form.Item {...field} name={[field.name, 'type']} noStyle initialValue="text">
+                                <Select<ProviderVariableDefinition['type']>
+                                  style={{ width: 120 }}
+                                  onChange={(nextType) => {
+                                    const current = form.getFieldValue(['variables', field.name, 'defaultValue']);
+                                    const defaultValue = nextType === 'switch' ? false : nextType === 'number' ? Number(current) || 0 : String(current ?? '');
+                                    form.setFieldValue(['variables', field.name, 'defaultValue'], defaultValue);
+                                  }}
+                                  options={[
+                                    { value: 'text', label: '文本' },
+                                    { value: 'password', label: '密码' },
+                                    { value: 'number', label: '数字' },
+                                    { value: 'switch', label: '开关' },
+                                  ]}
+                                />
+                              </Form.Item>
+                              <Form.Item {...field} name={[field.name, 'defaultValue']} noStyle valuePropName={type === 'switch' ? 'checked' : 'value'}>
+                                {type === 'switch' ? <Switch /> : type === 'password' ? <Input.Password placeholder="默认值" /> : type === 'number' ? <InputNumber placeholder="默认值" /> : <Input placeholder="默认值" />}
+                              </Form.Item>
+                              <Form.Item {...field} name={[field.name, 'required']} noStyle valuePropName="checked">
+                                <Switch checkedChildren="必填" unCheckedChildren="可选" />
+                              </Form.Item>
+                              <Button danger type="link" onClick={() => remove(field.name)}>移除</Button>
+                            </Space>
+                          </Card>
+                        );
+                      })}
+                      <Button type="dashed" onClick={() => add({ name: '', label: '', type: 'text', defaultValue: '', required: false })}>
+                        添加变量
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
+              </Form.Item>
+            </>
+          ) : null}
+
+          <Form.Item label="测试请求 JSON" extra="只发送一次，不写入正式请求日志；model 可放在 JSON 中，也可由模型列表提供。">
+            <Input.TextArea className="mono" value={testPayload} onChange={(event) => setTestPayload(event.target.value)} autoSize={{ minRows: 5, maxRows: 12 }} />
+          </Form.Item>
+          {testResult ? (
+            <Alert
+              type={testResult.ok ? 'success' : 'error'}
+              showIcon
+              message={testResult.ok ? `测试成功 · HTTP ${testResult.status} · ${testResult.elapsedMs} ms` : `测试失败 · HTTP ${testResult.status}`}
+              description={
+                <div>
+                  {testResult.error ? <div>{testResult.error}</div> : null}
+                  {testResult.response === null ? null : (
+                    <pre className="provider-test-result">{JSON.stringify(testResult.response, null, 2)}</pre>
+                  )}
+                </div>
+              }
+            />
+          ) : null}
 
           <Form.Item name="kind" label="角色" extra="保底与并行各自只应启用一个">
             <Select<ProviderKind>
