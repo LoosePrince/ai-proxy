@@ -522,10 +522,17 @@ describe('timeout/resolveTimeoutMs', () => {
     logRetentionDays: 0,
     requestContentLoggingEnabled: false,
     publicRequestContentStreamEnabled: false,
+    publicDetailedStatsEnabled: false,
     requestCacheEnabled: false,
     requestCacheReuseHours: 24,
+    globalSystemPrompt: '',
+    globalSystemPromptEnabled: false,
+    ideRequestHandlingEnabled: true,
+    maliciousRequestHandlingEnabled: true,
+    ideRequestAction: 'ignore',
+    maliciousRequestAction: 'ignore',
+    maliciousResponse: '',
   };
-
   it('fallback 与 parallel 使用各自的独立超时', () => {
     assert.equal(resolveTimeoutMs(provider({ id: 1, kind: 'fallback' }), settings, groups([])), 45_000);
     assert.equal(resolveTimeoutMs(provider({ id: 2, kind: 'parallel' }), settings, groups([])), 14_000);

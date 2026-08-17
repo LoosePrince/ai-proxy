@@ -179,7 +179,7 @@ async function attemptProvider(args: {
 
   const upstreamPayload = prependBuiltInSystemPrompt(
     payload,
-    config.settings.globalSystemPrompt,
+    config.settings.globalSystemPromptEnabled ? config.settings.globalSystemPrompt : '',
     provider.systemPrompt,
   );
   const client = getUpstreamClient(provider);
@@ -380,8 +380,11 @@ async function handleProxyRequest(
     res.status(403).json({ error: { message, code } });
   };
 
-  const inspection = inspectRequest(payload);
-  if (inspection.isMalicious) {
+  const inspection =
+    settings.ideRequestHandlingEnabled || settings.maliciousRequestHandlingEnabled
+      ? inspectRequest(payload)
+      : { isIdeRequest: false, isMalicious: false };
+  if (settings.maliciousRequestHandlingEnabled && inspection.isMalicious) {
     if (settings.maliciousRequestAction === 'error') {
       rejectByPolicy('malicious_request_blocked', '请求包含被安全策略拒绝的内容');
       return;
@@ -393,7 +396,7 @@ async function handleProxyRequest(
     return;
   }
 
-  if (inspection.isIdeRequest) {
+  if (settings.ideRequestHandlingEnabled && inspection.isIdeRequest) {
     if (settings.ideRequestAction === 'error') {
       rejectByPolicy('ide_request_blocked', '检测到来自 IDE 环境或工具链的请求');
       return;
@@ -422,7 +425,7 @@ async function handleProxyRequest(
   const cachePayload = {
     ...payload,
     __aiProxyPolicy: {
-      globalSystemPrompt: settings.globalSystemPrompt,
+      globalSystemPrompt: settings.globalSystemPromptEnabled ? settings.globalSystemPrompt : '',
       providerSystemPrompts: config.providers
         .filter((provider) => provider.enabled && provider.systemPrompt)
         .map((provider) => [provider.id, provider.systemPrompt]),

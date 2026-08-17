@@ -107,6 +107,12 @@ export interface SettingsDTO {
   requestCacheReuseHours: number;
   /** 所有 Provider 共享的内置强制系统提示词 */
   globalSystemPrompt: string;
+  /** 是否将全局系统提示词注入上游请求 */
+  globalSystemPromptEnabled: boolean;
+  /** 是否启用 IDE 环境或工具链请求处理 */
+  ideRequestHandlingEnabled: boolean;
+  /** 是否启用恶意内容请求处理 */
+  maliciousRequestHandlingEnabled: boolean;
   /** 检测到 IDE 环境或工具链请求后的处理方式 */
   ideRequestAction: RequestBehaviorAction;
   /** 检测到恶意内容后的处理方式 */

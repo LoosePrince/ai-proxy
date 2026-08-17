@@ -395,6 +395,10 @@
   font-weight: 630;
 }
 
+.nested-settings-card {
+  margin-bottom: 18px;
+}
+
 /* ---------------------------------------------------------- 数据可视化 */
 
 .chart-grid {

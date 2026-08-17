@@ -21,6 +21,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Switch,
@@ -59,9 +60,23 @@ const MALICIOUS_ACTION_OPTIONS: Array<{ label: string; value: MaliciousBehaviorA
   { label: '返回指定响应内容', value: 'response' },
 ];
 
+type BehaviorConfigTarget = 'ide' | 'malicious';
+type PromptConfigValues = Pick<SettingsDTO, 'globalSystemPrompt'>;
+type BehaviorConfigValues = Pick<
+  SettingsDTO,
+  'ideRequestAction' | 'maliciousRequestAction' | 'maliciousResponse'
+>;
+
 function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () => void }) {
   const [form] = Form.useForm<SettingsDTO>();
+  const [promptConfigForm] = Form.useForm<PromptConfigValues>();
+  const [behaviorConfigForm] = Form.useForm<BehaviorConfigValues>();
   const [saving, setSaving] = useState(false);
+  const [promptConfigOpen, setPromptConfigOpen] = useState(false);
+  const [behaviorConfigTarget, setBehaviorConfigTarget] = useState<BehaviorConfigTarget | null>(null);
+  const promptEnabled = Form.useWatch('globalSystemPromptEnabled', form) === true;
+  const ideHandlingEnabled = Form.useWatch('ideRequestHandlingEnabled', form) === true;
+  const maliciousHandlingEnabled = Form.useWatch('maliciousRequestHandlingEnabled', form) === true;
 
   // 数据重新拉取后同步进表单，避免用户看到的是上一次的旧值
   useEffect(() => {
@@ -81,8 +96,43 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
     }
   };
 
+  const openPromptConfig = () => {
+    promptConfigForm.setFieldsValue({ globalSystemPrompt: form.getFieldValue('globalSystemPrompt') });
+    setPromptConfigOpen(true);
+  };
+
+  const savePromptConfig = async () => {
+    const values = await promptConfigForm.validateFields();
+    form.setFieldsValue(values);
+    setPromptConfigOpen(false);
+  };
+
+  const openBehaviorConfig = (target: BehaviorConfigTarget) => {
+    behaviorConfigForm.setFieldsValue({
+      ideRequestAction: form.getFieldValue('ideRequestAction'),
+      maliciousRequestAction: form.getFieldValue('maliciousRequestAction'),
+      maliciousResponse: form.getFieldValue('maliciousResponse'),
+    });
+    setBehaviorConfigTarget(target);
+  };
+
+  const saveBehaviorConfig = async () => {
+    const values = await behaviorConfigForm.validateFields();
+    if (behaviorConfigTarget === 'ide') {
+      form.setFieldValue('ideRequestAction', values.ideRequestAction);
+    }
+    if (behaviorConfigTarget === 'malicious') {
+      form.setFieldsValue({
+        maliciousRequestAction: values.maliciousRequestAction,
+        maliciousResponse: values.maliciousResponse,
+      });
+    }
+    setBehaviorConfigTarget(null);
+  };
+
   return (
-    <Form form={form} layout="vertical" initialValues={initial} onFinish={submit}>
+    <>
+      <Form form={form} layout="vertical" initialValues={initial} onFinish={submit}>
       <div className="settings-grid">
         <Form.Item
           name="globalRule"
@@ -201,46 +251,70 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
         </Form.Item>
       </div>
 
-      <Card size="small" title="全局系统提示词" className="nested-settings-card">
-        <Typography.Paragraph type="secondary" className="paragraph-flush">
-          该内容会以服务端强制规则的形式注入到每个 Provider 上游请求的第一条消息，优先于客户端消息。
-        </Typography.Paragraph>
-        <Form.Item
-          name="globalSystemPrompt"
-          label="内置系统提示词"
-          extra="留空表示不注入全局提示词。请只填写稳定、可长期适用的规则。"
-        >
-          <Input.TextArea autoSize={{ minRows: 5, maxRows: 14 }} placeholder="例如：始终使用简体中文回答，并遵守以下业务规则……" />
+      <div hidden>
+        <Form.Item name="globalSystemPrompt">
+          <Input />
         </Form.Item>
+        <Form.Item name="ideRequestAction">
+          <Input />
+        </Form.Item>
+        <Form.Item name="maliciousRequestAction">
+          <Input />
+        </Form.Item>
+        <Form.Item name="maliciousResponse">
+          <Input />
+        </Form.Item>
+      </div>
+
+      <Card size="small" title="全局系统提示词" className="nested-settings-card">
+        <Space align="center" wrap>
+          <Form.Item name="globalSystemPromptEnabled" valuePropName="checked" noStyle>
+            <Switch />
+          </Form.Item>
+          <Typography.Text>启用全局系统提示词</Typography.Text>
+          {promptEnabled ? (
+            <Button type="link" size="small" onClick={openPromptConfig}>
+              配置提示词
+            </Button>
+          ) : null}
+        </Space>
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          开启后会将服务端提示词作为强制规则注入每个 Provider 的第一条上游消息。
+        </Typography.Paragraph>
       </Card>
 
       <Card size="small" title="特定 AI 行为处理" className="nested-settings-card">
         <Typography.Paragraph type="secondary" className="paragraph-flush">
-          代理会在限流、缓存和上游调用前检查请求。检测规则是服务端启发式规则，误判时可调整处理方式。
+          检测在限流、缓存和上游调用前执行。关闭后对应类别不会被检查，已填写的处理方式会保留。
         </Typography.Paragraph>
         <div className="settings-grid">
-          <Form.Item
-            name="ideRequestAction"
-            label="检测到 IDE 环境或工具链请求"
-            tooltip="检查 system/developer 消息、工具定义和常见 IDE 工具名称。"
-          >
-            <Select options={IDE_ACTION_OPTIONS} />
-          </Form.Item>
-          <Form.Item
-            name="maliciousRequestAction"
-            label="检测到恶意行为内容"
-            tooltip="覆盖逆序、越狱、破解、攻击和明显违法内容等模式。"
-          >
-            <Select options={MALICIOUS_ACTION_OPTIONS} />
-          </Form.Item>
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="ideRequestHandlingEnabled" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <Typography.Text>处理 IDE 环境或工具链请求</Typography.Text>
+              {ideHandlingEnabled ? (
+                <Button type="link" size="small" onClick={() => openBehaviorConfig('ide')}>
+                  配置处理方式
+                </Button>
+              ) : null}
+            </Space>
+          </div>
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="maliciousRequestHandlingEnabled" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <Typography.Text>处理恶意行为内容</Typography.Text>
+              {maliciousHandlingEnabled ? (
+                <Button type="link" size="small" onClick={() => openBehaviorConfig('malicious')}>
+                  配置处理方式
+                </Button>
+              ) : null}
+            </Space>
+          </div>
         </div>
-        <Form.Item
-          name="maliciousResponse"
-          label="恶意内容指定响应"
-          extra="仅当上方选择“返回指定响应内容”时生效。"
-        >
-          <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} placeholder="请输入要返回给客户端的内容" />
-        </Form.Item>
       </Card>
 
       <Space>
@@ -251,7 +325,78 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           放弃修改
         </Button>
       </Space>
-    </Form>
+      </Form>
+
+      <Modal
+        title="配置全局系统提示词"
+        open={promptConfigOpen}
+        okText="确认"
+        cancelText="取消"
+        destroyOnClose
+        onOk={savePromptConfig}
+        onCancel={() => setPromptConfigOpen(false)}
+      >
+        <Typography.Paragraph type="secondary">
+          内容会以服务端强制规则注入每个 Provider 上游请求的第一条消息，优先于客户端消息。
+        </Typography.Paragraph>
+        <Form form={promptConfigForm} layout="vertical">
+          <Form.Item
+            name="globalSystemPrompt"
+            label="内置系统提示词"
+            extra="留空时即使开关开启也不会注入内容。请只填写稳定、可长期适用的规则。"
+          >
+            <Input.TextArea
+              autoSize={{ minRows: 6, maxRows: 16 }}
+              placeholder="例如：始终使用简体中文回答，并遵守以下业务规则……"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={behaviorConfigTarget === 'ide' ? '配置 IDE 请求处理' : '配置恶意内容处理'}
+        open={behaviorConfigTarget !== null}
+        okText="确认"
+        cancelText="取消"
+        destroyOnClose
+        onOk={saveBehaviorConfig}
+        onCancel={() => setBehaviorConfigTarget(null)}
+      >
+        <Form form={behaviorConfigForm} layout="vertical">
+          {behaviorConfigTarget === 'ide' ? (
+            <Form.Item
+              name="ideRequestAction"
+              label="检测到 IDE 环境或工具链请求后"
+              tooltip="检查 system/developer 消息、工具定义和常见 IDE 工具名称。"
+              rules={[{ required: true, message: '请选择处理方式' }]}
+            >
+              <Select options={IDE_ACTION_OPTIONS} />
+            </Form.Item>
+          ) : (
+            <>
+              <Form.Item
+                name="maliciousRequestAction"
+                label="检测到恶意行为内容后"
+                tooltip="覆盖逆序、越狱、破解、攻击和明显违法内容等模式。"
+                rules={[{ required: true, message: '请选择处理方式' }]}
+              >
+                <Select options={MALICIOUS_ACTION_OPTIONS} />
+              </Form.Item>
+              <Form.Item
+                name="maliciousResponse"
+                label="指定响应内容"
+                extra="仅当处理方式为“返回指定响应内容”时生效。"
+              >
+                <Input.TextArea
+                  autoSize={{ minRows: 4, maxRows: 10 }}
+                  placeholder="请输入要返回给客户端的内容"
+                />
+              </Form.Item>
+            </>
+          )}
+        </Form>
+      </Modal>
+    </>
   );
 }
 

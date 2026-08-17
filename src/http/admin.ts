@@ -444,6 +444,15 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
       patch.requestCacheReuseHours = toPositiveInt(body.requestCacheReuseHours, '请求缓存复用间隔');
     }
     if (body.globalSystemPrompt !== undefined) patch.globalSystemPrompt = String(body.globalSystemPrompt);
+    if (body.globalSystemPromptEnabled !== undefined) {
+      patch.globalSystemPromptEnabled = !!body.globalSystemPromptEnabled;
+    }
+    if (body.ideRequestHandlingEnabled !== undefined) {
+      patch.ideRequestHandlingEnabled = !!body.ideRequestHandlingEnabled;
+    }
+    if (body.maliciousRequestHandlingEnabled !== undefined) {
+      patch.maliciousRequestHandlingEnabled = !!body.maliciousRequestHandlingEnabled;
+    }
     if (body.ideRequestAction !== undefined) patch.ideRequestAction = toIdeAction(body.ideRequestAction);
     if (body.maliciousRequestAction !== undefined) {
       patch.maliciousRequestAction = toMaliciousAction(body.maliciousRequestAction);
