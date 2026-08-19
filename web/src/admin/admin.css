@@ -983,6 +983,70 @@
   word-break: break-word;
 }
 
+.provider-editor-tabs > .ant-tabs-nav {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin-bottom: 20px;
+  background: var(--surface);
+}
+
+.provider-code-editor {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+}
+
+.provider-code-editor:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.provider-code-editor .cm-editor,
+.provider-code-editor .cm-scroller {
+  color: var(--text-strong);
+  background: transparent;
+}
+
+.provider-code-editor .cm-focused {
+  outline: none;
+}
+
+.provider-code-editor .cm-gutters {
+  color: var(--text-faint);
+}
+
+.provider-code-editor .cm-activeLine,
+.provider-code-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+}
+
+.provider-variable-editor {
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.provider-variable-card {
+  border-color: var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.provider-variable-card .ant-card-body {
+  padding: 12px;
+}
+
+.provider-variable-card .ant-input,
+.provider-variable-card .ant-input-affix-wrapper,
+.provider-variable-card .ant-input-number {
+  width: 190px;
+}
+
+.provider-script-status {
+  margin-top: 12px;
+}
+
 @media (max-width: 480px) {
   .admin-brand-copy {
     display: none;

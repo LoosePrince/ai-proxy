@@ -18,7 +18,20 @@ export type ProviderSource = 'managed' | 'env' | 'contributed';
 /** Provider 的请求执行方式。script 模式由后台信任的 Node.js 源码完全接管请求。 */
 export type ProviderRequestMode = 'openai' | 'script';
 
+export type ProviderScriptScheduleStatus = 'idle' | 'running' | 'success' | 'failed';
 export type ProviderVariableType = 'text' | 'password' | 'number' | 'switch';
+
+
+export interface ProviderScriptRuntimeDTO {
+  mainScript: string;
+  scheduleEnabled: boolean;
+  scheduleCron: string;
+  scheduleStatus: ProviderScriptScheduleStatus;
+  lastRunAt: string | null;
+  lastRunOk: boolean | null;
+  lastRunError: string | null;
+  variablesUpdatedAt: string | null;
+}
 
 export interface ProviderVariableDefinition {
   name: string;
@@ -26,6 +39,8 @@ export interface ProviderVariableDefinition {
   type: ProviderVariableType;
   defaultValue: string | number | boolean;
   required?: boolean;
+  /** 密码变量仅用于管理界面显示是否已配置，不携带明文。 */
+  secretConfigured?: boolean;
 }
 
 export type AttemptStatus = 'success' | 'failed' | 'claimed-by-other';
@@ -76,6 +91,15 @@ export interface ProviderDTO {
   requestMode: ProviderRequestMode;
   requestScript: string;
   variables: ProviderVariableDefinition[];
+  variablesAutoSync: boolean;
+  mainScript: string;
+  scheduleEnabled: boolean;
+  scheduleCron: string;
+  scheduleStatus: ProviderScriptScheduleStatus;
+  lastRunAt: string | null;
+  lastRunOk: boolean | null;
+  lastRunError: string | null;
+  variablesUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +115,10 @@ export interface ProviderUpsertInput {
   requestMode?: ProviderRequestMode;
   requestScript?: string;
   variables?: ProviderVariableDefinition[];
+  variablesAutoSync?: boolean;
+  mainScript?: string;
+  scheduleEnabled?: boolean;
+  scheduleCron?: string;
   kind?: ProviderKind;
   priority?: number;
   enabled?: boolean;

@@ -1,7 +1,7 @@
 import { ResponseClaimedError, type GateOwner, type ResponseGate } from '../core/gate';
 import { withTimeout } from '../core/timeout';
 import type { JsonRecord } from '../core/protocol';
-import type { ProviderRecord } from '../db/repo/providers';
+import { commitProviderMainResult, updateProviderScriptRun, type ProviderRecord } from '../db/repo/providers';
 
 export type ScriptVariables = Record<string, string | number | boolean>;
 
@@ -158,6 +158,84 @@ export async function invokeProviderScript(args: {
     args.res.json(result.body);
   }
   return result;
+}
+
+
+export function sanitizeProviderScriptError(provider: ProviderRecord, error: unknown): string {
+  let message = (error as Error)?.message ?? '脚本执行失败';
+  for (const variable of provider.variables) {
+    if (variable.type === 'password' && typeof variable.defaultValue === 'string' && variable.defaultValue) {
+      message = message.split(variable.defaultValue).join('[REDACTED]');
+    }
+  }
+  return message.slice(0, 1000);
+}
+
+export async function executeProviderMain(
+  provider: ProviderRecord,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<{ updated: string[] }> {
+  if (!provider.mainScript.trim()) return { updated: [] };
+
+  const initial = createVariables(provider);
+  const next = { ...initial };
+  const declared = new Set(provider.variables.map((item) => item.name));
+  const changed = new Set<string>();
+  const api = {
+    get: (name: string) => {
+      if (!declared.has(name)) throw new Error(`变量 ${name} 未声明`);
+      return next[name];
+    },
+    set: (name: string, value: string | number | boolean) => {
+      if (!declared.has(name)) throw new Error(`变量 ${name} 未声明`);
+      next[name] = value;
+      changed.add(name);
+    },
+    patch: (values: ScriptVariables) => {
+      for (const [name, value] of Object.entries(values)) api.set(name, value);
+    },
+  };
+
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...args: string[]) => (...values: unknown[]) => Promise<unknown>;
+  const module = { exports: {} as unknown };
+  const factory = new AsyncFunction(
+    'module',
+    'exports',
+    'variables',
+    'fetch',
+    'require',
+    'signal',
+    'provider',
+    '"use strict";\n' + provider.mainScript,
+  );
+  const result = await withTimeout(
+    async (executionSignal) => {
+      const context = { variables: api, fetch, require, signal: executionSignal, provider };
+      const returned = await factory(module, module.exports, api, fetch, require, executionSignal, provider);
+      const exported = module.exports as unknown;
+      const handler = typeof exported === 'function'
+        ? exported
+        : isRecord(exported) && typeof exported.default === 'function'
+          ? exported.default
+          : null;
+      if (!handler) return returned;
+      return handler(context);
+    },
+    timeoutMs,
+    `Provider ${provider.name} main script timed out after ${timeoutMs}ms`,
+    signal,
+  );
+
+  void result;
+  if (changed.size > 0) {
+    await commitProviderMainResult(provider.id, Object.fromEntries(
+      [...changed].flatMap((name) => next[name] === undefined ? [] : [[name, next[name]]]),
+    ) as ScriptVariables);
+  } else {
+    await updateProviderScriptRun(provider.id, { ok: true });
+  }
+  return { updated: [...changed] };
 }
 
 export function defaultScriptTemplate(): string {

@@ -14,7 +14,7 @@
  *      而不是把同一个值写进组内每一行。
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
@@ -28,6 +28,7 @@ import {
   Space,
   Switch,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   message,
@@ -37,6 +38,8 @@ import { adminApi } from '../api/client';
 import { ModelChipEditor } from '../components/ModelChipEditor';
 import { useAsync } from '../hooks/useAsync';
 import { formatDateTime } from '../lib/format';
+import { ProviderScriptEditor } from './ProviderScriptEditor';
+import { ProviderVariableEditor, scanProviderVariableNames, syncProviderVariables } from './ProviderVariableEditor';
 import type {
   PriorityGroupDTO,
   ProviderDTO,
@@ -99,6 +102,10 @@ interface FormValues {
   requestMode: ProviderRequestMode;
   requestScript: string;
   variables: ProviderVariableDefinition[];
+  variablesAutoSync: boolean;
+  mainScript: string;
+  scheduleEnabled: boolean;
+  scheduleCron: string;
   kind: ProviderKind;
   priority: number;
   enabled: boolean;
@@ -112,12 +119,30 @@ export function Providers() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [runningMain, setRunningMain] = useState(false);
   const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
   const [testPayload, setTestPayload] = useState('{\n  "messages": [{"role": "user", "content": "ping"}]\n}');
   const [form] = Form.useForm<FormValues>();
   const modelValues = Form.useWatch('models', form) ?? [];
   const requestMode = Form.useWatch('requestMode', form) ?? 'openai';
   const variableValues = Form.useWatch('variables', form) ?? [];
+  const variablesAutoSync = Form.useWatch('variablesAutoSync', form) ?? false;
+  const requestScriptValue = Form.useWatch('requestScript', form) ?? '';
+  const mainScriptValue = Form.useWatch('mainScript', form) ?? '';
+  const scheduleEnabledValue = Form.useWatch('scheduleEnabled', form) ?? false;
+
+  useEffect(() => {
+    if (!variablesAutoSync || requestMode !== 'script') return;
+    const names = scanProviderVariableNames(requestScriptValue, mainScriptValue);
+    const current = form.getFieldValue('variables') ?? [];
+    const merged = syncProviderVariables(current, names);
+    if (JSON.stringify(current) !== JSON.stringify(merged)) {
+      const referenced = new Set(names);
+      const removed = current.map((variable: ProviderVariableDefinition) => variable.name).filter((name: string) => !referenced.has(name));
+      if (removed.length > 0) message.warning(`代码已移除变量引用：${removed.join('、')}`);
+      form.setFieldValue('variables', merged);
+    }
+  }, [form, mainScriptValue, requestMode, requestScriptValue, variablesAutoSync]);
 
   const reloadAll = useCallback(() => {
     providers.reload();
@@ -134,6 +159,10 @@ export function Providers() {
       requestMode: 'openai',
       requestScript: '',
       variables: [],
+      variablesAutoSync: false,
+      mainScript: '',
+      scheduleEnabled: false,
+      scheduleCron: '',
       kind: 'primary',
       priority: 0,
       enabled: true,
@@ -155,6 +184,10 @@ export function Providers() {
         requestMode: record.requestMode,
         requestScript: record.requestScript,
         variables: record.variables,
+        variablesAutoSync: record.variablesAutoSync,
+        mainScript: record.mainScript,
+        scheduleEnabled: record.scheduleEnabled,
+        scheduleCron: record.scheduleCron,
         kind: record.kind,
         priority: record.priority,
         enabled: record.enabled,
@@ -222,6 +255,10 @@ export function Providers() {
           requestMode: values.requestMode,
           requestScript: values.requestScript,
           variables: values.variables,
+          variablesAutoSync: values.variablesAutoSync,
+          mainScript: values.mainScript,
+          scheduleEnabled: values.scheduleEnabled,
+          scheduleCron: values.scheduleCron,
           kind: values.kind,
           priority: values.priority,
           enabled: values.enabled,
@@ -237,6 +274,26 @@ export function Providers() {
       setTesting(false);
     }
   }, [editing, form, testPayload]);
+
+  const runMain = useCallback(async () => {
+    if (!editing || !mainScriptValue.trim()) return;
+    setRunningMain(true);
+    try {
+      const result = await adminApi.runProviderMain(editing.id);
+      message.success(result.updated.length > 0 ? `主入口执行成功，已更新：${result.updated.join('、')}` : '主入口执行成功，变量未变化');
+      const refreshed = await adminApi.providers();
+      const next = refreshed.find((provider) => provider.id === editing.id);
+      if (next) {
+        setEditing(next);
+        form.setFieldValue('variables', next.variables);
+      }
+      reloadAll();
+    } catch (error) {
+      message.error((error as Error).message || '主入口执行失败');
+    } finally {
+      setRunningMain(false);
+    }
+  }, [editing, form, mainScriptValue, reloadAll]);
 
   const toggleEnabled = useCallback(
     async (record: ProviderDTO, enabled: boolean) => {
@@ -489,6 +546,8 @@ export function Providers() {
         maskClosable={false}
       >
         <Form<FormValues> form={form} layout="vertical" requiredMark="optional">
+          <Tabs defaultActiveKey="config" className="provider-editor-tabs">
+            <Tabs.TabPane tab="配置与变量" key="config">
           <Form.Item
             name="name"
             label="名称"
@@ -569,71 +628,7 @@ export function Providers() {
           </Form.Item>
 
           {requestMode === 'script' ? (
-            <>
-              <Form.Item
-                name="requestScript"
-                label="Node.js 请求脚本"
-                rules={[{ required: true, message: '请填写 Node.js 请求脚本' }]}
-                extra="脚本通过 module.exports 导出 async 函数，参数为 { request, model, variables, fetch, signal }。后台脚本视为信任来源，可使用 Node.js 的 require。"
-              >
-                <Input.TextArea
-                  className="mono"
-                  autoSize={{ minRows: 12, maxRows: 28 }}
-                  disabled={editing?.source === 'env'}
-                  placeholder={'module.exports = async ({ request, model, variables, fetch, signal }) => {\n  // 返回 { status, body, contentType, actualModel }\n};'}
-                />
-              </Form.Item>
-
-              <Form.Item label="脚本变量" extra="源码中可将 {{$变量名}} 作为 JS 值直接使用（不要额外加引号），也可从 variables 参数读取。变量会显示为可配置表单控件。">
-                <Form.List name="variables">
-                  {(fields, { add, remove }) => (
-                    <Space direction="vertical" className="control-full">
-                      {fields.map((field) => {
-                        const type = variableValues[field.name]?.type;
-                        return (
-                          <Card key={field.key} size="small">
-                            <Space wrap>
-                              <Form.Item {...field} name={[field.name, 'name']} noStyle rules={[{ required: true, pattern: /^[A-Za-z_][A-Za-z0-9_]*$/, message: '变量名无效' }]}>
-                                <Input placeholder="变量名，如 api_token" />
-                              </Form.Item>
-                              <Form.Item {...field} name={[field.name, 'label']} noStyle rules={[{ required: true, message: '请填写标签' }]}>
-                                <Input placeholder="表单标签" />
-                              </Form.Item>
-                              <Form.Item {...field} name={[field.name, 'type']} noStyle initialValue="text">
-                                <Select<ProviderVariableDefinition['type']>
-                                  style={{ width: 120 }}
-                                  onChange={(nextType) => {
-                                    const current = form.getFieldValue(['variables', field.name, 'defaultValue']);
-                                    const defaultValue = nextType === 'switch' ? false : nextType === 'number' ? Number(current) || 0 : String(current ?? '');
-                                    form.setFieldValue(['variables', field.name, 'defaultValue'], defaultValue);
-                                  }}
-                                  options={[
-                                    { value: 'text', label: '文本' },
-                                    { value: 'password', label: '密码' },
-                                    { value: 'number', label: '数字' },
-                                    { value: 'switch', label: '开关' },
-                                  ]}
-                                />
-                              </Form.Item>
-                              <Form.Item {...field} name={[field.name, 'defaultValue']} noStyle valuePropName={type === 'switch' ? 'checked' : 'value'}>
-                                {type === 'switch' ? <Switch /> : type === 'password' ? <Input.Password placeholder="默认值" /> : type === 'number' ? <InputNumber placeholder="默认值" /> : <Input placeholder="默认值" />}
-                              </Form.Item>
-                              <Form.Item {...field} name={[field.name, 'required']} noStyle valuePropName="checked">
-                                <Switch checkedChildren="必填" unCheckedChildren="可选" />
-                              </Form.Item>
-                              <Button danger type="link" onClick={() => remove(field.name)}>移除</Button>
-                            </Space>
-                          </Card>
-                        );
-                      })}
-                      <Button type="dashed" onClick={() => add({ name: '', label: '', type: 'text', defaultValue: '', required: false })}>
-                        添加变量
-                      </Button>
-                    </Space>
-                  )}
-                </Form.List>
-              </Form.Item>
-            </>
+            <ProviderVariableEditor form={form} autoSync={variablesAutoSync} />
           ) : null}
 
           <Form.Item label="测试请求 JSON" extra="只发送一次，不写入正式请求日志；model 可放在 JSON 中，也可由模型列表提供。">
@@ -663,18 +658,68 @@ export function Providers() {
               }))}
             />
           </Form.Item>
-
-          <Form.Item
-            name="priority"
-            label="Priority"
-            extra="数字越小越先尝试；仅对主路由角色生效"
-          >
+          <Form.Item name="priority" label="Priority" extra="数字越小越先尝试；仅对主路由角色生效">
             <InputNumber min={0} step={1} className="control-full" />
           </Form.Item>
-
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
+        </Tabs.TabPane>
+          <Tabs.TabPane tab="脚本代码" key="script" disabled={requestMode !== 'script'}>
+            {requestMode === 'script' ? (
+            <>
+              <Form.Item
+                name="requestScript"
+                label="Node.js 请求脚本"
+                rules={[{ required: true, message: '请填写 Node.js 请求脚本' }]}
+                extra="脚本通过 module.exports 导出 async 函数，参数为 { request, model, variables, fetch, signal }。后台脚本视为信任来源，可使用 Node.js 的 require。"
+              >
+                <ProviderScriptEditor
+                  value={requestScriptValue}
+                  onChange={(value) => form.setFieldValue('requestScript', value)}
+                  disabled={editing?.source === 'env'}
+                />
+              </Form.Item>
+
+              <Form.Item name="mainScript" label="主入口代码" extra="主入口不会在每次聊天请求中执行，可使用 variables.set(name, value) 更新并持久化变量。">
+                <ProviderScriptEditor value={mainScriptValue} onChange={(value) => form.setFieldValue('mainScript', value)} disabled={editing?.source === 'env'} minHeight={260} />
+              </Form.Item>
+              <Space align="center" wrap>
+                <Form.Item name="scheduleEnabled" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="启用 UTC cron" unCheckedChildren="关闭 cron" />
+                </Form.Item>
+                <Form.Item
+                  name="scheduleCron"
+                  noStyle
+                  rules={[
+                    {
+                      validator: async (_, value) => {
+                        if (!form.getFieldValue('scheduleEnabled')) return;
+                        if (!String(value ?? '').trim()) throw new Error('请填写 UTC cron 表达式');
+                      },
+                    },
+                  ]}
+                >
+                  <Input className="mono" placeholder="*/15 * * * *" disabled={!scheduleEnabledValue} />
+                </Form.Item>
+                <Button loading={runningMain} onClick={() => void runMain()} disabled={!editing || !mainScriptValue.trim()}>
+                  立即执行主入口
+                </Button>
+              </Space>
+              <Alert type="info" showIcon message="cron 使用 UTC 时区，格式为：分 时 日 月 周。保存后等待下一次计划时间，不会立即执行。" />
+              {editing?.lastRunAt ? (
+                <Alert
+                  className="provider-script-status"
+                  type={editing.lastRunOk ? 'success' : 'error'}
+                  showIcon
+                  message={`最近执行：${editing.lastRunOk ? '成功' : '失败'} · ${new Date(editing.lastRunAt).toISOString()}`}
+                  description={editing.lastRunError ?? undefined}
+                />
+              ) : null}
+            </>
+            ) : null}
+          </Tabs.TabPane>
+        </Tabs>
         </Form>
       </Modal>
     </div>

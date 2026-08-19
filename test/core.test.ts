@@ -48,6 +48,8 @@ import {
   createRequestCacheKey,
 } from '../src/core/request-content';
 import { executeProviderScript } from '../src/upstream/script';
+import { nextCronTime, parseCron } from '../src/runtime/cron';
+import { scanProviderVariableNames, syncProviderVariables } from '../web/src/admin/ProviderVariableEditor';
 import type { PriorityGroupRecord, ProviderRecord } from '../src/db/repo/providers';
 import { buildIngestStatements, type RequestEventInput } from '../src/db/repo/requests';
 import {
@@ -976,5 +978,26 @@ describe('provider script', () => {
       ),
       /module\.exports/,
     );
+  });
+
+  it('主入口 cron 按 UTC 计算下一次执行时间并拒绝非法字段', () => {
+    const next = nextCronTime('15 3 * * *', new Date('2026-03-14T03:14:30.000Z'));
+    assert.equal(next.toISOString(), '2026-03-14T03:15:00.000Z');
+    assert.throws(() => parseCron('60 * * * *'), /无效 cron 字段/);
+  });
+
+  it('自动变量扫描支持属性、括号、方法和占位符，并保留变量元数据', () => {
+    const names = scanProviderVariableNames(
+      "variables.endpoint; variables['api_token']; variables.get('refresh_token'); {{$tenant_id}}; variables.set('api_token', value)",
+    );
+    assert.deepEqual(names, ['api_token', 'endpoint', 'refresh_token', 'tenant_id']);
+
+    const merged = syncProviderVariables(
+      [{ name: 'api_token', label: '访问令牌', type: 'password', defaultValue: 'secret' }],
+      ['api_token', 'new_value'],
+    );
+    assert.equal(merged[0]?.label, '访问令牌');
+    assert.equal(merged[0]?.defaultValue, 'secret');
+    assert.equal(merged[1]?.name, 'new_value');
   });
 });

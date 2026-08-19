@@ -27,6 +27,7 @@ import { invalidateConfig, warmConfig } from '../runtime/config-cache';
 import { sweepRateLimitBuckets } from '../runtime/counters';
 import { startRetentionSweeper, stopRetentionSweeper } from '../runtime/retention';
 import { startWriteQueue, stopWriteQueue } from '../runtime/write-queue';
+import { startProviderScriptScheduler, stopProviderScriptScheduler } from '../runtime/provider-scripts';
 import adminRouter from './admin';
 import proxyRouter from './proxy';
 import publicRouter from './public';
@@ -125,6 +126,7 @@ async function bootstrap(): Promise<void> {
 
   startWriteQueue();
   startRetentionSweeper();
+  await startProviderScriptScheduler();
 
   const sweeper = setInterval(() => sweepRateLimitBuckets(), RATE_LIMIT_SWEEP_MS);
   sweeper.unref?.();
@@ -142,6 +144,7 @@ async function bootstrap(): Promise<void> {
 
     clearInterval(sweeper);
     stopRetentionSweeper();
+    stopProviderScriptScheduler();
     server.close();
     // 先停止收新连接，再把队列里的追溯记录尽量写完
     await stopWriteQueue();

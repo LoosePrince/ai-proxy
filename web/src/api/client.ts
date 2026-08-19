@@ -135,6 +135,9 @@ export const adminApi = {
   testProvider: (input: ProviderTestInput & { providerId?: number; provider: ProviderUpsertInput }) =>
     request<ProviderTestResult>('/admin/api/providers/test', { method: 'POST', ...json(input) }),
 
+  runProviderMain: (id: number) =>
+    request<{ success: boolean; updated: string[] }>(`/admin/api/providers/${id}/main/run`, { method: 'POST' }),
+
   deleteProvider: (id: number) =>
     request<{ success: boolean }>(`/admin/api/providers/${id}`, { method: 'DELETE' }),
 

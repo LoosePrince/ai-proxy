@@ -32,6 +32,15 @@ export interface ProviderRecord {
   requestMode: ProviderRequestMode;
   requestScript: string;
   variables: ProviderVariableDefinition[];
+  variablesAutoSync: boolean;
+  mainScript: string;
+  scheduleEnabled: boolean;
+  scheduleCron: string;
+  scheduleStatus: 'idle' | 'success' | 'failed';
+  lastRunAt: string | null;
+  lastRunOk: boolean | null;
+  lastRunError: string | null;
+  variablesUpdatedAt: string | null;
   models: string[];
   kind: ProviderKind;
   source: ProviderSource;
@@ -63,6 +72,14 @@ interface ProviderRow {
   request_mode: string;
   request_script: string;
   variables_json: string;
+  variables_auto_sync: number;
+  main_script: string;
+  schedule_enabled: number;
+  schedule_cron: string;
+  last_run_at: string | null;
+  last_run_ok: number | null;
+  last_run_error: string | null;
+  variables_updated_at: string | null;
   kind: string;
   source: string;
   priority: number;
@@ -77,6 +94,8 @@ interface ProviderRow {
 
 const PROVIDER_COLUMNS = `
   p.id, p.name, p.base_url, p.api_key, p.system_prompt, p.request_mode, p.request_script, p.variables_json,
+  p.variables_auto_sync, p.main_script, p.schedule_enabled, p.schedule_cron,
+  p.last_run_at, p.last_run_ok, p.last_run_error, p.variables_updated_at,
   p.kind, p.source, p.priority, p.enabled,
   p.contributor, p.contributor_type, p.created_at, p.updated_at,
   (select group_concat(m.model, char(10))
@@ -126,6 +145,15 @@ function toProviderRecord(row: ProviderRow): ProviderRecord {
     requestMode: normalizeRequestMode(row.request_mode),
     requestScript: row.request_script ?? '',
     variables: normalizeVariables(row.variables_json),
+    variablesAutoSync: !!row.variables_auto_sync,
+    mainScript: row.main_script ?? '',
+    scheduleEnabled: !!row.schedule_enabled,
+    scheduleCron: row.schedule_cron ?? '',
+    scheduleStatus: row.last_run_ok === null ? 'idle' : row.last_run_ok ? 'success' : 'failed',
+    lastRunAt: row.last_run_at,
+    lastRunOk: row.last_run_ok === null ? null : !!row.last_run_ok,
+    lastRunError: row.last_run_error,
+    variablesUpdatedAt: row.variables_updated_at,
     models: row.models ? row.models.split('\n').filter(Boolean) : [],
     kind: normalizeKind(row.kind),
     source: normalizeSource(row.source),
@@ -211,6 +239,10 @@ export interface CreateProviderInput {
   requestMode?: ProviderRequestMode;
   requestScript?: string;
   variables?: ProviderVariableDefinition[];
+  variablesAutoSync?: boolean;
+  mainScript?: string;
+  scheduleEnabled?: boolean;
+  scheduleCron?: string;
   models: string[];
   kind?: ProviderKind;
   source?: ProviderSource;
@@ -231,6 +263,10 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
     request_mode: input.requestMode ?? 'openai',
     request_script: input.requestScript ?? '',
     variables_json: JSON.stringify(input.variables ?? []),
+    variables_auto_sync: input.variablesAutoSync ?? false,
+    main_script: input.mainScript ?? '',
+    schedule_enabled: input.scheduleEnabled ?? false,
+    schedule_cron: input.scheduleCron ?? '',
     kind: input.kind ?? 'primary',
     source: input.source ?? 'managed',
     priority: input.priority ?? 0,
@@ -271,6 +307,10 @@ export interface UpdateProviderInput {
   requestMode?: ProviderRequestMode;
   requestScript?: string;
   variables?: ProviderVariableDefinition[];
+  variablesAutoSync?: boolean;
+  mainScript?: string;
+  scheduleEnabled?: boolean;
+  scheduleCron?: string;
   models?: string[];
   kind?: ProviderKind;
   priority?: number;
@@ -290,6 +330,10 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   if (input.requestMode !== undefined) fields.request_mode = input.requestMode;
   if (input.requestScript !== undefined) fields.request_script = input.requestScript;
   if (input.variables !== undefined) fields.variables_json = JSON.stringify(input.variables);
+  if (input.variablesAutoSync !== undefined) fields.variables_auto_sync = input.variablesAutoSync;
+  if (input.mainScript !== undefined) fields.main_script = input.mainScript;
+  if (input.scheduleEnabled !== undefined) fields.schedule_enabled = input.scheduleEnabled;
+  if (input.scheduleCron !== undefined) fields.schedule_cron = input.scheduleCron;
   if (input.kind !== undefined) fields.kind = input.kind;
   if (input.priority !== undefined) fields.priority = input.priority;
   if (input.enabled !== undefined) fields.enabled = input.enabled;
@@ -304,6 +348,82 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   return findProviderById(id);
 }
 
+function applyProviderVariableValues(
+  variables: ProviderVariableDefinition[],
+  values: Record<string, string | number | boolean>,
+): ProviderVariableDefinition[] {
+  const byName = new Map(variables.map((item) => [item.name, item]));
+  const next = variables.map((item) => {
+    if (!(item.name in values)) return item;
+    const value = values[item.name];
+    const valid =
+      ((item.type === 'text' || item.type === 'password') && typeof value === 'string') ||
+      (item.type === 'number' && typeof value === 'number' && Number.isFinite(value)) ||
+      (item.type === 'switch' && typeof value === 'boolean');
+    if (!valid) throw new Error(`变量 ${item.name} 的值类型不匹配`);
+    if (typeof value === 'string' && value.length > 65_536) throw new Error(`变量 ${item.name} 的值超过 64 KiB`);
+    return { ...item, defaultValue: value };
+  });
+
+  for (const name of Object.keys(values)) {
+    if (!byName.has(name)) throw new Error(`变量 ${name} 未声明`);
+  }
+  if (JSON.stringify(next).length > 262_144) throw new Error('Provider 变量总大小超过 256 KiB');
+  return next;
+}
+
+export async function updateProviderVariables(
+  id: number,
+  values: Record<string, string | number | boolean>,
+): Promise<ProviderRecord | null> {
+  const existing = await findProviderById(id);
+  if (!existing) return null;
+
+  const next = applyProviderVariableValues(existing.variables, values);
+  const now = new Date().toISOString();
+  await getDb().transaction([
+    update('providers', {
+      variables_json: JSON.stringify(next),
+      variables_updated_at: now,
+      updated_at: now,
+    }, whereEq({ id })),
+  ]);
+  return findProviderById(id);
+}
+
+export async function commitProviderMainResult(
+  id: number,
+  values: Record<string, string | number | boolean>,
+): Promise<void> {
+  const existing = await findProviderById(id);
+  if (!existing) throw new Error('Provider 不存在');
+  const next = applyProviderVariableValues(existing.variables, values);
+  const now = new Date().toISOString();
+  const results = await getDb().transaction([{
+    sql: `update providers
+             set variables_json = ?, variables_updated_at = ?, last_run_at = ?, last_run_ok = 1,
+                 last_run_error = null, updated_at = ?
+           where id = ? and updated_at = ?`,
+    params: [JSON.stringify(next), Object.keys(values).length > 0 ? now : existing.variablesUpdatedAt, now, now, id, existing.updatedAt],
+    mode: 'write',
+  }]);
+  if ((results[0]?.rowCount ?? 0) !== 1) throw new Error('Provider 配置已在主入口执行期间变更，请重试');
+}
+
+export async function updateProviderScriptRun(
+  id: number,
+  result: { ok: boolean; error?: string | null },
+): Promise<void> {
+  const now = new Date().toISOString();
+  await getDb().transaction([
+    update('providers', {
+      last_run_at: now,
+      last_run_ok: result.ok,
+      last_run_error: result.ok ? null : (result.error ?? '主入口执行失败').slice(0, 1000),
+      updated_at: now,
+    }, whereEq({ id })),
+  ]);
+}
 export async function deleteProvider(id: number): Promise<void> {
   // provider_models 有 on delete cascade，但 Lsqlite 未必开启 foreign_keys pragma，
   // 因此显式删除关联行，避免遗留孤儿。

@@ -45,6 +45,8 @@ import { type JsonRecord } from '../core/protocol';
 import { counterStats } from '../runtime/counters';
 import { getWriteQueueStats } from '../runtime/write-queue';
 import { runRetentionSweep } from '../runtime/retention';
+import { startProviderScriptScheduler, runProviderMain, refreshProviderScriptSchedules } from '../runtime/provider-scripts';
+import { validateCron } from '../runtime/cron';
 import { executeProviderScript } from '../upstream/script';
 import { getUpstreamClient, upstreamClientCount } from '../upstream/client';
 import { withTimeout } from '../core/timeout';
@@ -186,6 +188,33 @@ function toVariables(value: unknown): ProviderVariableDefinition[] {
   });
 }
 
+function mergeSecretVariables(
+  existing: ProviderVariableDefinition[],
+  incoming: ProviderVariableDefinition[],
+): ProviderVariableDefinition[] {
+  const existingByName = new Map(existing.map((variable) => [variable.name, variable]));
+  return incoming.map((variable) => {
+    const previous = existingByName.get(variable.name);
+    if (variable.type === 'password' && variable.defaultValue === '' && previous?.type === 'password' && previous.defaultValue !== '') {
+      return { ...variable, defaultValue: previous.defaultValue };
+    }
+    return variable;
+  });
+}
+
+function toScheduleCron(value: unknown, enabled: boolean): string {
+  const cron = String(value ?? '').trim();
+  if (enabled && !cron) throw new BadRequest('启用 cron 时必须填写表达式');
+  if (cron) {
+    try {
+      return validateCron(cron);
+    } catch (error) {
+      throw new BadRequest((error as Error).message);
+    }
+  }
+  return '';
+}
+
 function toKind(value: unknown): ProviderKind {
   if (value === 'fallback' || value === 'parallel') return value;
   if (value === undefined || value === 'primary') return 'primary';
@@ -289,6 +318,12 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
     const kind = toKind(body.kind);
     const requestMode = toRequestMode(body.requestMode);
 
+    const scheduleEnabled = !!body.scheduleEnabled;
+    const mainScript = body.mainScript === undefined ? '' : String(body.mainScript);
+    const scheduleCron = toScheduleCron(body.scheduleCron, scheduleEnabled);
+    if (scheduleEnabled && requestMode !== 'script') throw new BadRequest('只有脚本模式可以启用主入口 cron');
+    if (scheduleEnabled && !mainScript.trim()) throw new BadRequest('启用 cron 时主入口代码不能为空');
+
     const record = await createProvider({
       name: requireString(body.name, 'name'),
       baseUrl: requestMode === 'openai' ? requireHttpUrl(body.baseUrl, 'baseUrl') : String(body.baseUrl ?? '').trim(),
@@ -298,6 +333,10 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
       requestMode,
       requestScript: body.requestScript === undefined ? '' : String(body.requestScript),
       variables: toVariables(body.variables),
+      variablesAutoSync: !!body.variablesAutoSync,
+      mainScript,
+      scheduleEnabled,
+      scheduleCron,
       kind,
       source: 'managed',
       priority: toPriority(body.priority),
@@ -305,6 +344,7 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
     });
 
     invalidateConfig();
+    await refreshProviderScriptSchedules();
     const ruleOf = await ruleResolver();
     res.status(201).json(toProviderDTO(record, ruleOf(record)));
   } catch (error) {
@@ -320,7 +360,11 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
     if (body.providerId !== undefined && !existing) throw new BadRequest('Provider 不存在');
     const config = (body.provider ?? {}) as Record<string, unknown>;
     const requestMode = toRequestMode(config.requestMode ?? existing?.requestMode);
-    const variables = config.variables === undefined ? existing?.variables ?? [] : toVariables(config.variables);
+    const variables = config.variables === undefined
+      ? existing?.variables ?? []
+      : existing
+        ? mergeSecretVariables(existing.variables, toVariables(config.variables))
+        : toVariables(config.variables);
     const provider: ProviderRecord = existing
       ? {
           ...existing,
@@ -334,6 +378,10 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
           requestMode,
           requestScript: config.requestScript === undefined ? existing.requestScript : String(config.requestScript),
           variables,
+          variablesAutoSync: config.variablesAutoSync === undefined ? existing.variablesAutoSync : !!config.variablesAutoSync,
+          mainScript: config.mainScript === undefined ? existing.mainScript : String(config.mainScript),
+          scheduleEnabled: config.scheduleEnabled === undefined ? existing.scheduleEnabled : !!config.scheduleEnabled,
+          scheduleCron: config.scheduleCron === undefined ? existing.scheduleCron : String(config.scheduleCron).trim(),
         }
       : {
           id: -1,
@@ -344,6 +392,15 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
           requestMode,
           requestScript: String(config.requestScript ?? ''),
           variables,
+          variablesAutoSync: !!config.variablesAutoSync,
+          mainScript: String(config.mainScript ?? ''),
+          scheduleEnabled: !!config.scheduleEnabled,
+          scheduleCron: String(config.scheduleCron ?? '').trim(),
+          scheduleStatus: 'idle',
+          lastRunAt: null,
+          lastRunOk: null,
+          lastRunError: null,
+          variablesUpdatedAt: null,
           models: toModels(config.models),
           kind: toKind(config.kind),
           source: 'managed',
@@ -361,6 +418,12 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
     }) as JsonRecord;
     const model = String(body.model ?? payload.model ?? provider.models[0] ?? 'test-model');
     const testVariables = body.variables as Record<string, string | number | boolean> | undefined;
+    const effectiveTestVariables = existing && testVariables
+      ? Object.fromEntries(Object.entries(testVariables).filter(([name, value]) => {
+          const definition = existing.variables.find((item) => item.name === name);
+          return !(definition?.type === 'password' && value === '' && definition.defaultValue !== '');
+        }))
+      : testVariables;
     const configSnapshot = await getConfig();
     const timeoutMs = resolveTimeoutMs(provider, configSnapshot.settings, configSnapshot.groups);
     const upstreamPayload = prependBuiltInSystemPrompt(
@@ -373,7 +436,7 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
     let actualModel = model;
     let responseBody: unknown;
     if (provider.requestMode === 'script') {
-      const result = await executeProviderScript(provider, { payload: upstreamPayload, model, signal: new AbortController().signal, variables: testVariables }, timeoutMs);
+      const result = await executeProviderScript(provider, { payload: upstreamPayload, model, signal: new AbortController().signal, variables: effectiveTestVariables }, timeoutMs);
       status = result.status;
       actualModel = result.actualModel;
       responseBody = result.body;
@@ -441,13 +504,23 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
     if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt).trim();
     if (body.requestMode !== undefined) patch.requestMode = toRequestMode(body.requestMode);
     if (body.requestScript !== undefined) patch.requestScript = String(body.requestScript);
-    if (body.variables !== undefined) patch.variables = toVariables(body.variables);
+    if (body.variables !== undefined) patch.variables = mergeSecretVariables(existing.variables, toVariables(body.variables));
+    if (body.variablesAutoSync !== undefined) patch.variablesAutoSync = !!body.variablesAutoSync;
+    if (body.mainScript !== undefined) patch.mainScript = String(body.mainScript);
+    if (body.scheduleEnabled !== undefined) patch.scheduleEnabled = !!body.scheduleEnabled;
+    if (body.scheduleCron !== undefined) patch.scheduleCron = String(body.scheduleCron).trim();
     if (body.kind !== undefined) patch.kind = toKind(body.kind);
     if (body.priority !== undefined) patch.priority = toPriority(body.priority);
     if (body.enabled !== undefined) patch.enabled = !!body.enabled;
 
     const nextRequestMode = patch.requestMode ?? existing.requestMode;
     const nextApiKey = patch.apiKey ?? existing.apiKey;
+    const nextMainScript = patch.mainScript ?? existing.mainScript;
+    const nextScheduleEnabled = patch.scheduleEnabled ?? existing.scheduleEnabled;
+    const nextScheduleCron = toScheduleCron(patch.scheduleCron ?? existing.scheduleCron, nextScheduleEnabled);
+    if (patch.scheduleCron !== undefined || patch.scheduleEnabled !== undefined) patch.scheduleCron = nextScheduleCron;
+    if (nextScheduleEnabled && nextRequestMode !== 'script') throw new BadRequest('只有脚本模式可以启用主入口 cron');
+    if (nextScheduleEnabled && !nextMainScript.trim()) throw new BadRequest('启用 cron 时主入口代码不能为空');
     if (nextRequestMode === 'openai' && !nextApiKey) {
       throw new BadRequest('OpenAI 模式必须配置 API Key');
     }
@@ -463,10 +536,20 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
     }
 
     invalidateConfig();
+    await refreshProviderScriptSchedules();
     const ruleOf = await ruleResolver();
     res.json(toProviderDTO(record, ruleOf(record)));
   } catch (error) {
     fail(res, error);
+  }
+});
+
+router.post('/api/providers/:id/main/run', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const result = await runProviderMain(Number(req.params.id));
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(errorStatus(error)).json({ error: { message: errorMessage(error) } });
   }
 });
 
@@ -478,21 +561,16 @@ router.delete('/api/providers/:id', requireAuth, async (req: Request, res: Respo
       res.status(404).json({ error: { message: 'Provider 不存在' } });
       return;
     }
-    if (existing.source === 'env') {
-      throw new BadRequest('环境变量来源的 Provider 不能删除，请从 FALLBACK_PROVIDERS 移除');
-    }
-
+    if (existing.source === 'env') throw new BadRequest('环境变量来源的 Provider 不能删除，请从 FALLBACK_PROVIDERS 移除');
     await deleteProvider(id);
     await pruneEmptyPriorityGroups();
     invalidateConfig();
-
-    // 历史用量靠 provider_usage_daily 的反规范化 provider_name 保留，删除不影响追溯
+    await refreshProviderScriptSchedules();
     res.json({ success: true });
   } catch (error) {
     fail(res, error);
   }
 });
-
 // ------------------------------------------------------------------ 优先级组
 
 router.get('/api/priority-groups', requireAuth, async (_req: Request, res: Response) => {

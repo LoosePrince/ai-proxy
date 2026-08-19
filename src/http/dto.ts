@@ -13,6 +13,7 @@ import type {
   ContributionListItemDTO,
   ContributorType,
   ProviderDTO,
+  ProviderVariableDefinition,
   RoutingRule,
 } from '../types/api';
 
@@ -29,6 +30,14 @@ function displayNameOf(record: ProviderRecord): string {
   if (!record.contributor || !type) return record.name;
   if (type === 'email') return record.contributor.split('@')[0] ?? record.name;
   return record.contributor;
+}
+
+function publicVariables(variables: ProviderVariableDefinition[]): ProviderVariableDefinition[] {
+  return variables.map((variable) => {
+    if (variable.type !== 'password') return variable;
+    const configured = variable.secretConfigured ?? variable.defaultValue !== '';
+    return { ...variable, defaultValue: '', secretConfigured: configured };
+  });
 }
 
 export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule): ProviderDTO {
@@ -52,7 +61,16 @@ export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule
     systemPrompt: record.systemPrompt,
     requestMode: record.requestMode,
     requestScript: record.requestScript,
-    variables: record.variables,
+    variables: publicVariables(record.variables),
+    variablesAutoSync: record.variablesAutoSync,
+    mainScript: record.mainScript,
+    scheduleEnabled: record.scheduleEnabled,
+    scheduleCron: record.scheduleCron,
+    scheduleStatus: record.scheduleStatus,
+    lastRunAt: record.lastRunAt,
+    lastRunOk: record.lastRunOk,
+    lastRunError: record.lastRunError,
+    variablesUpdatedAt: record.variablesUpdatedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
