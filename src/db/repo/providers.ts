@@ -407,7 +407,7 @@ export async function commitProviderMainResult(
     params: [JSON.stringify(next), Object.keys(values).length > 0 ? now : existing.variablesUpdatedAt, now, now, id, existing.updatedAt],
     mode: 'write',
   }]);
-  if ((results[0]?.rowCount ?? 0) !== 1) throw new Error('Provider 配置已在主入口执行期间变更，请重试');
+  if ((results[0]?.changes ?? 0) !== 1) throw new Error('Provider 配置已在主入口执行期间变更，请重试');
 }
 
 export async function updateProviderScriptRun(

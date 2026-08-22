@@ -16,6 +16,8 @@ export interface LsqliteResult<Row = Record<string, unknown>> {
   statement: string;
   rows: Row[];
   rowCount: number;
+  /** 写语句由 Lsqlite 返回受影响行数；读语句通常使用 rowCount。 */
+  changes?: number;
   elapsedMs: number;
 }
 
