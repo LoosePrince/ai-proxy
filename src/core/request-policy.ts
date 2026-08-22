@@ -216,3 +216,12 @@ export function stripClientSystemPrompts(payload: JsonRecord): JsonRecord {
     ),
   };
 }
+
+/** 仅保留 role 为 user 的消息，移除 IDE 注入的上下文、历史与工具调用。 */
+export function keepOnlyUserMessages(payload: JsonRecord): JsonRecord {
+  if (!Array.isArray(payload.messages)) return { ...payload };
+  return {
+    ...payload,
+    messages: payload.messages.filter((message) => isRecord(message) && message.role === 'user'),
+  };
+}

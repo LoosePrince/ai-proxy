@@ -122,6 +122,18 @@ export async function findReusableResponse(cacheKey: string, reuseHours: number)
   return response;
 }
 
+export async function pruneExpiredCachedResponses(reuseHours: number): Promise<number> {
+  const cutoffMs = Date.now() - reuseHours * 3_600_000;
+  for (const response of recentResponses.values()) {
+    const createdAtMs = Date.parse(response.createdAt);
+    if (!Number.isFinite(createdAtMs) || createdAtMs < cutoffMs) forgetRecent(response.cacheKey);
+  }
+
+  const cutoff = new Date(cutoffMs).toISOString();
+  const result = await getDb().execute('delete from response_cache where created_at < ?', [cutoff]);
+  return result.rowCount ?? 0;
+}
+
 export async function saveCachedResponse(input: CachedResponse): Promise<void> {
   rememberRecent(input);
   await getDb().execute(

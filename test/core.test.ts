@@ -41,7 +41,7 @@ import {
   normalizeChatPayload,
   responseInputToChatMessages,
 } from '../src/core/protocol';
-import { inspectRequest, stripClientSystemPrompts } from '../src/core/request-policy';
+import { inspectRequest, keepOnlyUserMessages, stripClientSystemPrompts } from '../src/core/request-policy';
 import { composeBuiltInSystemPrompt, prependBuiltInSystemPrompt } from '../src/core/system-prompt';
 import {
   createPublicContentEvent,
@@ -854,6 +854,24 @@ describe('system-prompt/request-policy', () => {
     };
     assert.equal(inspectRequest(payload).isIdeRequest, true);
     assert.deepEqual(stripClientSystemPrompts(payload).messages, [{ role: 'user', content: '继续' }]);
+  });
+
+  it('仅提交 user 消息时移除 IDE 上下文、历史和工具消息', () => {
+    const payload = {
+      messages: [
+        { role: 'system', content: 'IDE instructions' },
+        { role: 'user', content: '第一句' },
+        { role: 'assistant', content: '历史回答' },
+        { role: 'tool', content: '工具结果' },
+        { role: 'user', content: '第二句' },
+        '无效消息',
+      ],
+    };
+
+    assert.deepEqual(keepOnlyUserMessages(payload).messages, [
+      { role: 'user', content: '第一句' },
+      { role: 'user', content: '第二句' },
+    ]);
   });
 
   it('识别恶意行为但不把普通请求拦截', () => {

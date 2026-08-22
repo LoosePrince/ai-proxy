@@ -5,7 +5,7 @@
 
 export type RoutingRule = 'priority' | 'random' | 'average';
 
-export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt';
+export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt' | 'only-user-messages';
 
 export type MaliciousBehaviorAction = 'ignore' | 'error' | 'response';
 
@@ -165,7 +165,7 @@ export interface SettingsDTO {
   publicDetailedStatsEnabled: boolean;
   /** 允许相同协议与传输形态的请求复用持久化响应 */
   requestCacheEnabled: boolean;
-  /** 只命中此时间窗口内写入的缓存；缓存行本身不自动删除 */
+  /** 只命中此时间窗口内写入的缓存，后台会自动删除超过窗口的缓存行 */
   requestCacheReuseHours: number;
   /** 所有 Provider 共享的内置强制系统提示词 */
   globalSystemPrompt: string;

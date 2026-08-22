@@ -66,7 +66,7 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
 }
 
 function normalizeIdeAction(value: unknown): RequestBehaviorAction {
-  if (value === 'error' || value === 'strip-system-prompt') return value;
+  if (value === 'error' || value === 'strip-system-prompt' || value === 'only-user-messages') return value;
   return 'ignore';
 }
 

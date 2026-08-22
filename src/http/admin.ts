@@ -240,7 +240,9 @@ function toNonNegativeInt(value: unknown, label: string): number {
 }
 
 function toIdeAction(value: unknown): RequestBehaviorAction {
-  if (value === 'ignore' || value === 'error' || value === 'strip-system-prompt') return value;
+  if (value === 'ignore' || value === 'error' || value === 'strip-system-prompt' || value === 'only-user-messages') {
+    return value;
+  }
   throw new BadRequest('IDE 请求处理方式无效');
 }
 

@@ -52,6 +52,7 @@ const IDE_ACTION_OPTIONS: Array<{ label: string; value: RequestBehaviorAction }>
   { label: '忽略请求（200 + 空消息）', value: 'ignore' },
   { label: '失败（返回错误码）', value: 'error' },
   { label: '去除用户提供的系统提示词后继续', value: 'strip-system-prompt' },
+  { label: '仅提交 user 消息', value: 'only-user-messages' },
 ];
 
 const MALICIOUS_ACTION_OPTIONS: Array<{ label: string; value: MaliciousBehaviorAction }> = [
@@ -236,7 +237,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           name="requestCacheEnabled"
           label="启用请求缓存"
           valuePropName="checked"
-          tooltip="相同协议、请求参数和流式形态的成功响应会持久化复用。缓存记录默认不自动清理。"
+          tooltip="相同协议、请求参数和流式形态的成功响应会持久化复用，并在超过复用间隔后自动清理。"
         >
           <Switch />
         </Form.Item>
@@ -245,7 +246,7 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           name="requestCacheReuseHours"
           label="请求缓存复用间隔（小时）"
           rules={[{ required: true, message: '必填' }]}
-          tooltip="默认只命中 24 小时内生成的缓存。超过窗口的记录继续保留，但不会被复用。"
+          tooltip="默认只命中 24 小时内生成的缓存；超过此窗口的缓存将由后台自动清理。"
         >
           <InputNumber min={1} max={8760} className="control-full" />
         </Form.Item>
@@ -534,7 +535,7 @@ function RuntimePanel() {
     try {
       const result = await adminApi.sweepRetention();
       message.success(
-        result.deleted > 0 ? `已清理 ${result.deleted} 条请求明细` : '没有需要清理的记录',
+        result.deleted > 0 ? `已清理 ${result.deleted} 条过期请求或缓存记录` : '没有需要清理的记录',
       );
     } catch (error) {
       message.error((error as Error).message);
@@ -550,9 +551,9 @@ function RuntimePanel() {
       title="运行时状态"
       extra={
         <Space>
-          <Tooltip title="按当前保留天数立即执行一次清理，不必等 6 小时的后台周期">
+          <Tooltip title="按当前保留天数与缓存复用间隔立即执行一次清理，不必等 6 小时的后台周期">
             <Button size="small" loading={sweeping} onClick={() => void sweep()}>
-              立即清理日志
+              立即清理过期记录
             </Button>
           </Tooltip>
           <Button size="small" onClick={runtime.reload}>

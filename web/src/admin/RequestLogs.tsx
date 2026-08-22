@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Button, Card, Drawer, Input, Select, Space, Table, Tag, Timeline, Tooltip } from 'antd';
+import { Alert, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Timeline, Tooltip, Typography } from 'antd';
+import ReactMarkdown from 'react-markdown';
 
 import { adminApi } from '../api/client';
 import { DayRangePicker, useDayRange } from '../components/DayRangePicker';
@@ -76,6 +77,125 @@ const ROLE_LABEL: Record<string, string> = {
 function formatContent(value: unknown): string {
   if (typeof value === 'string') return value;
   return JSON.stringify(value, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function contentToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return '';
+  return value
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (!isRecord(part)) return '';
+      return typeof part.text === 'string' ? part.text : typeof part.content === 'string' ? part.content : '';
+    })
+    .join('');
+}
+
+function extractSseText(body: string): string {
+  const parts: string[] = [];
+  for (const frame of body.replace(/\r\n/g, '\n').split('\n\n')) {
+    const data = frame
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n');
+    if (!data || data === '[DONE]') continue;
+    try {
+      const event = JSON.parse(data) as unknown;
+      if (!isRecord(event)) continue;
+      if (typeof event.delta === 'string' && ['response.output_text.delta', 'response.reasoning.delta'].includes(String(event.type))) {
+        parts.push(event.delta);
+        continue;
+      }
+      const choices = Array.isArray(event.choices) ? event.choices : [];
+      const delta = isRecord(choices[0]) && isRecord(choices[0].delta) ? choices[0].delta : null;
+      if (delta) {
+        if (typeof delta.content === 'string') parts.push(delta.content);
+        else if (typeof delta.reasoning_content === 'string') parts.push(delta.reasoning_content);
+        else if (typeof delta.reasoning === 'string') parts.push(delta.reasoning);
+      }
+    } catch {
+      // 非 JSON 的 SSE 心跳或上游自定义事件不会产生可渲染正文。
+    }
+  }
+  return parts.join('');
+}
+
+function extractMessagesText(value: unknown): string {
+  const messages = isRecord(value) && Array.isArray(value.messages) ? value.messages : [];
+  return messages
+    .map((message) => {
+      if (!isRecord(message)) return '';
+      const content = contentToText(message.content);
+      return content ? `### ${typeof message.role === 'string' ? message.role : 'message'}\n\n${content}` : '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function extractResponseText(value: unknown): string {
+  if (typeof value === 'string') return extractSseText(value) || value;
+  if (!isRecord(value)) return '';
+
+  const choices = Array.isArray(value.choices) ? value.choices : [];
+  const choiceMessage = isRecord(choices[0]) && isRecord(choices[0].message) ? choices[0].message : null;
+  if (choiceMessage) return contentToText(choiceMessage.content) || String(choiceMessage.reasoning_content ?? '');
+
+  const output = Array.isArray(value.output) ? value.output : [];
+  const outputText = output
+    .filter((item) => isRecord(item) && item.type === 'message')
+    .map((item) => (isRecord(item) ? contentToText(item.content) : ''))
+    .join('');
+  return outputText || (typeof value.output_text === 'string' ? value.output_text : '');
+}
+
+function extractRenderableContent(value: unknown, type: 'request' | 'response'): string {
+  if (type === 'response') return extractResponseText(value);
+  const messages = extractMessagesText(value);
+  if (messages) return messages;
+  if (isRecord(value)) {
+    if (typeof value.input === 'string') return value.input;
+    if (Array.isArray(value.input)) {
+      return value.input
+        .map((item) => (isRecord(item) ? contentToText(item.content) : ''))
+        .filter(Boolean)
+        .join('\n\n');
+    }
+  }
+  return typeof value === 'string' ? value : '';
+}
+
+function ContentLogSection({ title, value, type }: { title: string; value: unknown; type: 'request' | 'response' }) {
+  const [view, setView] = useState<'raw' | 'render'>('raw');
+  const rendered = useMemo(() => extractRenderableContent(value, type), [type, value]);
+
+  return (
+    <section>
+      <div className="content-log-heading">
+        <strong>{title}</strong>
+        <Tabs
+          activeKey={view}
+          size="small"
+          onChange={(key) => setView(key as 'raw' | 'render')}
+          items={[
+            { key: 'raw', label: '原始内容' },
+            { key: 'render', label: '渲染模式' },
+          ]}
+        />
+      </div>
+      {view === 'raw' ? (
+        <pre className="content-log-body">{formatContent(value)}</pre>
+      ) : (
+        <div className="content-rendered-body">
+          {rendered ? <ReactMarkdown>{rendered}</ReactMarkdown> : '未从此记录中提取到可渲染的文本内容。'}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function RequestLogs() {
@@ -337,6 +457,16 @@ export function RequestLogs() {
                 </div>
               </div>
               <div>
+                <span className="faint">IP</span>
+                {detail.data.ip ? (
+                  <Typography.Text className="mono" copyable={{ text: detail.data.ip }}>
+                    {detail.data.ip}
+                  </Typography.Text>
+                ) : (
+                  <div>—</div>
+                )}
+              </div>
+              <div>
                 <span className="faint">错误码</span>
                 <div>{detail.data.errorCode ?? '—'}</div>
               </div>
@@ -349,18 +479,9 @@ export function RequestLogs() {
             {detail.data.content ? (
               <Card size="small" title="请求与响应内容">
                 <div className="content-log-stack">
-                  <section>
-                    <strong>客户端请求</strong>
-                    <pre className="content-log-body">{formatContent(detail.data.content.clientRequest)}</pre>
-                  </section>
-                  <section>
-                    <strong>实际上游请求</strong>
-                    <pre className="content-log-body">{formatContent(detail.data.content.upstreamRequest)}</pre>
-                  </section>
-                  <section>
-                    <strong>AI 响应</strong>
-                    <pre className="content-log-body">{formatContent(detail.data.content.aiResponse)}</pre>
-                  </section>
+                  <ContentLogSection title="客户端请求" value={detail.data.content.clientRequest} type="request" />
+                  <ContentLogSection title="实际上游请求" value={detail.data.content.upstreamRequest} type="request" />
+                  <ContentLogSection title="AI 响应" value={detail.data.content.aiResponse} type="response" />
                 </div>
               </Card>
             ) : (

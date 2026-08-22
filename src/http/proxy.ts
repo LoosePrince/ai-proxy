@@ -17,7 +17,7 @@ import express, { type Request, type Response } from 'express';
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
 import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
-import { inspectRequest, stripClientSystemPrompts } from '../core/request-policy';
+import { inspectRequest, keepOnlyUserMessages, stripClientSystemPrompts } from '../core/request-policy';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import {
@@ -429,7 +429,10 @@ async function handleProxyRequest(
       respondLocally('', 'ide_request');
       return;
     }
-    payload = stripClientSystemPrompts(payload);
+    payload =
+      settings.ideRequestAction === 'only-user-messages'
+        ? keepOnlyUserMessages(payload)
+        : stripClientSystemPrompts(payload);
   }
 
   // ---- 限流（内存滑动窗口，阈值来自配置快照）----
