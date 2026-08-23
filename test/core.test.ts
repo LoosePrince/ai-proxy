@@ -423,6 +423,22 @@ describe('usage daily aggregation', () => {
     );
   });
 
+  it('缓存命中日志只保存关联键，不重复保存正文', () => {
+    const cached = event({
+      outcome: 'cache_hit',
+      cacheHit: true,
+      success: true,
+      httpStatus: 200,
+      cacheKey: 'cache-key-1',
+    });
+    const statement = buildIngestStatements([cached]).find((item) => item.sql.includes('insert into requests'));
+    assert.ok(statement);
+    assert.match(statement.sql, /cache_key/);
+    const params = statement.params as unknown[];
+    assert.equal(params[14], 'cache-key-1');
+    assert.deepEqual(params.slice(-3), [null, null, null]);
+  });
+
   it('缓存命中不写入 Provider 维度：该 Provider 本次并未被调用', () => {
     const cached = event({
       outcome: 'cache_hit',
@@ -443,7 +459,6 @@ describe('usage daily aggregation', () => {
       true,
     );
   });
-
   it('交付率含缓存复用且排除客户端取消，上游成功率只看真实上游调用', () => {
     // 10 次请求：6 次上游成功、2 次缓存复用、1 次上游失败、1 次客户端取消
     const rates = successRatesOf({

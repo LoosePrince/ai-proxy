@@ -337,7 +337,7 @@ async function handleProxyRequest(
       aiResponse: outcome.errorMessage ? { error: outcome.errorMessage, code: outcome.errorCode ?? null } : null,
     };
     const event = toRequestEvent(trace, outcome);
-    if (contentLoggingEnabled) event.content = snapshot;
+    if (contentLoggingEnabled && outcome.outcome !== 'cache_hit') event.content = snapshot;
     enqueueRequestEvent(event);
 
     if (publicContentStreamEnabled) {
@@ -479,6 +479,7 @@ async function handleProxyRequest(
         finish(
           {
             outcome: 'cache_hit',
+            cacheKey,
             httpStatus: 200,
             finalProviderId: cached.finalProviderId,
             finalProviderName: cached.finalProviderName,
@@ -588,6 +589,7 @@ async function handleProxyRequest(
           finalRole: outcome.role,
           promptTokens: result.promptTokens,
           completionTokens: result.completionTokens,
+          clientRequestBody: contentLoggingEnabled ? JSON.stringify(originalPayload) : null,
           createdAt: new Date().toISOString(),
         });
       } catch (error) {

@@ -18,6 +18,7 @@ import { migrationHistoricalUsageProvenance } from './migrations/historical_usag
 import { migration007IpBlacklist } from './migrations/007_ip_blacklist';
 import { migration008ProviderRequestLogic } from './migrations/008_provider_request_logic';
 import { migration009ProviderScriptRuntime } from './migrations/009_provider_script_runtime';
+import { migration010CacheHitLogDedup } from './migrations/010_cache_hit_log_dedup';
 
 export interface Migration {
   id: string;
@@ -36,6 +37,7 @@ const MIGRATIONS: Migration[] = [
   migration007IpBlacklist,
   migration008ProviderRequestLogic,
   migration009ProviderScriptRuntime,
+  migration010CacheHitLogDedup,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

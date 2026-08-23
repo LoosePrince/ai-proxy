@@ -49,6 +49,7 @@ export interface TraceOutcome {
   httpStatus: number | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+  cacheKey?: string | null;
   finalProviderId?: number | null;
   finalProviderName?: string | null;
   finalRole?: AttemptRole | null;
@@ -152,6 +153,7 @@ export function toRequestEvent(
     stream: trace.stream,
     outcome: outcome.outcome,
     cacheHit: outcome.outcome === 'cache_hit',
+    cacheKey: outcome.cacheKey ?? null,
     success: isDelivered(outcome.outcome),
     httpStatus: outcome.httpStatus,
     errorCode: outcome.errorCode ?? null,

@@ -70,6 +70,7 @@ export interface RequestEventInput {
   promptTokens: number;
   completionTokens: number;
   fallbackTriggered: boolean;
+  cacheKey?: string | null;
   attempts: AttemptEventInput[];
   content?: RequestContentInput | null;
 }
@@ -171,7 +172,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
       sql: `insert into requests (
               trace_id, started_at, first_response_at, completed_at, ttfb_ms, total_ms,
               ip_id, requested_model, final_model, final_provider_id, final_provider_name,
-              final_role, stream, cache_hit, success, outcome, http_status, error_code, error_message,
+              final_role, stream, cache_hit, cache_key, success, outcome, http_status, error_code, error_message,
               prompt_tokens, completion_tokens, fallback_triggered,
               client_request_body, upstream_request_body, ai_response_body
             ) values (
@@ -196,6 +197,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         event.finalRole,
         bool(event.stream),
         bool(event.cacheHit),
+        event.cacheKey ?? null,
         bool(event.success),
         event.outcome,
         event.httpStatus,
@@ -392,7 +394,12 @@ interface RequestRow {
   prompt_tokens: number;
   completion_tokens: number;
   fallback_triggered: number;
+  cache_key: string | null;
   attempt_count: number;
+  cache_response_body?: string | null;
+  cache_client_request_body?: string | null;
+  cache_content_type?: string | null;
+  cache_created_at?: string | null;
   client_request_body?: string | null;
   upstream_request_body?: string | null;
   ai_response_body?: string | null;
@@ -401,7 +408,7 @@ interface RequestRow {
 const REQUEST_SELECT = `
   r.id, r.trace_id, r.started_at, r.completed_at, r.ttfb_ms, r.total_ms,
   i.ip as ip, r.requested_model, r.final_model, r.final_provider_name, r.final_role,
-  r.stream, r.cache_hit, r.success, r.outcome, r.http_status, r.error_code, r.error_message,
+  r.stream, r.cache_hit, r.cache_key, r.success, r.outcome, r.http_status, r.error_code, r.error_message,
   r.prompt_tokens, r.completion_tokens, r.fallback_triggered,
   (select count(*) from request_attempts a where a.request_id = r.id) as attempt_count`;
 
@@ -565,14 +572,24 @@ function parseStoredJson(value: string | null | undefined): unknown {
   }
 }
 
+function parseStoredResponse(body: string | null | undefined, contentType: string | null | undefined): unknown {
+  if (body === null || body === undefined) return null;
+  if (contentType?.includes('json')) return parseStoredJson(body);
+  return body;
+}
+
 export async function getRequestDetail(id: number): Promise<RequestDetailDTO | null> {
   const db = getDb();
 
   const row = await db.selectOne<RequestRow>(
     `select ${REQUEST_SELECT},
-            r.client_request_body, r.upstream_request_body, r.ai_response_body
+            r.client_request_body, r.upstream_request_body, r.ai_response_body,
+            c.response_body as cache_response_body, c.client_request_body as cache_client_request_body,
+            c.content_type as cache_content_type,
+            c.created_at as cache_created_at
      from requests r
      left join ips i on i.id = r.ip_id
+     left join response_cache c on c.cache_key = r.cache_key
      where r.id = ?`,
     [id],
   );
@@ -587,13 +604,13 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
     [id],
   );
 
+  const cacheAvailable = row.cache_key !== null && row.cache_created_at !== null;
   const hasContent =
-    row.client_request_body !== null &&
-    row.client_request_body !== undefined &&
-    row.upstream_request_body !== null &&
-    row.upstream_request_body !== undefined &&
-    row.ai_response_body !== null &&
-    row.ai_response_body !== undefined;
+    (row.client_request_body !== null && row.client_request_body !== undefined) ||
+    (row.upstream_request_body !== null && row.upstream_request_body !== undefined) ||
+    (row.ai_response_body !== null && row.ai_response_body !== undefined) ||
+    (cacheAvailable && row.cache_response_body !== null && row.cache_response_body !== undefined) ||
+    (cacheAvailable && row.cache_client_request_body !== null && row.cache_client_request_body !== undefined);
 
   return {
     ...toSummary(row),
@@ -601,9 +618,19 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
     attempts: attempts.map(toAttempt),
     content: hasContent
       ? {
-          clientRequest: parseStoredJson(row.client_request_body),
-          upstreamRequest: parseStoredJson(row.upstream_request_body),
-          aiResponse: parseStoredJson(row.ai_response_body),
+          clientRequest: cacheAvailable && row.cache_client_request_body !== null
+            ? parseStoredJson(row.cache_client_request_body)
+            : parseStoredJson(row.client_request_body),
+          upstreamRequest: cacheAvailable
+            ? {
+                cacheHit: true,
+                cacheKey: row.cache_key,
+                cacheCreatedAt: row.cache_created_at,
+              }
+            : parseStoredJson(row.upstream_request_body),
+          aiResponse: cacheAvailable
+            ? parseStoredResponse(row.cache_response_body, row.cache_content_type)
+            : parseStoredJson(row.ai_response_body),
         }
       : null,
   };
