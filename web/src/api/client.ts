@@ -25,6 +25,7 @@ import type {
   ProviderTestResult,
   ProviderUsageDTO,
   PublicDetailedStatsDTO,
+  PublicSiteConfigDTO,
   PublicStatsDTO,
   RequestDetailDTO,
   RequestListQuery,
@@ -102,6 +103,8 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 // ------------------------------------------------------------------ 公开接口
 
 export const publicApi = {
+  siteConfig: () => request<PublicSiteConfigDTO>('/api/site-config'),
+
   stats: () => request<PublicStatsDTO>('/api/public-stats'),
 
   detailedStats: () => request<PublicDetailedStatsDTO>('/api/public-stats/detailed'),

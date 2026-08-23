@@ -13,6 +13,7 @@ import { Button, Segmented, Tag, Tooltip, message } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 
 import { SectionHead } from '../components/SectionHead';
+import { Link } from 'react-router-dom';
 import { apiBase, apiOrigin } from './origin';
 
 type Snippet = 'curl' | 'fetch' | 'sdk';
@@ -76,6 +77,11 @@ export function ApiGuide() {
         title="接入方式"
         desc="Chat Completions 与 Responses 共用同一套路由能力，接口路径中的 /v1 可按客户端习惯保留或省略。"
       />
+
+      <div className="api-guide-toolbar">
+        <span>需要完整配置说明？</span>
+        <Button type="link"><Link to="/guide">打开使用指南</Link></Button>
+      </div>
 
       <div className="api-card">
         <div className="api-info">

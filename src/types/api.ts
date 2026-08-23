@@ -147,7 +147,16 @@ export interface PriorityGroupDTO {
   providerCount: number;
 }
 
+export interface PublicSiteConfigDTO {
+  adminEntryEnabled: boolean;
+  projectUrl: string;
+}
+
 export interface SettingsDTO {
+  /** 是否在公开首页显示管理后台入口 */
+  adminEntryEnabled: boolean;
+  /** 项目主页地址，同时用于指南页和页脚 */
+  projectUrl: string;
   globalRule: RoutingRule;
   defaultResponseTimeoutMs: number;
   fallbackResponseTimeoutMs: number;

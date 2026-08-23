@@ -16,9 +16,7 @@
 import { SiteHeader } from './SiteHeader';
 import { Hero } from './Hero';
 import { PublicStats } from './PublicStats';
-import { Features } from './Features';
 import { ApiGuide } from './ApiGuide';
-import { Contribute } from './Contribute';
 import { ChatDemo } from './ChatDemo';
 import { SiteFooter } from './SiteFooter';
 import './site.css';
@@ -30,9 +28,7 @@ export function SitePage() {
       <main>
         <Hero />
         <PublicStats />
-        <Features />
         <ApiGuide />
-        <Contribute />
         <ChatDemo />
       </main>
       <SiteFooter />

@@ -659,6 +659,12 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     const body = (req.body ?? {}) as Record<string, unknown>;
     const patch: SettingsPatch = {};
 
+    if (body.adminEntryEnabled !== undefined) {
+      patch.adminEntryEnabled = !!body.adminEntryEnabled;
+    }
+    if (body.projectUrl !== undefined) {
+      patch.projectUrl = requireHttpUrl(body.projectUrl, '项目地址');
+    }
     if (body.globalRule !== undefined) patch.globalRule = normalizeRoutingRule(body.globalRule);
     if (body.defaultResponseTimeoutMs !== undefined) {
       patch.defaultResponseTimeoutMs = toPositiveInt(body.defaultResponseTimeoutMs, '主路由默认超时');

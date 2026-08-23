@@ -136,6 +136,24 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
       <Form form={form} layout="vertical" initialValues={initial} onFinish={submit}>
       <div className="settings-grid">
         <Form.Item
+          name="adminEntryEnabled"
+          label="首页显示管理后台按钮"
+          valuePropName="checked"
+          tooltip="关闭后只隐藏首页入口，不影响直接访问 /admin，也不改变后台鉴权。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          name="projectUrl"
+          label="项目地址"
+          rules={[{ required: true, type: 'url', message: '请输入有效的项目地址' }]}
+          tooltip="用于指南页面和页脚的项目链接。"
+        >
+          <Input placeholder="https://github.com/LoosePrince/ai-proxy" />
+        </Form.Item>
+
+        <Form.Item
           name="globalRule"
           label="全局路由规则"
           tooltip="决定优先级组之间的尝试顺序。组内顺序由下方各组自己的规则决定。"

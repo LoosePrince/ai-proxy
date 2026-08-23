@@ -19,7 +19,11 @@ import type {
   SettingsPatch,
 } from '../../types/api';
 
+const DEFAULT_PROJECT_URL = 'https://github.com/LoosePrince/ai-proxy';
+
 const HARD_DEFAULTS: SettingsDTO = {
+  adminEntryEnabled: false,
+  projectUrl: DEFAULT_PROJECT_URL,
   globalRule: 'priority',
   defaultResponseTimeoutMs: 30_000,
   fallbackResponseTimeoutMs: 30_000,
@@ -75,6 +79,18 @@ function normalizeMaliciousAction(value: unknown): MaliciousBehaviorAction {
   return 'ignore';
 }
 
+function normalizeProjectUrl(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return DEFAULT_PROJECT_URL;
+  try {
+    const url = new URL(text);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return DEFAULT_PROJECT_URL;
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return DEFAULT_PROJECT_URL;
+  }
+}
+
 /** 原始 key-value 行 -> 强类型 DTO，逐项做范围校验 */
 function toSettings(raw: Record<string, string>): SettingsDTO {
   const defaultTimeout = normalizePositiveInt(
@@ -83,6 +99,8 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
   );
 
   return {
+    adminEntryEnabled: normalizeBoolean(raw.adminEntryEnabled, HARD_DEFAULTS.adminEntryEnabled),
+    projectUrl: normalizeProjectUrl(raw.projectUrl),
     globalRule: normalizeRoutingRule(raw.globalRule),
     defaultResponseTimeoutMs: defaultTimeout,
     // 保底超时缺省时继承主路由超时，与旧行为一致
@@ -183,6 +201,8 @@ export async function seedSettingsFromEnv(): Promise<void> {
   const now = new Date().toISOString();
 
   const seeds: Record<string, string | number | boolean> = {
+    adminEntryEnabled: HARD_DEFAULTS.adminEntryEnabled,
+    projectUrl: HARD_DEFAULTS.projectUrl,
     globalRule: HARD_DEFAULTS.globalRule,
     defaultResponseTimeoutMs: normalizePositiveInt(
       env.DEFAULT_RESPONSE_TIMEOUT_MS,

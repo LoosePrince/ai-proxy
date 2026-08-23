@@ -3,8 +3,13 @@
  */
 
 import { apiBase } from './origin';
+import { publicApi } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 
 export function SiteFooter() {
+  const config = useAsync(() => publicApi.siteConfig(), []);
+  const projectUrl = config.data?.projectUrl ?? 'https://github.com/LoosePrince/ai-proxy';
+
   return (
     <footer className="site-footer-wrap">
       <div className="site-footer">
@@ -21,7 +26,10 @@ export function SiteFooter() {
           <span>API Base</span>
           <code>{apiBase()}</code>
         </div>
-        <div className="footer-meta">© {new Date().getFullYear()} AI Proxy</div>
+        <div className="footer-meta">
+          <a href={projectUrl} target="_blank" rel="noreferrer">项目地址</a>
+          <span>© {new Date().getFullYear()} AI Proxy</span>
+        </div>
       </div>
     </footer>
   );

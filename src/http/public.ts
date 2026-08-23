@@ -49,6 +49,18 @@ function failed(res: Response, error: unknown): void {
   res.status(500).json({ error: { message: '服务暂时不可用' } });
 }
 
+router.get('/api/site-config', async (_req: Request, res: Response) => {
+  try {
+    const { settings } = await getConfig();
+    res.json({
+      adminEntryEnabled: settings.adminEntryEnabled,
+      projectUrl: settings.projectUrl,
+    });
+  } catch (error) {
+    failed(res, error);
+  }
+});
+
 router.get('/api/public-stats', async (_req: Request, res: Response) => {
   try {
     const config = await getConfig();

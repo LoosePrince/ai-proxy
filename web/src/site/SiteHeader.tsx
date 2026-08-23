@@ -10,6 +10,8 @@ import { Badge, Button, Tooltip } from 'antd';
 import { ControlOutlined, BgColorsOutlined } from '@ant-design/icons';
 
 import { useTheme, type ThemeMode } from '../theme/ThemeProvider';
+import { publicApi } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 
 const THEME_LABEL: Record<ThemeMode, string> = {
   auto: '自动主题',
@@ -19,6 +21,8 @@ const THEME_LABEL: Record<ThemeMode, string> = {
 
 export function SiteHeader() {
   const { mode, cycleMode } = useTheme();
+  const siteConfig = useAsync(() => publicApi.siteConfig(), []);
+  const showAdminEntry = siteConfig.status === 'success' && siteConfig.data?.adminEntryEnabled === true;
 
   return (
     <header className="site-header">
@@ -33,10 +37,10 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="site-nav" aria-label="站点导航">
+          <nav className="site-nav" aria-label="站点导航">
           <a href="#stats">运行数据</a>
-          <a href="#api-guide">接入指南</a>
-          <a href="#contribute">贡献服务</a>
+          <Link to="/guide">指南</Link>
+          <a href="#api-guide">接入方式</a>
           <a href="#chat-test">在线测试</a>
         </nav>
 
@@ -46,11 +50,13 @@ export function SiteHeader() {
               <span className="header-action-label">{THEME_LABEL[mode]}</span>
             </Button>
           </Tooltip>
-          <Link to="/admin" className="admin-entry">
-            <Button type="primary" icon={<ControlOutlined />}>
-              <span className="header-action-label">管理后台</span>
-            </Button>
-          </Link>
+          {showAdminEntry ? (
+            <Link to="/admin" className="admin-entry">
+              <Button type="primary" icon={<ControlOutlined />}>
+                <span className="header-action-label">管理后台</span>
+              </Button>
+            </Link>
+          ) : null}
         </div>
       </div>
     </header>

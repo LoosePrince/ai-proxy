@@ -16,6 +16,7 @@ import { Spin } from 'antd';
 import { SitePage } from './site/SitePage';
 
 const AdminLayout = lazy(() => import('./admin/AdminLayout'));
+const GuidePage = lazy(() => import('./site/GuidePage').then((m) => ({ default: m.GuidePage })));
 // 详细状态页带表格与图表，首页访客不必为它付下载成本
 const StatusPage = lazy(() => import('./site/StatusPage').then((m) => ({ default: m.StatusPage })));
 
@@ -32,6 +33,7 @@ export function App() {
     <Suspense fallback={<PageFallback />}>
       <Routes>
         <Route path="/" element={<SitePage />} />
+        <Route path="/guide" element={<GuidePage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/admin/*" element={<AdminLayout />} />
         <Route path="*" element={<Navigate to="/" replace />} />

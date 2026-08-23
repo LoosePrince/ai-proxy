@@ -5,7 +5,8 @@
  * 拿到 ok 才显示在线，请求失败显示异常，未返回前显示未知。
  */
 
-import { motion } from 'framer-motion';
+import { useState, type PointerEvent } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Button } from 'antd';
 import { ArrowRightOutlined, CheckCircleFilled, CodeOutlined } from '@ant-design/icons';
 
@@ -23,10 +24,34 @@ async function checkHealth(): Promise<boolean> {
   return !!body.ok;
 }
 
+type CardTilt = {
+  rotateX: number;
+  rotateY: number;
+};
+
+const RESTING_TILT: CardTilt = { rotateX: 1, rotateY: -3 };
+
 export function Hero() {
   const health = useAsync(checkHealth, []);
+  const prefersReducedMotion = useReducedMotion();
+  const [cardTilt, setCardTilt] = useState<CardTilt>(RESTING_TILT);
   // 请求还没落地时是「未知」，失败时明确是「异常」，不猜测
   const ok = health.status === 'success' ? health.data : health.status === 'error' ? false : null;
+
+  const handleCardPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (prefersReducedMotion || event.pointerType !== 'mouse') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+
+    // 角度保持很小，卡片向光标方向略微后仰，不影响阅读与点击。
+    setCardTilt({
+      rotateX: 1 + (0.5 - y) * 4,
+      rotateY: -3 + (x - 0.5) * 6,
+    });
+  };
+
+  const resetCardTilt = () => setCardTilt(RESTING_TILT);
 
   return (
     <section className="hero" aria-label="首页介绍">
@@ -49,11 +74,6 @@ export function Hero() {
             <span>接入你的 AI 应用。</span>
           </motion.h1>
 
-          <motion.p className="hero-description" variants={fadeUp}>
-            无需注册和申请 Key，同时支持 Chat Completions 与 Responses 格式、流式响应和思考内容回传。
-            可直接沿用 OpenAI 客户端，也可省略接口地址中的 /v1。
-          </motion.p>
-
           <motion.div className="hero-actions" variants={fadeUp}>
             <Button type="primary" size="large" href="#chat-test" icon={<ArrowRightOutlined />} iconPosition="end">
               立即在线测试
@@ -63,16 +83,20 @@ export function Hero() {
             </Button>
           </motion.div>
 
-          <motion.div className="hero-proof" variants={fadeUp} aria-label="服务特点">
-            <span><CheckCircleFilled /> 无需注册</span>
-            <span><CheckCircleFilled /> 双协议接口</span>
-            <span><CheckCircleFilled /> 思考模式</span>
-          </motion.div>
         </div>
 
         <motion.div className="hero-preview" variants={fadeUp} aria-label="API 请求示例">
           <div className="preview-glow" aria-hidden="true" />
-          <div className="endpoint-window">
+          <motion.div
+            className="endpoint-window"
+            style={{
+              rotateX: prefersReducedMotion ? 0 : cardTilt.rotateX,
+              rotateY: prefersReducedMotion ? 0 : cardTilt.rotateY,
+            }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.35 }}
+            onPointerMove={handleCardPointerMove}
+            onPointerLeave={resetCardTilt}
+          >
             <div className="window-bar">
               <div className="window-dots" aria-hidden="true">
                 <i />
@@ -88,7 +112,7 @@ export function Hero() {
               <span>text/event-stream</span>
               <span className="response-time">流式返回</span>
             </div>
-          </div>
+          </motion.div>
           <div className="floating-card floating-card-model">
             <span>模型名相近匹配</span>
             <strong>自动映射真实模型</strong>
