@@ -400,6 +400,10 @@ interface RequestRow {
   cache_client_request_body?: string | null;
   cache_content_type?: string | null;
   cache_created_at?: string | null;
+  source_client_request_body?: string | null;
+  source_upstream_request_body?: string | null;
+  source_ai_response_body?: string | null;
+  source_trace_id?: string | null;
   client_request_body?: string | null;
   upstream_request_body?: string | null;
   ai_response_body?: string | null;
@@ -586,10 +590,14 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
             r.client_request_body, r.upstream_request_body, r.ai_response_body,
             c.response_body as cache_response_body, c.client_request_body as cache_client_request_body,
             c.content_type as cache_content_type,
-            c.created_at as cache_created_at
+            c.created_at as cache_created_at, c.source_trace_id,
+            s.client_request_body as source_client_request_body,
+            s.upstream_request_body as source_upstream_request_body,
+            s.ai_response_body as source_ai_response_body
      from requests r
      left join ips i on i.id = r.ip_id
      left join response_cache c on c.cache_key = r.cache_key
+     left join requests s on s.trace_id = c.source_trace_id
      where r.id = ?`,
     [id],
   );
@@ -605,12 +613,16 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
   );
 
   const cacheAvailable = row.cache_key !== null && row.cache_created_at !== null;
+  const sourceClientRequest = row.source_client_request_body ?? row.client_request_body;
   const hasContent =
+    (cacheAvailable && row.cache_response_body !== null && row.cache_response_body !== undefined) ||
+    (cacheAvailable && row.cache_client_request_body !== null && row.cache_client_request_body !== undefined) ||
+    (row.source_client_request_body !== null && row.source_client_request_body !== undefined) ||
+    (row.source_upstream_request_body !== null && row.source_upstream_request_body !== undefined) ||
+    (row.source_ai_response_body !== null && row.source_ai_response_body !== undefined) ||
     (row.client_request_body !== null && row.client_request_body !== undefined) ||
     (row.upstream_request_body !== null && row.upstream_request_body !== undefined) ||
-    (row.ai_response_body !== null && row.ai_response_body !== undefined) ||
-    (cacheAvailable && row.cache_response_body !== null && row.cache_response_body !== undefined) ||
-    (cacheAvailable && row.cache_client_request_body !== null && row.cache_client_request_body !== undefined);
+    (row.ai_response_body !== null && row.ai_response_body !== undefined);
 
   return {
     ...toSummary(row),
@@ -620,17 +632,18 @@ export async function getRequestDetail(id: number): Promise<RequestDetailDTO | n
       ? {
           clientRequest: cacheAvailable && row.cache_client_request_body !== null
             ? parseStoredJson(row.cache_client_request_body)
-            : parseStoredJson(row.client_request_body),
+            : parseStoredJson(sourceClientRequest),
           upstreamRequest: cacheAvailable
             ? {
                 cacheHit: true,
                 cacheKey: row.cache_key,
                 cacheCreatedAt: row.cache_created_at,
+                sourceTraceId: row.source_trace_id,
               }
-            : parseStoredJson(row.upstream_request_body),
+            : parseStoredJson(row.source_upstream_request_body ?? row.upstream_request_body),
           aiResponse: cacheAvailable
             ? parseStoredResponse(row.cache_response_body, row.cache_content_type)
-            : parseStoredJson(row.ai_response_body),
+            : parseStoredJson(row.source_ai_response_body ?? row.ai_response_body),
         }
       : null,
   };

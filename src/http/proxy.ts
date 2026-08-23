@@ -590,6 +590,7 @@ async function handleProxyRequest(
           promptTokens: result.promptTokens,
           completionTokens: result.completionTokens,
           clientRequestBody: contentLoggingEnabled ? JSON.stringify(originalPayload) : null,
+          sourceTraceId: trace.traceId,
           createdAt: new Date().toISOString(),
         });
       } catch (error) {

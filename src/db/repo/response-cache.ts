@@ -19,6 +19,7 @@ export interface CachedResponse {
   promptTokens: number;
   completionTokens: number;
   clientRequestBody?: string | null;
+  sourceTraceId?: string | null;
   createdAt: string;
 }
 
@@ -36,6 +37,7 @@ interface CacheRow {
   prompt_tokens: number;
   completion_tokens: number;
   client_request_body: string | null;
+  source_trace_id: string | null;
   created_at: string;
 }
 
@@ -54,6 +56,7 @@ function toCachedResponse(row: CacheRow): CachedResponse {
     promptTokens: Number(row.prompt_tokens) || 0,
     completionTokens: Number(row.completion_tokens) || 0,
     clientRequestBody: row.client_request_body,
+    sourceTraceId: row.source_trace_id,
     createdAt: row.created_at,
   };
 }
@@ -110,7 +113,7 @@ export async function findReusableResponse(cacheKey: string, reuseHours: number)
   const row = await getDb().selectOne<CacheRow>(
     `select cache_key, protocol, stream, requested_model, content_type, response_body,
             actual_model, final_provider_id, final_provider_name, final_role,
-            prompt_tokens, completion_tokens, client_request_body, created_at
+            prompt_tokens, completion_tokens, client_request_body, source_trace_id, created_at
        from response_cache
       where cache_key = ? and created_at >= ?`,
     [cacheKey, cutoff],
@@ -143,8 +146,8 @@ export async function saveCachedResponse(input: CachedResponse): Promise<void> {
     `insert into response_cache (
        cache_key, protocol, stream, requested_model, content_type, response_body,
        actual_model, final_provider_id, final_provider_name, final_role,
-       prompt_tokens, completion_tokens, client_request_body, created_at, last_hit_at, hit_count
-     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0)
+       prompt_tokens, completion_tokens, client_request_body, source_trace_id, created_at, last_hit_at, hit_count
+     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0)
      on conflict (cache_key) do update set
        protocol = excluded.protocol,
        stream = excluded.stream,
@@ -158,6 +161,7 @@ export async function saveCachedResponse(input: CachedResponse): Promise<void> {
        prompt_tokens = excluded.prompt_tokens,
        completion_tokens = excluded.completion_tokens,
        client_request_body = excluded.client_request_body,
+       source_trace_id = excluded.source_trace_id,
        created_at = excluded.created_at`,
     [
       input.cacheKey,
@@ -173,6 +177,7 @@ export async function saveCachedResponse(input: CachedResponse): Promise<void> {
       input.promptTokens,
       input.completionTokens,
       input.clientRequestBody ?? null,
+      input.sourceTraceId ?? null,
       input.createdAt,
     ],
   );
