@@ -178,7 +178,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
             ) values (
               ?, ?, ?, ?, ?, ?,
               (select id from ips where ip = ?), ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?, ?, ?,
               ?, ?, ?, ?, ?, ?
             )
             on conflict (trace_id) do nothing`,
