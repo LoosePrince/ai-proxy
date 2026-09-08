@@ -18,16 +18,17 @@ export interface DayRange {
   to?: string;
 }
 
-export type Preset = '7d' | '30d' | '90d' | '365d' | 'all' | 'custom';
+export type Preset = '7d' | '30d' | '90d' | '180d' | '365d' | 'all' | 'custom';
 
 type FixedPreset = Exclude<Preset, 'all' | 'custom'>;
 
-const PRESET_DAYS: Record<FixedPreset, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365 };
+const PRESET_DAYS: Record<FixedPreset, number> = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365 };
 
 export const RANGE_PRESET_OPTIONS = [
   { label: '近 7 天', value: '7d' },
   { label: '近 30 天', value: '30d' },
   { label: '近 90 天', value: '90d' },
+  { label: '近 6 个月', value: '180d' },
   { label: '近一年', value: '365d' },
   { label: '全部', value: 'all' },
 ] satisfies Array<{ label: string; value: Preset }>;

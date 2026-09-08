@@ -17,6 +17,7 @@ import { Button, Drawer, Layout, Menu, Result, Spin, Tooltip } from 'antd';
 import {
   ApiOutlined,
   BarChartOutlined,
+  BellOutlined,
   DashboardOutlined,
   GlobalOutlined,
   MenuOutlined,
@@ -34,6 +35,7 @@ import { SettingsPage } from './SettingsPage';
 import { ModelStats } from './ModelStats';
 import { IpStats } from './IpStats';
 import { RequestLogs } from './RequestLogs';
+import { AnnouncementsAdmin } from './Announcements';
 import './admin.css';
 
 const { Sider, Content, Header } = Layout;
@@ -50,6 +52,7 @@ const NAV = [
   { key: 'logs', icon: <ProfileOutlined />, label: '请求日志', desc: '调用链路与错误详情' },
   { key: 'models', icon: <BarChartOutlined />, label: '模型统计', desc: '模型调用与 Token 分布' },
   { key: 'ips', icon: <GlobalOutlined />, label: 'IP 统计', desc: '访问来源与用量分析' },
+  { key: 'announcements', icon: <BellOutlined />, label: '公告', desc: '首页公告发布与管理' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置', desc: '路由策略与运行参数' },
 ];
 
@@ -184,6 +187,7 @@ export default function AdminLayout() {
               <Route path="logs" element={<RequestLogs />} />
               <Route path="models" element={<ModelStats />} />
               <Route path="ips" element={<IpStats />} />
+              <Route path="announcements" element={<AnnouncementsAdmin />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>

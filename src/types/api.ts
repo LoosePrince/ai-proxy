@@ -43,8 +43,26 @@ export interface ProviderVariableDefinition {
   secretConfigured?: boolean;
 }
 
-export type AttemptStatus = 'success' | 'failed' | 'claimed-by-other';
+export type AnnouncementLevel = 'info' | 'warning' | 'success';
 
+export interface AnnouncementDTO {
+  id: number;
+  title: string;
+  body: string;
+  level: AnnouncementLevel;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnnouncementInput {
+  title: string;
+  body: string;
+  level: AnnouncementLevel;
+  enabled: boolean;
+}
+
+export type AttemptStatus = 'success' | 'failed' | 'claimed-by-other';
 export type AttemptRole = 'primary' | 'parallel' | 'fallback';
 
 /**
@@ -198,10 +216,12 @@ export interface RequestListQuery {
   limit?: number;
   offset?: number;
   success?: boolean;
-  outcome?: RequestOutcome;
+  /** 多选结局筛选，空/缺省 = 不过滤 */
+  outcomes?: RequestOutcome[];
   requestedModel?: string;
   ip?: string;
-  providerId?: number;
+  /** 多选 Provider 筛选，空/缺省 = 不过滤 */
+  providerIds?: number[];
   from?: string;
   to?: string;
 }

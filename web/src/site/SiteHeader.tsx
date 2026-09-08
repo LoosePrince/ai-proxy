@@ -3,6 +3,9 @@
  *
  * 旧实现的「系统在线」是一个写死的静态徽章，无论服务状态如何都显示在线。
  * 这里改成读 /healthz 的真实状态，拿不到就显示未知，不再谎报。
+ *
+ * 公告铃铛由外层 AnnouncementsProvider 提供实例，顶栏只负责展示 ——
+ * 弹窗（自动弹出 + 列表）需要挂在页面层，不能嵌在 header 里。
  */
 
 import { Link } from 'react-router-dom';
@@ -12,6 +15,7 @@ import { ControlOutlined, BgColorsOutlined } from '@ant-design/icons';
 import { useTheme, type ThemeMode } from '../theme/ThemeProvider';
 import { publicApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useAnnouncementsContext } from './AnnouncementsContext';
 
 const THEME_LABEL: Record<ThemeMode, string> = {
   auto: '自动主题',
@@ -23,6 +27,7 @@ export function SiteHeader() {
   const { mode, cycleMode } = useTheme();
   const siteConfig = useAsync(() => publicApi.siteConfig(), []);
   const showAdminEntry = siteConfig.status === 'success' && siteConfig.data?.adminEntryEnabled === true;
+  const announcements = useAnnouncementsContext();
 
   return (
     <header className="site-header">
@@ -45,6 +50,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="site-header-actions">
+          {announcements?.bell ?? null}
           <Tooltip title="切换 自动 / 浅色 / 深色">
             <Button className="header-icon-button" icon={<BgColorsOutlined />} onClick={cycleMode}>
               <span className="header-action-label">{THEME_LABEL[mode]}</span>

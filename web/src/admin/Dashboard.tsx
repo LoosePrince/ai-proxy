@@ -80,7 +80,8 @@ export function Dashboard() {
   const metricsRange = useDayRange('30d');
   const trendRange = useDayRange('30d');
   const pieRange = useDayRange('30d');
-  const calendarRange = useDayRange('365d');
+  // 活跃日历默认六个月：一年时格子过密，需要横向滚动才能看到最近数据
+  const calendarRange = useDayRange('180d');
   const weekRange = useDayRange('90d');
   const tableRange = useDayRange('30d');
 

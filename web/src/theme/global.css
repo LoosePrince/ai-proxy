@@ -272,6 +272,10 @@ code {
   width: 180px;
 }
 
+.control-w-200 {
+  width: 200px;
+}
+
 .skeleton-value {
   width: 120px !important;
 }

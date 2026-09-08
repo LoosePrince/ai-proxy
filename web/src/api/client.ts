@@ -9,6 +9,8 @@
  */
 
 import type {
+  AnnouncementDTO,
+  AnnouncementInput,
   AuthStateDTO,
   ContributionListItemDTO,
   ContributionSubmitInput,
@@ -102,8 +104,12 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 
 // ------------------------------------------------------------------ 公开接口
 
+export type PublicAnnouncementDTO = Omit<AnnouncementDTO, 'enabled'>;
+
 export const publicApi = {
   siteConfig: () => request<PublicSiteConfigDTO>('/api/site-config'),
+
+  announcements: () => request<PublicAnnouncementDTO[]>('/api/announcements'),
 
   stats: () => request<PublicStatsDTO>('/api/public-stats'),
 
@@ -126,6 +132,17 @@ export const adminApi = {
     request<{ success: boolean }>('/admin/api/login', { method: 'POST', ...json({ username, password }) }),
 
   logout: () => request<{ success: boolean }>('/admin/api/logout', { method: 'POST' }),
+
+  announcements: () => request<AnnouncementDTO[]>('/admin/api/announcements'),
+
+  createAnnouncement: (input: AnnouncementInput) =>
+    request<AnnouncementDTO>('/admin/api/announcements', { method: 'POST', ...json(input) }),
+
+  updateAnnouncement: (id: number, patch: Partial<AnnouncementInput>) =>
+    request<AnnouncementDTO>(`/admin/api/announcements/${id}`, { method: 'PUT', ...json(patch) }),
+
+  deleteAnnouncement: (id: number) =>
+    request<{ success: boolean }>(`/admin/api/announcements/${id}`, { method: 'DELETE' }),
 
   providers: () => request<ProviderDTO[]>('/admin/api/providers'),
 

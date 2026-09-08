@@ -1483,3 +1483,95 @@
     padding-inline: 14px;
   }
 }
+
+/* ------------------------------------------------------------ 公告 */
+
+.announcement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.announcement-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.announcement-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: var(--bg-elevated);
+}
+
+.announcement-item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.announcement-item-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.announcement-item.read .announcement-item-title {
+  color: var(--text-muted);
+  font-weight: 520;
+}
+
+.announcement-unread-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.announcement-item-arrow {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.announcement-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.announcement-meta .faint {
+  font-size: 11px;
+}
+
+.announcement-content {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.announcement-content p:first-child {
+  margin-top: 0;
+}
+
+.announcement-content p:last-child {
+  margin-bottom: 0;
+}

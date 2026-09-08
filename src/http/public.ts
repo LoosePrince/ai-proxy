@@ -26,6 +26,7 @@ import {
   listContributions,
   updateProvider,
 } from '../db/repo/providers';
+import { listEnabledAnnouncements } from '../db/repo/announcements';
 import { getPublicDetailedStats, getPublicStats } from '../db/repo/usage';
 import { getConfig, invalidateConfig } from '../runtime/config-cache';
 import { subscribePublicContent } from '../runtime/public-content-stream';
@@ -124,6 +125,23 @@ router.get('/api/request-content-stream', async (req: Request, res: Response) =>
   } catch (error) {
     if (!res.headersSent) failed(res, error);
     else res.end();
+  }
+});
+
+router.get('/api/announcements', async (_req: Request, res: Response) => {
+  try {
+    const records = await listEnabledAnnouncements();
+    // 公开端点不暴露 enabled 内部管理字段
+    res.json(records.map((record) => ({
+      id: record.id,
+      title: record.title,
+      body: record.body,
+      level: record.level,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    })));
+  } catch (error) {
+    failed(res, error);
   }
 });
 

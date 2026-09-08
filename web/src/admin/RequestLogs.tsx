@@ -47,13 +47,10 @@ const OUTCOME_VIEW: Record<RequestOutcome, { label: string; color: string; hint:
   rejected: { label: '网关拒绝', color: 'orange', hint: '被网关自身拒绝（如限流），未触达上游' },
 };
 
-const OUTCOME_FILTER_OPTIONS = [
-  { label: '全部结局', value: '' },
-  ...(Object.keys(OUTCOME_VIEW) as RequestOutcome[]).map((outcome) => ({
-    label: OUTCOME_VIEW[outcome].label,
-    value: outcome,
-  })),
-];
+const OUTCOME_FILTER_OPTIONS = (Object.keys(OUTCOME_VIEW) as RequestOutcome[]).map((outcome) => ({
+  label: OUTCOME_VIEW[outcome].label,
+  value: outcome,
+}));
 
 const STATUS_COLOR: Record<AttemptStatus, string> = {
   success: 'green',
@@ -209,7 +206,7 @@ export function RequestLogs() {
     setPage(1);
   }, [logRange.range.from, logRange.range.to]);
 
-  // URL 保存可分享的离散筛选；日期范围由统一范围控件管理。
+  // URL 保存可分享的离散筛选（多选值以逗号编码）；日期范围由统一范围控件管理。
   const query = useMemo<RequestListQuery>(() => {
     const success = params.get('success');
     const result: RequestListQuery = {
@@ -218,14 +215,20 @@ export function RequestLogs() {
     };
     if (success === 'true') result.success = true;
     if (success === 'false') result.success = false;
-    const outcome = params.get('outcome');
-    if (outcome && outcome in OUTCOME_VIEW) result.outcome = outcome as RequestOutcome;
+    const outcomes = (params.get('outcomes') ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item): item is RequestOutcome => item in OUTCOME_VIEW);
+    if (outcomes.length > 0) result.outcomes = outcomes;
     const model = params.get('requestedModel');
     if (model) result.requestedModel = model;
     const ip = params.get('ip');
     if (ip) result.ip = ip;
-    const providerId = Number(params.get('providerId'));
-    if (Number.isFinite(providerId) && providerId > 0) result.providerId = providerId;
+    const providerIds = (params.get('providerIds') ?? '')
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (providerIds.length > 0) result.providerIds = providerIds;
     if (logRange.range.from) result.from = `${logRange.range.from}T00:00:00.000Z`;
     if (logRange.range.to) result.to = `${logRange.range.to}T23:59:59.999Z`;
     return result;
@@ -237,10 +240,10 @@ export function RequestLogs() {
       query.limit,
       query.offset,
       query.success,
-      query.outcome,
+      query.outcomes?.join(','),
       query.requestedModel,
       query.ip,
-      query.providerId,
+      query.providerIds?.join(','),
       query.from,
       query.to,
     ],
@@ -249,6 +252,16 @@ export function RequestLogs() {
   const detail = useAsync(
     () => (detailId === null ? Promise.resolve(null) : adminApi.requestDetail(detailId)),
     [detailId],
+  );
+
+  // 多选控件的受控值从 URL 派生，保证分享链接与刷新后状态一致
+  const selectedOutcomes = useMemo(
+    () => query.outcomes ?? [],
+    [query.outcomes],
+  );
+  const selectedProviderIds = useMemo(
+    () => (query.providerIds ?? []).map(String),
+    [query.providerIds],
   );
 
   /** 改筛选条件时回到第一页，否则可能停在一个空页上 */
@@ -282,23 +295,30 @@ export function RequestLogs() {
             <DayRangePicker {...logRange.control} />
             <Select
               size="small"
-              className="control-w-160"
-              value={params.get('providerId') ?? 'all'}
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              className="control-w-200"
+              placeholder="全部 Provider"
+              value={selectedProviderIds}
               loading={providers.status === 'loading'}
-              onChange={(value) => patchFilter('providerId', value === 'all' ? null : value)}
-              options={[
-                { label: '全部 Provider', value: 'all' },
-                ...(providers.data ?? []).map((provider) => ({
-                  label: provider.displayName || provider.name,
-                  value: String(provider.id),
-                })),
-              ]}
+              onChange={(value) =>
+                patchFilter('providerIds', value.length > 0 ? value.join(',') : null)
+              }
+              options={(providers.data ?? []).map((provider) => ({
+                label: provider.displayName || provider.name,
+                value: String(provider.id),
+              }))}
             />
             <Select
               size="small"
-              className="control-w-160"
-              value={params.get('outcome') ?? ''}
-              onChange={(value) => patchFilter('outcome', value || null)}
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              className="control-w-200"
+              placeholder="全部结局"
+              value={selectedOutcomes}
+              onChange={(value) => patchFilter('outcomes', value.length > 0 ? value.join(',') : null)}
               options={OUTCOME_FILTER_OPTIONS}
             />
             <Input.Search

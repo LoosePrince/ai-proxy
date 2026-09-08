@@ -11,6 +11,8 @@
  *   ApiGuide    从 window.location.origin 推导 API Base
  *   Contribute  读写 /api/contributions
  *   ChatDemo    调 /v1/chat/completions
+ *
+ * 公告是唯一的跨块状态（铃铛在 header、弹窗在页面层），走 AnnouncementsContext。
  */
 
 import { SiteHeader } from './SiteHeader';
@@ -19,19 +21,27 @@ import { PublicStats } from './PublicStats';
 import { ApiGuide } from './ApiGuide';
 import { ChatDemo } from './ChatDemo';
 import { SiteFooter } from './SiteFooter';
+import { useAnnouncements } from './Announcements';
+import { AnnouncementsContext } from './AnnouncementsContext';
 import './site.css';
 
 export function SitePage() {
+  const announcements = useAnnouncements();
+
   return (
-    <div className="site">
-      <SiteHeader />
-      <main>
-        <Hero />
-        <PublicStats />
-        <ApiGuide />
-        <ChatDemo />
-      </main>
-      <SiteFooter />
-    </div>
+    <AnnouncementsContext.Provider value={announcements}>
+      <div className="site">
+        <SiteHeader />
+        <main>
+          <Hero />
+          <PublicStats />
+          <ApiGuide />
+          <ChatDemo />
+        </main>
+        <SiteFooter />
+      </div>
+      {announcements.autoPopModal}
+      {announcements.listModal}
+    </AnnouncementsContext.Provider>
   );
 }

@@ -20,6 +20,7 @@ import { migration008ProviderRequestLogic } from './migrations/008_provider_requ
 import { migration009ProviderScriptRuntime } from './migrations/009_provider_script_runtime';
 import { migration010CacheHitLogDedup } from './migrations/010_cache_hit_log_dedup';
 import { migration011CacheSourceRequest } from './migrations/011_cache_source_request';
+import { migration012Announcements } from './migrations/012_announcements';
 
 export interface Migration {
   id: string;
@@ -40,6 +41,7 @@ const MIGRATIONS: Migration[] = [
   migration009ProviderScriptRuntime,
   migration010CacheHitLogDedup,
   migration011CacheSourceRequest,
+  migration012Announcements,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

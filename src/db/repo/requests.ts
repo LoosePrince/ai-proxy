@@ -474,9 +474,9 @@ function buildFilter(query: RequestListQuery): { sql: string; params: unknown[] 
     parts.push('r.success = ?');
     params.push(query.success ? 1 : 0);
   }
-  if (query.outcome) {
-    parts.push('r.outcome = ?');
-    params.push(query.outcome);
+  if (query.outcomes && query.outcomes.length > 0) {
+    parts.push(`r.outcome in (${query.outcomes.map(() => '?').join(', ')})`);
+    params.push(...query.outcomes);
   }
   if (query.requestedModel) {
     parts.push('r.requested_model = ?');
@@ -486,9 +486,9 @@ function buildFilter(query: RequestListQuery): { sql: string; params: unknown[] 
     parts.push('i.ip = ?');
     params.push(query.ip);
   }
-  if (query.providerId !== undefined) {
-    parts.push('r.final_provider_id = ?');
-    params.push(query.providerId);
+  if (query.providerIds && query.providerIds.length > 0) {
+    parts.push(`r.final_provider_id in (${query.providerIds.map(() => '?').join(', ')})`);
+    params.push(...query.providerIds);
   }
   if (query.from) {
     parts.push('r.started_at >= ?');

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { Tooltip } from 'antd';
 
 import { formatCount, formatPercent, formatTokens } from '../lib/format';
@@ -176,46 +176,131 @@ function heatLevel(value: number, max: number): number {
   return 4;
 }
 
+/**
+ * 活跃日历（SVG 实现）。
+ *
+ * 相比旧的 div grid 版本解决了三个问题：
+ *   1. 星期标注与热力行画在同一个 viewBox 坐标系里，天然对齐（旧实现靠
+ *      padding 猜对齐，卡片高度一变就错位）。
+ *   2. SVG width:100% + preserveAspectRatio，卡片够宽时格子等比拉伸，
+ *      刚好铺满内容区域；不够宽时由外层容器出横向滚动条。
+ *   3. 出现横向滚动时默认定位到最右侧（最新日期），不必手动拖。
+ */
 export function CalendarHeatmap({ rows }: { rows: UsageDailyDTO[] }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // 出现横向滚动时默认滚到最右（最新日期）；数据变化与容器尺寸变化都要重新定位
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const scrollToLatest = () => {
+      element.scrollLeft = element.scrollWidth;
+    };
+    scrollToLatest();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(scrollToLatest);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [rows]);
+
   if (rows.length === 0) return <EmptyChart />;
-  const visible = rows.slice(-371);
+  const visible = rows.slice(-190);
   const realMax = Math.max(0, ...visible.filter((row) => !row.isHistorical).map((row) => row.requests));
   const max = Math.max(1, realMax);
   const displayedRequests = (row: UsageDailyDTO) =>
     row.isHistorical ? Math.min(row.requests, realMax) : row.requests;
   const firstWeekday = new Date(`${visible[0]!.day}T00:00:00.000Z`).getUTCDay();
   const leading = firstWeekday === 0 ? 6 : firstWeekday - 1;
+  const columns = Math.ceil((leading + visible.length) / 7);
+
+  // 布局：左边留出星期标注宽度，上方留出月份标签高度
+  const labelWidth = 26;
+  const monthHeight = 16;
+  const cell = 12;
+  const gap = 3;
+  const width = labelWidth + columns * cell + Math.max(columns - 1, 0) * gap;
+  const height = monthHeight + 7 * cell + 6 * gap;
+
   const months = visible.flatMap((row, index) => {
     const previous = visible[index - 1];
     if (previous && previous.day.slice(0, 7) === row.day.slice(0, 7)) return [];
-    return [{ label: `${Number(row.day.slice(5, 7))}月`, column: Math.floor((leading + index) / 7) + 1 }];
+    return [
+      {
+        label: `${Number(row.day.slice(5, 7))}月`,
+        column: Math.floor((leading + index) / 7),
+      },
+    ];
   });
+
+  // 星期标注与热力行共享同一 y 坐标系（每行 = cell + gap），七个星期全部标注
+  const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'].map((text, row) => ({ text, row }));
+
+  const columnX = (column: number) => labelWidth + column * (cell + gap);
+  const rowY = (row: number) => monthHeight + row * (cell + gap);
 
   return (
     <div className="heatmap-wrap">
-      <div className="heatmap-y-labels" aria-hidden="true"><span>周一</span><span>周三</span><span>周五</span></div>
-      <div className="heatmap-scroll">
-        <div className="heatmap-calendar">
-          <div className="heatmap-months" aria-hidden="true">
-            {months.map((month) => (
-              <span key={`${month.label}-${month.column}`} style={{ gridColumnStart: month.column }}>{month.label}</span>
-            ))}
-          </div>
-          <div className="heatmap-grid" role="img" aria-label="每日请求日历热力图">
-          {Array.from({ length: leading }, (_, index) => <i className="heat-cell placeholder" key={`blank-${index}`} />)}
-          {visible.map((row) => (
-            <Tooltip
-              key={row.day}
-              title={`${row.day}：${formatCount(row.requests)} 次请求，${formatTokens(row.totalTokens)} Token${row.isHistorical ? `。历史累计导入，颜色强度按真实日最高 ${formatCount(realMax)} 次封顶` : ''}`}
-              placement="top"
-              autoAdjustOverflow
-              mouseEnterDelay={0.08}
+      <div className="heatmap-scroll" ref={scrollRef}>
+        <svg
+          className="heatmap-chart"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="xMinYMid meet"
+          role="img"
+          aria-label="每日请求日历热力图"
+        >
+          {months.map((month) => (
+            <text
+              key={`${month.label}-${month.column}`}
+              className="chart-axis-label heatmap-month-label"
+              x={columnX(month.column)}
+              y={monthHeight - 5}
             >
-              <i className={`heat-cell level-${heatLevel(displayedRequests(row), max)}${row.isHistorical ? ' historical' : ''}`} />
-            </Tooltip>
+              {month.label}
+            </text>
           ))}
-          </div>
-        </div>
+          {weekdayLabels.map((label) => (
+            <text
+              key={label.text}
+              className="chart-axis-label heatmap-weekday-label"
+              x={labelWidth - 6}
+              y={rowY(label.row) + cell - 3}
+              textAnchor="end"
+            >
+              {label.text}
+            </text>
+          ))}
+          {/* 首列起始星期之前的空位用隐形占位格补齐，保证每一行左对齐 */}
+          {Array.from({ length: leading }, (_, line) => (
+            <rect
+              key={`placeholder-${line}`}
+              className="heat-cell placeholder"
+              x={columnX(0)}
+              y={rowY(line)}
+              width={cell}
+              height={cell}
+              rx={3}
+            />
+          ))}
+          {visible.map((row, index) => {
+            const column = Math.floor((leading + index) / 7);
+            const line = (leading + index) % 7;
+            return (
+              <g key={row.day}>
+                <title>
+                  {`${row.day}：${formatCount(row.requests)} 次请求，${formatTokens(row.totalTokens)} Token${row.isHistorical ? `。历史累计导入，颜色强度按真实日最高 ${formatCount(realMax)} 次封顶` : ''}`}
+                </title>
+                <rect
+                  className={`heat-cell level-${heatLevel(displayedRequests(row), max)}${row.isHistorical ? ' historical' : ''}`}
+                  x={columnX(column)}
+                  y={rowY(line)}
+                  width={cell}
+                  height={cell}
+                  rx={3}
+                />
+              </g>
+            );
+          })}
+        </svg>
       </div>
       <div className="heatmap-legend">
         <span>少</span>{[0, 1, 2, 3, 4].map((level) => <i className={`heat-cell level-${level}`} key={level} />)}<span>多</span>

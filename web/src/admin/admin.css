@@ -499,85 +499,67 @@
   font-size: 10px;
 }
 
+/*
+ * 活跃日历（SVG）。
+ * 图形本体是一个 width:100% 的 SVG：卡片够宽时格子等比拉伸刚好铺满内容区，
+ * 不够宽时由 .heatmap-scroll 出横向滚动条（组件内默认滚到最右侧最新日期）。
+ */
 .heatmap-wrap {
-  position: relative;
-  display: grid;
+  display: flex;
   min-height: 250px;
-  grid-template-columns: 30px minmax(0, 1fr);
-  grid-template-rows: 1fr auto;
+  flex-direction: column;
+  justify-content: center;
   gap: 8px;
-  align-items: stretch;
 }
 
 .heatmap-scroll {
-  display: flex;
-  align-items: center;
   overflow-x: auto;
-  padding: 0 2px 18px;
 }
 
-.heatmap-calendar {
-  min-width: max-content;
+.heatmap-chart {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  height: auto;
 }
 
-.heatmap-months {
-  display: grid;
-  height: 22px;
-  grid-auto-columns: 12px;
-  grid-auto-flow: column;
-  gap: 4px;
-  color: var(--text-faint);
+.heatmap-month-label {
   font-size: 9px;
-  line-height: 18px;
 }
 
-.heatmap-months span {
-  width: 32px;
-  white-space: nowrap;
+.heatmap-weekday-label {
+  font-size: 8px;
 }
-
-.heatmap-grid {
-  display: grid;
-  min-width: max-content;
-  grid-auto-flow: column;
-  grid-auto-columns: 12px;
-  grid-template-rows: repeat(7, 12px);
-  gap: 4px;
-}
-
+/* 图例里的热力格（HTML 元素） */
 .heat-cell {
-  position: relative;
   display: block;
   width: 12px;
   height: 12px;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: 3px;
   background: var(--bg-subtle);
+  /* SVG rect 不吃 background，必须显式给 fill，否则回落到黑色 */
+  fill: var(--bg-subtle);
 }
 
-.heat-cell.level-1 { background: color-mix(in srgb, var(--primary) 22%, var(--bg-elevated)); }
-.heat-cell.level-2 { background: color-mix(in srgb, var(--primary) 43%, var(--bg-elevated)); }
-.heat-cell.level-3 { background: color-mix(in srgb, var(--primary) 67%, var(--bg-elevated)); }
-.heat-cell.level-4 { background: var(--primary); }
-.heat-cell.historical { background: var(--text-faint); }
+/*
+ * SVG 内的热力格：宽高来自 rect 的 width/height 属性，绝不能被 CSS 覆盖 ——
+ * SVG2 中 CSS width/height 是几何属性，设置 12px 或 auto 都会把格子压成 0。
+ */
+svg .heat-cell {
+  stroke: color-mix(in srgb, var(--border) 75%, transparent);
+  stroke-width: 1;
+}
+
+.heat-cell.level-1 { background: color-mix(in srgb, var(--primary) 22%, var(--bg-elevated)); fill: color-mix(in srgb, var(--primary) 22%, var(--bg-elevated)); }
+.heat-cell.level-2 { background: color-mix(in srgb, var(--primary) 43%, var(--bg-elevated)); fill: color-mix(in srgb, var(--primary) 43%, var(--bg-elevated)); }
+.heat-cell.level-3 { background: color-mix(in srgb, var(--primary) 67%, var(--bg-elevated)); fill: color-mix(in srgb, var(--primary) 67%, var(--bg-elevated)); }
+.heat-cell.level-4 { background: var(--primary); fill: var(--primary); }
+.heat-cell.historical { background: var(--text-faint); fill: var(--text-faint); }
 .heat-cell.placeholder { visibility: hidden; }
-
-.heatmap-y-labels {
-  display: grid;
-  padding: 22px 0 18px;
-  grid-template-rows: repeat(7, 12px);
-  gap: 4px;
-  color: var(--text-faint);
-  font-size: 8px;
-}
-
-.heatmap-y-labels span:nth-child(1) { grid-row: 1; }
-.heatmap-y-labels span:nth-child(2) { grid-row: 3; }
-.heatmap-y-labels span:nth-child(3) { grid-row: 5; }
 
 .heatmap-legend {
   display: flex;
-  grid-column: 2;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
@@ -1012,7 +994,8 @@
   .control-w-120,
   .control-w-150,
   .control-w-160,
-  .control-w-180 {
+  .control-w-180,
+  .control-w-200 {
     width: 100%;
   }
 }

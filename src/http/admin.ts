@@ -29,6 +29,13 @@ import {
   type ProviderRecord,
 } from '../db/repo/providers';
 import { addIpBlacklist, listIpBlacklist, removeIpBlacklist } from '../db/repo/ip-blacklist';
+import {
+  createAnnouncement,
+  deleteAnnouncement,
+  findAnnouncementById,
+  listAnnouncements,
+  updateAnnouncement,
+} from '../db/repo/announcements';
 import { getRequestDetail, queryRequests } from '../db/repo/requests';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
@@ -51,11 +58,15 @@ import { executeProviderScript } from '../upstream/script';
 import { getUpstreamClient, upstreamClientCount } from '../upstream/client';
 import { withTimeout } from '../core/timeout';
 import type {
+  AnnouncementDTO,
+  AnnouncementInput,
+  AnnouncementLevel,
   PriorityGroupDTO,
   ProviderKind,
   RequestBehaviorAction,
   MaliciousBehaviorAction,
   RequestListQuery,
+  RequestOutcome,
   RoutingRule,
   SettingsPatch,
   ProviderRequestMode,
@@ -728,6 +739,14 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
 
 // ------------------------------------------------------------------ 请求日志
 
+const OUTCOME_VALUES: readonly RequestOutcome[] = [
+  'upstream_ok',
+  'cache_hit',
+  'upstream_error',
+  'client_abort',
+  'rejected',
+];
+
 function parseListQuery(query: Record<string, unknown>): RequestListQuery {
   const result: RequestListQuery = {};
 
@@ -737,9 +756,20 @@ function parseListQuery(query: Record<string, unknown>): RequestListQuery {
   if (query.success === 'false') result.success = false;
   if (query.requestedModel) result.requestedModel = String(query.requestedModel);
   if (query.ip) result.ip = String(query.ip);
-  if (query.providerId !== undefined) {
-    const id = Number(query.providerId);
-    if (Number.isFinite(id)) result.providerId = id;
+  // 多选值以逗号分隔传递（URL 上保持可读、可分享）
+  if (query.outcomes) {
+    const outcomes = String(query.outcomes)
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item): item is RequestOutcome => OUTCOME_VALUES.includes(item as RequestOutcome));
+    if (outcomes.length > 0) result.outcomes = [...new Set(outcomes)];
+  }
+  if (query.providerIds) {
+    const ids = String(query.providerIds)
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length > 0) result.providerIds = [...new Set(ids)];
   }
   if (query.from) result.from = String(query.from);
   if (query.to) result.to = String(query.to);
@@ -838,6 +868,99 @@ router.get('/api/runtime', requireAuth, (_req: Request, res: Response) => {
 router.post('/api/retention/sweep', requireAuth, async (_req: Request, res: Response) => {
   try {
     res.json({ deleted: await runRetentionSweep() });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// ------------------------------------------------------------------ 公告
+
+const ANNOUNCEMENT_LEVELS: readonly AnnouncementLevel[] = ['info', 'warning', 'success'];
+
+function toAnnouncementDTO(record: {
+  id: number;
+  title: string;
+  body: string;
+  level: AnnouncementLevel;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}): AnnouncementDTO {
+  return {
+    id: record.id,
+    title: record.title,
+    body: record.body,
+    level: record.level,
+    enabled: record.enabled,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function parseAnnouncementInput(body: Record<string, unknown>, partial: boolean): Partial<AnnouncementInput> {
+  const input: Partial<AnnouncementInput> = {};
+
+  if (!partial || body.title !== undefined) input.title = requireString(body.title, '标题').slice(0, 120);
+  if (!partial || body.body !== undefined) input.body = requireString(body.body, '正文').slice(0, 5000);
+  if (!partial || body.level !== undefined) {
+    const level = String(body.level ?? 'info');
+    if (!ANNOUNCEMENT_LEVELS.includes(level as AnnouncementLevel)) {
+      throw new BadRequest('级别只允许 info / warning / success');
+    }
+    input.level = level as AnnouncementLevel;
+  }
+  if (!partial || body.enabled !== undefined) input.enabled = body.enabled === undefined ? true : !!body.enabled;
+
+  return input;
+}
+
+router.get('/api/announcements', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json((await listAnnouncements()).map(toAnnouncementDTO));
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.post('/api/announcements', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const input = parseAnnouncementInput((req.body ?? {}) as Record<string, unknown>, false) as AnnouncementInput;
+    const record = await createAnnouncement(input);
+    res.status(201).json(toAnnouncementDTO(record));
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.put('/api/announcements/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await findAnnouncementById(id);
+    if (!existing) {
+      res.status(404).json({ error: { message: '公告不存在' } });
+      return;
+    }
+
+    const patch = parseAnnouncementInput((req.body ?? {}) as Record<string, unknown>, true);
+    const record = await updateAnnouncement(id, patch);
+    if (!record) {
+      res.status(404).json({ error: { message: '公告不存在' } });
+      return;
+    }
+    res.json(toAnnouncementDTO(record));
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.delete('/api/announcements/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const deleted = await deleteAnnouncement(Number(req.params.id));
+    if (!deleted) {
+      res.status(404).json({ error: { message: '公告不存在' } });
+      return;
+    }
+    res.json({ success: true });
   } catch (error) {
     fail(res, error);
   }
