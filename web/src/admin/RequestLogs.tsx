@@ -10,17 +10,19 @@
  * 也让 IP 统计页能带参数跳进来。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Alert, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Timeline, Tooltip, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Card, Descriptions, Drawer, Input, Menu, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Timeline, Tooltip, Typography, message } from 'antd';
+import type { MenuProps } from 'antd';
 import ReactMarkdown from 'react-markdown';
 
 import { adminApi } from '../api/client';
 import { DayRangePicker, useDayRange } from '../components/DayRangePicker';
 import { useAsync } from '../hooks/useAsync';
-import { formatDateTime, formatMs, formatTokens } from '../lib/format';
+import { formatCount, formatDateTime, formatMs, formatPercent, formatTokens } from '../lib/format';
 import type {
   AttemptStatus,
+  IpDetailStatsDTO,
   RequestListQuery,
   RequestOutcome,
   RequestSummaryDTO,
@@ -276,8 +278,124 @@ export function RequestLogs() {
     [params, setParams],
   );
 
+  // ---------------------------------------------------------------- 行右键菜单
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RequestSummaryDTO } | null>(null);
+  const [banTarget, setBanTarget] = useState<string | null>(null);
+  const [banNote, setBanNote] = useState('');
+  const [banning, setBanning] = useState(false);
+  const [statsIp, setStatsIp] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  /*
+   * 点击 / 再次右键菜单外、滚动、resize 时关闭菜单。
+   * 注意用 capture 捕获窗口右键：若不拦截，onContextMenu 里的 preventDefault
+   * 只阻止默认菜单，而这里负责在别处右键时收起本菜单。
+   * 菜单内部的点击不会关闭自己（stopPropagation 由 Menu 项的 onClick 处理）。
+   */
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnPointerDown = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      closeContextMenu();
+    };
+    window.addEventListener('pointerdown', closeOnPointerDown, true);
+    window.addEventListener('resize', closeContextMenu);
+    window.addEventListener('blur', closeContextMenu);
+    return () => {
+      window.removeEventListener('pointerdown', closeOnPointerDown, true);
+      window.removeEventListener('resize', closeContextMenu);
+      window.removeEventListener('blur', closeContextMenu);
+    };
+  }, [contextMenu, closeContextMenu]);
+
+  const quickBan = async () => {
+    if (!banTarget) return;
+    setBanning(true);
+    try {
+      await adminApi.addIpBlacklist(banTarget, banNote.trim() || null);
+      message.success(`IP ${banTarget} 已加入黑名单`);
+      setBanTarget(null);
+      setBanNote('');
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setBanning(false);
+    }
+  };
+
+  const contextMenuItems: MenuProps['items'] = useMemo(() => {
+    if (!contextMenu) return [];
+    const { row } = contextMenu;
+    const ipDisabled = !row.ip;
+    return [
+      {
+        key: 'filter-ip',
+        label: row.ip ? `筛选此 IP（${row.ip}）` : '筛选此 IP（无 IP）',
+        disabled: ipDisabled,
+        onClick: () => {
+          patchFilter('ip', row.ip);
+          closeContextMenu();
+        },
+      },
+      {
+        key: 'ban',
+        label: '快速封禁此 IP',
+        disabled: ipDisabled,
+        danger: true,
+        onClick: () => {
+          setBanNote('');
+          setBanTarget(row.ip);
+          closeContextMenu();
+        },
+      },
+      { type: 'divider' as const },
+      {
+        key: 'stats',
+        label: '查看统计信息',
+        disabled: ipDisabled,
+        onClick: () => {
+          setStatsIp(row.ip);
+          closeContextMenu();
+        },
+      },
+    ];
+  }, [contextMenu, patchFilter, closeContextMenu]);
+
+  // 统计 Drawer 的数据源：沿用日志页当前的时间筛选，保证口径一致
+  const statsRange = useMemo(
+    () => ({
+      from: logRange.range.from ?? undefined,
+      to: logRange.range.to ?? undefined,
+    }),
+    [logRange.range.from, logRange.range.to],
+  );
+  const ipStats = useAsync(
+    () => (statsIp === null ? Promise.resolve(null) : adminApi.ipStats(statsIp, statsRange)),
+    [statsIp, statsRange.from, statsRange.to],
+  );
+
   return (
     <div className="stack">
+      {contextMenu ? (
+        /*
+          右键菜单：不用 Dropdown 锚点方案（0×0 锚点 + 受控 open 在部分浏览器
+          下定位与关闭时序都不稳定），直接用 fixed 定位渲染 Menu，坐标取自
+          右键事件本身，并防止菜单贴出视口。
+        */
+        <div
+          ref={menuRef}
+          className="row-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <Menu onClick={closeContextMenu} items={contextMenuItems} selectable={false} />
+        </div>
+      ) : null}
+
       {list.status === 'error' ? (
         <Alert
           type="error"
@@ -357,7 +475,18 @@ export function RequestLogs() {
             showTotal: (total) => `共 ${total} 条`,
             onChange: setPage,
           }}
-          onRow={(row) => ({ onClick: () => setDetailId(row.id) })}
+          onRow={(row) => ({
+            onClick: () => setDetailId(row.id),
+            onContextMenu: (event) => {
+              // 只拦截表格行上的右键，表头等区域不受影响
+              event.preventDefault();
+              event.stopPropagation();
+              // 限制坐标避免菜单贴视口右/下边缘时被裁掉
+              const x = Math.min(event.clientX, window.innerWidth - 200);
+              const y = Math.min(event.clientY, window.innerHeight - 140);
+              setContextMenu({ x, y, row });
+            },
+          })}
           columns={[
             {
               title: '时间',
@@ -550,6 +679,111 @@ export function RequestLogs() {
           </div>
         ) : null}
       </Drawer>
+
+      {/* 快速封禁：确认 + 可选备注，直接复用黑名单 upsert 接口 */}
+      <Modal
+        title={`快速封禁 ${banTarget ?? ''}`}
+        open={banTarget !== null}
+        onCancel={() => setBanTarget(null)}
+        footer={null}
+        destroyOnClose
+      >
+        <Popconfirm
+          title={`确认封禁 ${banTarget ?? ''}？`}
+          description="封禁后该 IP 的所有请求都会被网关拒绝。"
+          okText="确认封禁"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => void quickBan()}
+          disabled={banning}
+        >
+          <Button type="primary" danger loading={banning}>确认封禁</Button>
+        </Popconfirm>
+        <Input
+          style={{ marginTop: 12 }}
+          placeholder="备注（可选，最多 200 字符）"
+          maxLength={200}
+          value={banNote}
+          onChange={(event) => setBanNote(event.target.value)}
+          onPressEnter={() => void quickBan()}
+        />
+      </Modal>
+
+      {/* 单 IP 详细统计：沿用日志页当前时间筛选 */}
+      <Drawer
+        width={520}
+        open={statsIp !== null}
+        onClose={() => setStatsIp(null)}
+        title={statsIp ? `IP 统计：${statsIp}` : 'IP 统计'}
+        destroyOnClose
+      >
+        {ipStats.status === 'error' ? (
+          <Alert type="error" showIcon message="统计加载失败" description={ipStats.error} />
+        ) : null}
+        {ipStats.status === 'loading' ? <Alert type="info" showIcon message="加载中…" /> : null}
+        {ipStats.data ? <IpStatsBody stats={ipStats.data} range={statsRange} /> : null}
+      </Drawer>
+    </div>
+  );
+}
+
+function IpStatsBody({ stats, range }: { stats: IpDetailStatsDTO; range: { from?: string; to?: string } }) {
+  const { breakdown } = stats;
+  // outcome -> breakdown 字段名（DTO 用 snake_case，breakdown 用 camelCase）
+  const BREAKDOWN_KEY: Record<RequestOutcome, keyof IpDetailStatsDTO['breakdown']> = {
+    upstream_ok: 'upstreamOk',
+    cache_hit: 'cacheHit',
+    upstream_error: 'upstreamError',
+    client_abort: 'clientAbort',
+    rejected: 'rejected',
+  };
+  return (
+    <div className="stack">
+      <Descriptions size="small" column={2} bordered>
+        <Descriptions.Item label="请求总数">{formatCount(stats.requests)}</Descriptions.Item>
+        <Descriptions.Item label="总 Token">{formatTokens(stats.totalTokens)}</Descriptions.Item>
+        <Descriptions.Item label="交付率">{formatPercent(stats.serviceSuccessRate)}</Descriptions.Item>
+        <Descriptions.Item label="上游成功率">{formatPercent(stats.upstreamSuccessRate)}</Descriptions.Item>
+        <Descriptions.Item label="平均首字节">{formatMs(stats.avgTtfbMs)}</Descriptions.Item>
+        <Descriptions.Item label="平均总耗时">{formatMs(stats.avgTotalMs)}</Descriptions.Item>
+        <Descriptions.Item label="首次活跃">{stats.firstSeenAt ? formatDateTime(stats.firstSeenAt) : '—'}</Descriptions.Item>
+        <Descriptions.Item label="最近活跃">{stats.lastSeenAt ? formatDateTime(stats.lastSeenAt) : '—'}</Descriptions.Item>
+      </Descriptions>
+
+      <Card size="small" title="结局分布">
+        <Space direction="vertical" style={{ width: '100%' }} size={6}>
+          {(Object.keys(OUTCOME_VIEW) as RequestOutcome[]).map((outcome) => (
+            <div key={outcome} style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Tooltip title={OUTCOME_VIEW[outcome].hint}>
+                <Tag color={OUTCOME_VIEW[outcome].color}>{OUTCOME_VIEW[outcome].label}</Tag>
+              </Tooltip>
+              <span className="mono">{formatCount(breakdown[BREAKDOWN_KEY[outcome]])}</span>
+            </div>
+          ))}
+        </Space>
+      </Card>
+
+      <Card size="small" title="模型分布（Top 10）">
+        {stats.models.length === 0 ? (
+          <span className="faint">范围内没有请求</span>
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }} size={4}>
+            {stats.models.map((model) => (
+              <div key={model.model} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span className="mono">{model.model}</span>
+                <span className="mono">{formatCount(model.requests)}</span>
+              </div>
+            ))}
+          </Space>
+        )}
+      </Card>
+
+      <div className="faint">
+        统计区间：
+        {range.from ? ` ${range.from} 起` : ' 全部历史'}
+        {range.to ? ` 至 ${range.to}` : ''}
+        ；与日志页筛选一致。
+        <Link to="/admin/ips" style={{ marginLeft: 8 }}>在 IP 统计页查看 →</Link>
+      </div>
     </div>
   );
 }

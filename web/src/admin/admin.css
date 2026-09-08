@@ -1083,6 +1083,25 @@ svg .heat-cell {
   margin-top: 12px;
 }
 
+/* ---------------------------------------------------------- 行右键菜单 */
+
+/* 表格行右键弹出的菜单：fixed 定位坐标来自右键事件，贴视口边缘时翻转 */
+.row-context-menu {
+  position: fixed;
+  z-index: 1050;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+}
+
+.row-context-menu .ant-menu {
+  border-inline-end: none !important;
+  background: transparent;
+}
+
 @media (max-width: 480px) {
   .admin-brand-copy {
     display: none;

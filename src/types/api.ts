@@ -383,6 +383,27 @@ export interface IpUsageDTO {
 }
 
 /**
+ * 单个 IP 的详细统计（日志页右键「查看统计信息」）。
+ *
+ * 从 requests 明细表按 IP 聚合，口径与全局统计一致：
+ *   - successRates 由 successRatesOf 派生（缓存复用算成功、客户端取消剔除分母）
+ *   - 模型分布按 requested_model 分组，超过 modelLimit 时合并为「其他」由前端展示
+ */
+export interface IpDetailStatsDTO {
+  ip: string;
+  requests: number;
+  totalTokens: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  avgTtfbMs: number | null;
+  avgTotalMs: number | null;
+  breakdown: OutcomeBreakdown;
+  serviceSuccessRate: number;
+  upstreamSuccessRate: number;
+  models: Array<{ model: string; requests: number }>;
+}
+
+/**
  * 首页公开统计。
  *
  * successRate 采用 serviceSuccessRate 口径：缓存复用算成功，客户端取消不计入分母。

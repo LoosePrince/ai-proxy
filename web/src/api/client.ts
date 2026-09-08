@@ -17,6 +17,7 @@ import type {
   ContributionSubmitResult,
   DashboardSummaryDTO,
   IpBlacklistDTO,
+  IpDetailStatsDTO,
   IpUsageDTO,
   ModelUsageDTO,
   Paged,
@@ -181,6 +182,9 @@ export const adminApi = {
     request<Paged<RequestSummaryDTO>>(`/admin/api/requests${toQuery(query as Record<string, unknown>)}`),
 
   requestDetail: (id: number) => request<RequestDetailDTO>(`/admin/api/requests/${id}`),
+
+  ipStats: (ip: string, range: { from?: string; to?: string } = {}) =>
+    request<IpDetailStatsDTO>(`/admin/api/ip-stats/${encodeURIComponent(ip)}${toQuery(range)}`),
 
   dailyUsage: (range: { from?: string; to?: string } = {}) =>
     request<UsageDailyDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'daily' })}`),

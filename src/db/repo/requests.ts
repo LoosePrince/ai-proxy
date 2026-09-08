@@ -18,6 +18,8 @@ import type { LsqliteStatement } from '../lsqlite';
 import type {
   AttemptRole,
   AttemptStatus,
+  IpDetailStatsDTO,
+  OutcomeBreakdown,
   Paged,
   RequestAttemptDTO,
   RequestDetailDTO,
@@ -25,6 +27,7 @@ import type {
   RequestOutcome,
   RequestSummaryDTO,
 } from '../../types/api';
+import { successRatesOf } from './usage';
 
 export interface AttemptEventInput {
   seq: number;
@@ -76,6 +79,8 @@ export interface RequestEventInput {
 }
 
 const UNKNOWN_MODEL = '(unspecified)';
+/** 统计展示里代替 null 模型名的占位符（与 getModelUsage 口径一致） */
+const UNKNOWN_MODEL_DISPLAY = '（未指定）';
 
 /** UTC 日期分桶键，聚合表按此对齐 */
 function dayOf(isoTimestamp: string): string {
@@ -660,4 +665,105 @@ export async function pruneOldRequests(retentionDays: number): Promise<number> {
   const cutoff = new Date(Date.now() - retentionDays * 86_400_000).toISOString();
   const result = await getDb().execute('delete from requests where started_at < ?', [cutoff]);
   return result.rowCount ?? 0;
+}
+
+// ---------------------------------------------------------------- 单 IP 详细统计
+
+interface IpAggregateRow {
+  requests: number;
+  success: number;
+  failed: number;
+  cache_hits: number;
+  client_aborts: number;
+  rejected: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  avg_ttfb_ms: number | null;
+  avg_total_ms: number | null;
+}
+
+/**
+ * 单个 IP 的详细统计（日志页右键菜单）。
+ *
+ * 从 requests 明细表实时聚合：ip_usage_daily 只有 requests/tokens 两列，
+ * 撑不起结局分布与成功率。日期为 ISO 时间戳（含时间部分），与明细表对齐。
+ * 口径与 usage.ts 的全局聚合一致 —— success/failed 列的语义见 countersOf。
+ */
+export async function getIpDetailStats(
+  ip: string,
+  range: { from?: string; to?: string } = {},
+): Promise<IpDetailStatsDTO | null> {
+  const db = getDb();
+
+  const parts: string[] = ['i.ip = ?'];
+  const params: unknown[] = [ip];
+  if (range.from) {
+    parts.push('r.started_at >= ?');
+    params.push(range.from);
+  }
+  if (range.to) {
+    parts.push('r.started_at <= ?');
+    params.push(range.to);
+  }
+
+  const row = await db.selectOne<IpAggregateRow>(
+    `select
+        count(*)                                  as requests,
+        sum(case when r.outcome in ('upstream_ok', 'cache_hit') then 1 else 0 end) as success,
+        sum(case when r.outcome in ('upstream_error', 'rejected') then 1 else 0 end) as failed,
+        sum(case when r.outcome = 'cache_hit' then 1 else 0 end)  as cache_hits,
+        sum(case when r.outcome = 'client_abort' then 1 else 0 end) as client_aborts,
+        sum(case when r.outcome = 'rejected' then 1 else 0 end)   as rejected,
+        sum(r.prompt_tokens)                       as prompt_tokens,
+        sum(r.completion_tokens)                   as completion_tokens,
+        min(r.started_at)                          as first_seen_at,
+        max(r.started_at)                          as last_seen_at,
+        avg(r.ttfb_ms)                             as avg_ttfb_ms,
+        avg(r.total_ms)                            as avg_total_ms
+      from requests r
+      left join ips i on i.id = r.ip_id
+      where ${parts.join(' and ')}`,
+    params,
+  );
+  if (!row || Number(row.requests) === 0) return null;
+
+  const modelRows = await db.select<{ requested_model: string | null; requests: number }>(
+    `select r.requested_model, count(*) as requests
+      from requests r
+      left join ips i on i.id = r.ip_id
+      where ${parts.join(' and ')}
+      group by r.requested_model
+      order by requests desc
+      limit 10`,
+    params,
+  );
+
+  const breakdown: OutcomeBreakdown = {
+    requests: Number(row.requests),
+    upstreamOk: Math.max(Number(row.success) - Number(row.cache_hits), 0),
+    cacheHit: Number(row.cache_hits),
+    upstreamError: Math.max(Number(row.failed) - Number(row.rejected), 0),
+    clientAbort: Number(row.client_aborts),
+    rejected: Number(row.rejected),
+  };
+  const rates = successRatesOf(breakdown);
+
+  return {
+    ip,
+    requests: breakdown.requests,
+    totalTokens: Number(row.prompt_tokens) + Number(row.completion_tokens),
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    avgTtfbMs: row.avg_ttfb_ms === null ? null : Math.round(Number(row.avg_ttfb_ms)),
+    avgTotalMs: row.avg_total_ms === null ? null : Math.round(Number(row.avg_total_ms)),
+    breakdown,
+    serviceSuccessRate: rates.serviceSuccessRate,
+    upstreamSuccessRate: rates.upstreamSuccessRate,
+    models: modelRows.map((model) => ({
+      model: model.requested_model ?? UNKNOWN_MODEL_DISPLAY,
+      requests: Number(model.requests),
+    })),
+  };
 }

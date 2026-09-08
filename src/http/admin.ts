@@ -36,7 +36,7 @@ import {
   listAnnouncements,
   updateAnnouncement,
 } from '../db/repo/announcements';
-import { getRequestDetail, queryRequests } from '../db/repo/requests';
+import { getRequestDetail, getIpDetailStats, queryRequests } from '../db/repo/requests';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
   getDailyUsage,
@@ -793,6 +793,20 @@ router.get('/api/requests/:id', requireAuth, async (req: Request, res: Response)
       return;
     }
     res.json(detail);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// 单 IP 详细统计（日志页右键「查看统计信息」）；无数据返回 404 而不是空对象，让前端能区分
+router.get('/api/ip-stats/:ip', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const stats = await getIpDetailStats(toIp(req.params.ip), parseRange(req.query as Record<string, unknown>));
+    if (!stats) {
+      res.status(404).json({ error: { message: '该 IP 在统计范围内没有请求记录' } });
+      return;
+    }
+    res.json(stats);
   } catch (error) {
     fail(res, error);
   }

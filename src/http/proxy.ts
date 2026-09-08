@@ -13,7 +13,7 @@
  * 具体的上游调用交给 upstream/invoke，排序决策交给 core/routing。
  */
 
-import express, { type Request, type Response } from 'express';
+import express, { type Request, type RequestHandler, type Response } from 'express';
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
 import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
@@ -26,7 +26,7 @@ import {
   buildSpecialProviderChain,
   findSpecialProvider,
 } from '../core/routing';
-import { registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
+import { PROXY_ROUTES, registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
 import { writeSyntheticSuccess } from './synthetic-response';
 import { resolveTimeoutMs } from '../core/timeout';
 import {
@@ -712,6 +712,45 @@ async function handleProxyRequest(
 }
 
 registerProxyRoutes(router, handleProxyRequest);
+
+const PROXY_POST_PATHS: ReadonlySet<string> = new Set<string>(PROXY_ROUTES.map((route) => route.path as string));
+
+/**
+ * 黑名单前置拦截：必须在 express.json 之前挂载。
+ *
+ * 旧实现把黑名单检查放在 handleProxyRequest 里，而 body 解析是更早的全局
+ * 中间件——被封禁的 IP 已经把完整请求体（上限 10MB）传完了才收到 403，
+ * 白白消耗服务端带宽，也让攻击者可以用大 body 消耗资源。
+ *
+ * 这里在解析 body 之前只看 IP：命中黑名单立即 403，请求体根本不会被读取。
+ * 被拒绝的请求仍然记入日志（此时没有 payload，仅记录 IP 与错误码）。
+ * 配置读取失败时不拦截，交给正常链路返回 503，避免缓存故障放大成全站拒绝。
+ */
+export const blacklistedIpGuard: RequestHandler = (req, res, next) => {
+  if (req.method !== 'POST' || !PROXY_POST_PATHS.has(req.path)) {
+    next();
+    return;
+  }
+  const ip = getClientIp(req);
+  void getConfig()
+    .then((config) => {
+      if (!config.blacklistedIps.has(ip)) {
+        next();
+        return;
+      }
+      const message = '该 IP 已被禁止访问';
+      enqueueRequestEvent(
+        toRequestEvent(createTrace({ requestedModel: null, stream: false, ip }), {
+          outcome: 'rejected',
+          httpStatus: 403,
+          errorCode: 'ip_blacklisted',
+          errorMessage: message,
+        }),
+      );
+      res.status(403).json({ error: { message, type: 'ip_blacklisted' } });
+    })
+    .catch(() => next());
+};
 
 /** GET /models —— 汇总所有启用 provider 声明的模型，OpenAI 兼容格式 */
 async function listModels(_req: Request, res: Response): Promise<void> {
