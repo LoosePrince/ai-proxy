@@ -258,7 +258,17 @@ function toIdeAction(value: unknown): RequestBehaviorAction {
 }
 
 function toMaliciousAction(value: unknown): MaliciousBehaviorAction {
-  if (value === 'ignore' || value === 'error' || value === 'response') return value;
+  if (value === 'ignore') return 'empty';
+  if (
+    value === 'ban' ||
+    value === 'block' ||
+    value === 'throttle' ||
+    value === 'empty' ||
+    value === 'error' ||
+    value === 'response'
+  ) {
+    return value;
+  }
   throw new BadRequest('恶意请求处理方式无效');
 }
 
@@ -350,6 +360,8 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
       mainScript,
       scheduleEnabled,
       scheduleCron,
+      excludeFromModelMatching: !!body.excludeFromModelMatching,
+      modelMatchExcludeModels: toModels(body.modelMatchExcludeModels),
       kind,
       source: 'managed',
       priority: toPriority(body.priority),
@@ -395,6 +407,14 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
           mainScript: config.mainScript === undefined ? existing.mainScript : String(config.mainScript),
           scheduleEnabled: config.scheduleEnabled === undefined ? existing.scheduleEnabled : !!config.scheduleEnabled,
           scheduleCron: config.scheduleCron === undefined ? existing.scheduleCron : String(config.scheduleCron).trim(),
+          excludeFromModelMatching:
+            config.excludeFromModelMatching === undefined
+              ? existing.excludeFromModelMatching
+              : !!config.excludeFromModelMatching,
+          modelMatchExcludeModels:
+            config.modelMatchExcludeModels === undefined
+              ? existing.modelMatchExcludeModels
+              : toModels(config.modelMatchExcludeModels),
         }
       : {
           id: -1,
@@ -409,6 +429,8 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
           mainScript: String(config.mainScript ?? ''),
           scheduleEnabled: !!config.scheduleEnabled,
           scheduleCron: String(config.scheduleCron ?? '').trim(),
+          excludeFromModelMatching: !!config.excludeFromModelMatching,
+          modelMatchExcludeModels: toModels(config.modelMatchExcludeModels),
           scheduleStatus: 'idle',
           lastRunAt: null,
           lastRunOk: null,
@@ -522,6 +544,8 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
     if (body.mainScript !== undefined) patch.mainScript = String(body.mainScript);
     if (body.scheduleEnabled !== undefined) patch.scheduleEnabled = !!body.scheduleEnabled;
     if (body.scheduleCron !== undefined) patch.scheduleCron = String(body.scheduleCron).trim();
+    if (body.excludeFromModelMatching !== undefined) patch.excludeFromModelMatching = !!body.excludeFromModelMatching;
+    if (body.modelMatchExcludeModels !== undefined) patch.modelMatchExcludeModels = toModels(body.modelMatchExcludeModels);
     if (body.kind !== undefined) patch.kind = toKind(body.kind);
     if (body.priority !== undefined) patch.priority = toPriority(body.priority);
     if (body.enabled !== undefined) patch.enabled = !!body.enabled;
@@ -689,6 +713,18 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.ipRateLimitRpm !== undefined) {
       patch.ipRateLimitRpm = toNonNegativeInt(body.ipRateLimitRpm, '同 IP 每分钟请求数限制');
     }
+    if (body.ipRateLimitPer10Min !== undefined) {
+      patch.ipRateLimitPer10Min = toNonNegativeInt(body.ipRateLimitPer10Min, '同 IP 每 10 分钟请求数限制');
+    }
+    if (body.ipRateLimitPer30Min !== undefined) {
+      patch.ipRateLimitPer30Min = toNonNegativeInt(body.ipRateLimitPer30Min, '同 IP 每 30 分钟请求数限制');
+    }
+    if (body.ipRateLimitHours !== undefined) {
+      patch.ipRateLimitHours = toNonNegativeInt(body.ipRateLimitHours, '自定义限流窗口小时数');
+    }
+    if (body.ipRateLimitPerXHours !== undefined) {
+      patch.ipRateLimitPerXHours = toNonNegativeInt(body.ipRateLimitPerXHours, '自定义窗口请求数限制');
+    }
     if (body.maxPrimaryAttempts !== undefined) {
       patch.maxPrimaryAttempts = toPositiveInt(body.maxPrimaryAttempts, '主链最大尝试次数');
     }
@@ -728,6 +764,16 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
       patch.maliciousRequestAction = toMaliciousAction(body.maliciousRequestAction);
     }
     if (body.maliciousResponse !== undefined) patch.maliciousResponse = String(body.maliciousResponse);
+    if (body.forbiddenKeywords !== undefined) patch.forbiddenKeywords = String(body.forbiddenKeywords);
+    if (body.maliciousThrottleMinutes !== undefined) {
+      patch.maliciousThrottleMinutes = toPositiveInt(body.maliciousThrottleMinutes, '拦截/限流时长（分钟）');
+    }
+    if (body.blockedErrorMessage !== undefined) {
+      patch.blockedErrorMessage = String(body.blockedErrorMessage).trim() || '该 IP 已被禁止访问';
+    }
+    if (body.fuzzyModelMatchingEnabled !== undefined) {
+      patch.fuzzyModelMatchingEnabled = !!body.fuzzyModelMatchingEnabled;
+    }
 
     const settings = await saveSettings(patch);
     invalidateConfig();

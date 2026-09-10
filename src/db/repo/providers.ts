@@ -42,6 +42,10 @@ export interface ProviderRecord {
   lastRunError: string | null;
   variablesUpdatedAt: string | null;
   models: string[];
+  /** 该 Provider（及其全部模型）不参与模型 id 匹配，只能被正常路由命中 */
+  excludeFromModelMatching: boolean;
+  /** 仅这些模型名不参与模型 id 匹配 */
+  modelMatchExcludeModels: string[];
   kind: ProviderKind;
   source: ProviderSource;
   priority: number;
@@ -80,6 +84,8 @@ interface ProviderRow {
   last_run_ok: number | null;
   last_run_error: string | null;
   variables_updated_at: string | null;
+  exclude_from_model_matching: number;
+  model_match_exclude_json: string;
   kind: string;
   source: string;
   priority: number;
@@ -96,6 +102,7 @@ const PROVIDER_COLUMNS = `
   p.id, p.name, p.base_url, p.api_key, p.system_prompt, p.request_mode, p.request_script, p.variables_json,
   p.variables_auto_sync, p.main_script, p.schedule_enabled, p.schedule_cron,
   p.last_run_at, p.last_run_ok, p.last_run_error, p.variables_updated_at,
+  p.exclude_from_model_matching, p.model_match_exclude_json,
   p.kind, p.source, p.priority, p.enabled,
   p.contributor, p.contributor_type, p.created_at, p.updated_at,
   (select group_concat(m.model, char(10))
@@ -135,6 +142,16 @@ function normalizeVariables(value: unknown): ProviderVariableDefinition[] {
   }
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 function toProviderRecord(row: ProviderRow): ProviderRecord {
   return {
     id: row.id,
@@ -155,6 +172,8 @@ function toProviderRecord(row: ProviderRow): ProviderRecord {
     lastRunError: row.last_run_error,
     variablesUpdatedAt: row.variables_updated_at,
     models: row.models ? row.models.split('\n').filter(Boolean) : [],
+    excludeFromModelMatching: !!row.exclude_from_model_matching,
+    modelMatchExcludeModels: normalizeStringArray(row.model_match_exclude_json),
     kind: normalizeKind(row.kind),
     source: normalizeSource(row.source),
     priority: Number(row.priority) || 0,
@@ -244,6 +263,8 @@ export interface CreateProviderInput {
   scheduleEnabled?: boolean;
   scheduleCron?: string;
   models: string[];
+  excludeFromModelMatching?: boolean;
+  modelMatchExcludeModels?: string[];
   kind?: ProviderKind;
   source?: ProviderSource;
   priority?: number;
@@ -267,6 +288,8 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
     main_script: input.mainScript ?? '',
     schedule_enabled: input.scheduleEnabled ?? false,
     schedule_cron: input.scheduleCron ?? '',
+    exclude_from_model_matching: input.excludeFromModelMatching ?? false,
+    model_match_exclude_json: JSON.stringify(input.modelMatchExcludeModels ?? []),
     kind: input.kind ?? 'primary',
     source: input.source ?? 'managed',
     priority: input.priority ?? 0,
@@ -312,6 +335,8 @@ export interface UpdateProviderInput {
   scheduleEnabled?: boolean;
   scheduleCron?: string;
   models?: string[];
+  excludeFromModelMatching?: boolean;
+  modelMatchExcludeModels?: string[];
   kind?: ProviderKind;
   priority?: number;
   enabled?: boolean;
@@ -337,6 +362,12 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   if (input.kind !== undefined) fields.kind = input.kind;
   if (input.priority !== undefined) fields.priority = input.priority;
   if (input.enabled !== undefined) fields.enabled = input.enabled;
+  if (input.excludeFromModelMatching !== undefined) {
+    fields.exclude_from_model_matching = input.excludeFromModelMatching;
+  }
+  if (input.modelMatchExcludeModels !== undefined) {
+    fields.model_match_exclude_json = JSON.stringify(input.modelMatchExcludeModels);
+  }
   if (input.contributor !== undefined) fields.contributor = input.contributor;
   if (input.contributorType !== undefined) fields.contributor_type = input.contributorType;
 

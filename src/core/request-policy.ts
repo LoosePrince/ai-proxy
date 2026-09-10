@@ -192,17 +192,51 @@ export interface RequestInspection {
   isMalicious: boolean;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 把配置里的违禁词拆成大小写不敏感、容忍空格/标点混淆的匹配模式 */
+export function forbiddenKeywordPatterns(keywords: string[]): RegExp[] {
+  return keywords
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .map((keyword) => new RegExp(escapeRegExp(keyword), 'i'));
+}
+
+/** 按行 / 逗号拆分后台填写的违禁词文本 */
+export function parseForbiddenKeywords(raw: string): string[] {
+  return raw
+    .split(/[\n,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function hasForbiddenKeywords(corpus: TextCorpus, keywords: string[]): boolean {
+  const patterns = forbiddenKeywordPatterns(keywords);
+  if (patterns.length === 0) return false;
+  // 空格/标点去除后的紧凑形态，容忍「i g n o r e」这类低成本混淆
+  const compact = corpus.compact;
+  return patterns.some((pattern) => pattern.test(corpus.readable) || pattern.test(compact));
+}
+
 /**
  * 只负责分类，不决定 HTTP 行为。
  * IDE 证据只从系统上下文和工具链读取；恶意证据只从用户可控消息读取，
  * 避免系统提示词中讨论安全策略时触发恶意拦截。
+ * customKeywords 是后台配置的自定义违禁词，同样只扫用户可控内容。
  */
-export function inspectRequest(payload: JsonRecord): RequestInspection {
+export function inspectRequest(
+  payload: JsonRecord,
+  options: { customKeywords?: string[] } = {},
+): RequestInspection {
   const ideScore = scoreSignals(normalizeText(systemContext(payload), true), IDE_SIGNALS);
-  const maliciousScore = scoreSignals(normalizeText(userContext(payload)), MALICIOUS_SIGNALS);
+  const userCorpus = normalizeText(userContext(payload));
+  const maliciousScore = scoreSignals(userCorpus, MALICIOUS_SIGNALS);
+  const customHit = hasForbiddenKeywords(userCorpus, options.customKeywords ?? []);
   return {
     isIdeRequest: ideScore >= IDE_THRESHOLD,
-    isMalicious: maliciousScore >= MALICIOUS_THRESHOLD,
+    isMalicious: maliciousScore >= MALICIOUS_THRESHOLD || customHit,
   };
 }
 

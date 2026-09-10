@@ -10,7 +10,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Space, Table, message } from 'antd';
+import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tabs, message } from 'antd';
 import { Link } from 'react-router-dom';
 
 import { adminApi } from '../api/client';
@@ -105,7 +105,7 @@ function IpBlacklistPanel() {
   );
 }
 
-export function IpStats() {
+function IpUsagePanel() {
   const { range, control } = useDayRange();
   const usage = useAsync(() => adminApi.ipUsage(range), [range.from, range.to]);
   const [keyword, setKeyword] = useState('');
@@ -118,9 +118,7 @@ export function IpStats() {
   }, [usage.data, keyword]);
 
   return (
-    <div className="stack">
-      <IpBlacklistPanel />
-
+    <>
       {usage.status === 'error' ? (
         <Alert
           type="error"
@@ -197,6 +195,20 @@ export function IpStats() {
           ]}
         />
       </Card>
+    </>
+  );
+}
+
+export function IpStats() {
+  return (
+    <div className="stack">
+      <Tabs
+        defaultActiveKey="blacklist"
+        items={[
+          { key: 'blacklist', label: '封禁 IP 列表', children: <IpBlacklistPanel /> },
+          { key: 'usage', label: 'IP 列表统计', children: <IpUsagePanel /> },
+        ]}
+      />
     </div>
   );
 }

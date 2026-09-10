@@ -167,7 +167,7 @@ export function Dashboard() {
         <StatCard
           label="交付率"
           value={formatPercent(metrics.serviceSuccessRate)}
-          hint={`缓存复用计入成功，客户端取消不计入分母（成功 ${formatCount(metrics.successRequests)} / 失败 ${formatCount(metrics.failedRequests)}）`}
+          hint={`缓存复用计入成功，客户端取消与拦截/封禁不计入分母（成功 ${formatCount(metrics.successRequests)} / 失败 ${formatCount(metrics.failedRequests)}）`}
           tone={metrics.serviceSuccessRate >= 95 ? 'success' : 'warning'}
         />
         <StatCard

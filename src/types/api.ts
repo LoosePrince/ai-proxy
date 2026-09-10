@@ -7,7 +7,16 @@ export type RoutingRule = 'priority' | 'random' | 'average';
 
 export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt' | 'only-user-messages';
 
-export type MaliciousBehaviorAction = 'ignore' | 'error' | 'response';
+/**
+ * 违禁内容触发后的处理方式。
+ *   ban       永久封禁该 IP（写入黑名单），并拒绝本次请求
+ *   block     临时拦截该 IP（内存级，持续 maliciousThrottleMinutes 分钟），拒绝本次请求
+ *   throttle  临时限流该 IP（内存级，持续 maliciousThrottleMinutes 分钟），拒绝本次请求
+ *   empty     空回复（200 + 空消息）
+ *   error     报错（返回错误码）
+ *   response  返回指定响应内容
+ */
+export type MaliciousBehaviorAction = 'ban' | 'block' | 'throttle' | 'empty' | 'error' | 'response';
 
 /** primary 参与常规路由；fallback / parallel 是单例特殊角色，DB 里同样是真实行 */
 export type ProviderKind = 'primary' | 'fallback' | 'parallel';
@@ -95,6 +104,10 @@ export interface ProviderDTO {
   /** apiKey 永不出站，只暴露是否已配置 */
   hasApiKey: boolean;
   models: string[];
+  /** 该 Provider（及其全部模型）不参与模型 id 匹配，只能被正常路由命中 */
+  excludeFromModelMatching: boolean;
+  /** 仅这些模型名不参与模型 id 匹配，其余模型仍可被匹配 */
+  modelMatchExcludeModels: string[];
   kind: ProviderKind;
   source: ProviderSource;
   priority: number;
@@ -137,6 +150,10 @@ export interface ProviderUpsertInput {
   mainScript?: string;
   scheduleEnabled?: boolean;
   scheduleCron?: string;
+  /** 不参与模型 id 匹配（该 Provider 及全部模型只能被正常路由命中） */
+  excludeFromModelMatching?: boolean;
+  /** 仅这些模型名不参与模型 id 匹配 */
+  modelMatchExcludeModels?: string[];
   kind?: ProviderKind;
   priority?: number;
   enabled?: boolean;
@@ -208,6 +225,22 @@ export interface SettingsDTO {
   maliciousRequestAction: MaliciousBehaviorAction;
   /** maliciousRequestAction=response 时返回的文本 */
   maliciousResponse: string;
+  /** 自定义违禁提示词内容，每行或逗号分隔一个词 */
+  forbiddenKeywords: string;
+  /** block / throttle 处理方式下拦截或限流的时长（分钟） */
+  maliciousThrottleMinutes: number;
+  /** 拦截 / 封禁请求时返回给客户端的报错消息 */
+  blockedErrorMessage: string;
+  /** 是否启用模型名相近匹配（例如用模型 ID 优先匹配到声明了近似模型名的 Provider） */
+  fuzzyModelMatchingEnabled: boolean;
+  /** 同 IP 每 10 分钟请求数上限，0 表示不启用 */
+  ipRateLimitPer10Min: number;
+  /** 同 IP 每 30 分钟请求数上限，0 表示不启用 */
+  ipRateLimitPer30Min: number;
+  /** 自定义限流窗口长度（小时），0 表示不启用 */
+  ipRateLimitHours: number;
+  /** 同 IP 在自定义窗口（ipRateLimitHours 小时）内的请求数上限，0 表示不启用 */
+  ipRateLimitPerXHours: number;
 }
 
 export type SettingsPatch = Partial<SettingsDTO>;
@@ -243,9 +276,11 @@ export interface OutcomeBreakdown {
 /**
  * 两个口径刻意分开，因为它们回答的是不同的问题：
  *
- *   serviceSuccessRate  = (upstreamOk + cacheHit) / (requests - clientAbort)
+ *   serviceSuccessRate  = (upstreamOk + cacheHit) / (requests - clientAbort - rejected)
  *                         「用户发起的请求里，有多少真的拿到了结果」
- *                         缓存复用是有效交付，计入；客户端自己挂断不是服务的锅，剔除。
+ *                         缓存复用是有效交付，计入；客户端自己挂断不是服务的锅，剔除；
+ *                         被网关拦截 / 封禁的请求是策略决定而非服务故障，也剔除，
+ *                         否则会虚拉低交付率。
  *
  *   upstreamSuccessRate = upstreamOk / (upstreamOk + upstreamError)
  *                         「真正打到上游的调用里，上游有多少次成功」

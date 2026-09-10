@@ -98,6 +98,8 @@ interface FormValues {
   baseUrl: string;
   apiKey?: string;
   models: string[];
+  excludeFromModelMatching: boolean;
+  modelMatchExcludeModels: string[];
   systemPrompt: string;
   requestMode: ProviderRequestMode;
   requestScript: string;
@@ -155,6 +157,8 @@ export function Providers() {
       baseUrl: '',
       apiKey: '',
       models: [],
+      excludeFromModelMatching: false,
+      modelMatchExcludeModels: [],
       systemPrompt: '',
       requestMode: 'openai',
       requestScript: '',
@@ -180,6 +184,8 @@ export function Providers() {
         // 留空表示保持原 key，不预填任何占位字符
         apiKey: '',
         models: record.models,
+        excludeFromModelMatching: record.excludeFromModelMatching,
+        modelMatchExcludeModels: record.modelMatchExcludeModels,
         systemPrompt: record.systemPrompt,
         requestMode: record.requestMode,
         requestScript: record.requestScript,
@@ -251,6 +257,8 @@ export function Providers() {
           baseUrl: values.baseUrl,
           apiKey: values.apiKey?.trim() || undefined,
           models: values.models,
+          excludeFromModelMatching: values.excludeFromModelMatching,
+          modelMatchExcludeModels: values.modelMatchExcludeModels,
           systemPrompt: values.systemPrompt,
           requestMode: values.requestMode,
           requestScript: values.requestScript,
@@ -408,14 +416,18 @@ export function Providers() {
             {
               title: '模型',
               dataIndex: 'models',
-              render: (models: string[]) =>
-                models.length === 0 ? (
-                  <span className="faint">透传请求模型</span>
-                ) : (
-                  <Tooltip title={models.join('、')}>
-                    <Tag>{models.length} 个</Tag>
-                  </Tooltip>
-                ),
+              render: (models: string[], row) => (
+                <Space size={4}>
+                  {models.length === 0 ? (
+                    <span className="faint">透传请求模型</span>
+                  ) : (
+                    <Tooltip title={models.join('、')}>
+                      <Tag>{models.length} 个</Tag>
+                    </Tooltip>
+                  )}
+                  {row.excludeFromModelMatching ? <Tag color="orange">不参与匹配</Tag> : null}
+                </Space>
+              ),
             },
             {
               title: 'Priority',
@@ -617,6 +629,35 @@ export function Providers() {
 
           <Form.Item name="models" label="模型列表" extra="留空表示直接透传请求中的模型名">
             <ModelChipEditor value={modelValues} onChange={(models) => form.setFieldValue('models', models)} />
+          </Form.Item>
+
+          <Form.Item
+            name="excludeFromModelMatching"
+            label="不参与模型 id 匹配"
+            valuePropName="checked"
+            extra="开启后该 Provider 及其全部模型都不会被请求模型优先命中，只能通过正常路由（priority / random / average）被随机命中。"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            name="modelMatchExcludeModels"
+            label="不参与匹配的模型"
+            extra="这些模型不会被请求模型匹配选中，但仍可通过正常路由被命中。留空表示全部参与匹配。"
+          >
+            <Select
+              mode="tags"
+              className="control-full"
+              placeholder="输入模型名后回车"
+              tokenSeparators={[',', '\n', ' ']}
+              open={false}
+              onChange={(next: string[]) => {
+                form.setFieldValue(
+                  'modelMatchExcludeModels',
+                  [...new Set(next.map((item: string) => String(item).trim()).filter(Boolean))],
+                );
+              }}
+            />
           </Form.Item>
 
           <Form.Item

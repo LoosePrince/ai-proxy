@@ -213,7 +213,12 @@ export const adminApi = {
     request<{
       config: { cached: boolean; loadedAt: string | null; providerCount: number; groupCount: number };
       writeQueue: { pending: number; enqueued: number; persisted: number; dropped: number; lastError: string | null };
-      counters: { ipBuckets: number; rotationCursors: number };
+      counters: {
+        ipBuckets: number;
+        rotationCursors: number;
+        temporaryBlocks: number;
+        temporaryThrottles: number;
+      };
       upstreamClients: number;
       uptimeSec: number;
     }>('/admin/api/runtime'),

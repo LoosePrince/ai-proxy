@@ -29,6 +29,10 @@ const HARD_DEFAULTS: SettingsDTO = {
   fallbackResponseTimeoutMs: 30_000,
   parallelTimeoutMs: 14_000,
   ipRateLimitRpm: 20,
+  ipRateLimitPer10Min: 0,
+  ipRateLimitPer30Min: 0,
+  ipRateLimitHours: 0,
+  ipRateLimitPerXHours: 0,
   maxPrimaryAttempts: 3,
   maxModelRetryCount: 3,
   logRetentionDays: 0,
@@ -42,8 +46,12 @@ const HARD_DEFAULTS: SettingsDTO = {
   ideRequestHandlingEnabled: true,
   maliciousRequestHandlingEnabled: true,
   ideRequestAction: 'ignore',
-  maliciousRequestAction: 'ignore',
+  maliciousRequestAction: 'empty',
   maliciousResponse: '抱歉，我无法协助处理该请求。',
+  forbiddenKeywords: '',
+  maliciousThrottleMinutes: 30,
+  blockedErrorMessage: '该 IP 已被禁止访问',
+  fuzzyModelMatchingEnabled: true,
 };
 
 export function normalizeRoutingRule(value: unknown): RoutingRule {
@@ -75,8 +83,12 @@ function normalizeIdeAction(value: unknown): RequestBehaviorAction {
 }
 
 function normalizeMaliciousAction(value: unknown): MaliciousBehaviorAction {
-  if (value === 'error' || value === 'response') return value;
-  return 'ignore';
+  // 旧配置词汇 ignore 映射为 empty（200 + 空消息），语义一致
+  if (value === 'ignore') return 'empty';
+  if (value === 'ban' || value === 'block' || value === 'throttle' || value === 'empty' || value === 'error' || value === 'response') {
+    return value;
+  }
+  return 'empty';
 }
 
 function normalizeProjectUrl(value: unknown): string {
@@ -143,6 +155,22 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
     ideRequestAction: normalizeIdeAction(raw.ideRequestAction),
     maliciousRequestAction: normalizeMaliciousAction(raw.maliciousRequestAction),
     maliciousResponse: raw.maliciousResponse ?? HARD_DEFAULTS.maliciousResponse,
+    forbiddenKeywords: raw.forbiddenKeywords ?? HARD_DEFAULTS.forbiddenKeywords,
+    maliciousThrottleMinutes: normalizePositiveInt(
+      raw.maliciousThrottleMinutes,
+      HARD_DEFAULTS.maliciousThrottleMinutes,
+    ),
+    blockedErrorMessage: raw.blockedErrorMessage?.trim()
+      ? raw.blockedErrorMessage
+      : HARD_DEFAULTS.blockedErrorMessage,
+    fuzzyModelMatchingEnabled: normalizeBoolean(
+      raw.fuzzyModelMatchingEnabled,
+      HARD_DEFAULTS.fuzzyModelMatchingEnabled,
+    ),
+    ipRateLimitPer10Min: normalizeNonNegativeInt(raw.ipRateLimitPer10Min, HARD_DEFAULTS.ipRateLimitPer10Min),
+    ipRateLimitPer30Min: normalizeNonNegativeInt(raw.ipRateLimitPer30Min, HARD_DEFAULTS.ipRateLimitPer30Min),
+    ipRateLimitHours: normalizeNonNegativeInt(raw.ipRateLimitHours, HARD_DEFAULTS.ipRateLimitHours),
+    ipRateLimitPerXHours: normalizeNonNegativeInt(raw.ipRateLimitPerXHours, HARD_DEFAULTS.ipRateLimitPerXHours),
   };
 }
 
@@ -214,6 +242,13 @@ export async function seedSettingsFromEnv(): Promise<void> {
     ),
     parallelTimeoutMs: normalizePositiveInt(env.PARALLEL_RESPONSE_TIMEOUT_MS, HARD_DEFAULTS.parallelTimeoutMs),
     ipRateLimitRpm: normalizeNonNegativeInt(env.IP_RATE_LIMIT_RPM, HARD_DEFAULTS.ipRateLimitRpm),
+    ipRateLimitPer10Min: normalizeNonNegativeInt(env.IP_RATE_LIMIT_PER_10_MIN, HARD_DEFAULTS.ipRateLimitPer10Min),
+    ipRateLimitPer30Min: normalizeNonNegativeInt(env.IP_RATE_LIMIT_PER_30_MIN, HARD_DEFAULTS.ipRateLimitPer30Min),
+    ipRateLimitHours: normalizeNonNegativeInt(env.IP_RATE_LIMIT_HOURS, HARD_DEFAULTS.ipRateLimitHours),
+    ipRateLimitPerXHours: normalizeNonNegativeInt(
+      env.IP_RATE_LIMIT_PER_X_HOURS,
+      HARD_DEFAULTS.ipRateLimitPerXHours,
+    ),
     maxPrimaryAttempts: HARD_DEFAULTS.maxPrimaryAttempts,
     maxModelRetryCount: HARD_DEFAULTS.maxModelRetryCount,
     logRetentionDays: normalizeNonNegativeInt(env.LOG_RETENTION_DAYS, HARD_DEFAULTS.logRetentionDays),
@@ -229,6 +264,10 @@ export async function seedSettingsFromEnv(): Promise<void> {
     ideRequestAction: HARD_DEFAULTS.ideRequestAction,
     maliciousRequestAction: HARD_DEFAULTS.maliciousRequestAction,
     maliciousResponse: HARD_DEFAULTS.maliciousResponse,
+    forbiddenKeywords: HARD_DEFAULTS.forbiddenKeywords,
+    maliciousThrottleMinutes: HARD_DEFAULTS.maliciousThrottleMinutes,
+    blockedErrorMessage: HARD_DEFAULTS.blockedErrorMessage,
+    fuzzyModelMatchingEnabled: HARD_DEFAULTS.fuzzyModelMatchingEnabled,
   };
 
   const statements: LsqliteStatement[] = Object.entries(seeds).map(([key, value]) =>

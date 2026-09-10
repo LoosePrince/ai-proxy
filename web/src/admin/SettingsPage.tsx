@@ -56,8 +56,11 @@ const IDE_ACTION_OPTIONS: Array<{ label: string; value: RequestBehaviorAction }>
 ];
 
 const MALICIOUS_ACTION_OPTIONS: Array<{ label: string; value: MaliciousBehaviorAction }> = [
-  { label: '忽略请求（200 + 空消息）', value: 'ignore' },
-  { label: '失败（返回错误码）', value: 'error' },
+  { label: '封禁该 IP（写入黑名单，永久拒绝）', value: 'ban' },
+  { label: '拦截该 IP（临时封禁一段时间）', value: 'block' },
+  { label: '限流该 IP（一段时间内拒绝）', value: 'throttle' },
+  { label: '空回复（200 + 空消息）', value: 'empty' },
+  { label: '报错（返回错误码）', value: 'error' },
   { label: '返回指定响应内容', value: 'response' },
 ];
 
@@ -65,7 +68,7 @@ type BehaviorConfigTarget = 'ide' | 'malicious';
 type PromptConfigValues = Pick<SettingsDTO, 'globalSystemPrompt'>;
 type BehaviorConfigValues = Pick<
   SettingsDTO,
-  'ideRequestAction' | 'maliciousRequestAction' | 'maliciousResponse'
+  'ideRequestAction' | 'maliciousRequestAction' | 'maliciousResponse' | 'maliciousThrottleMinutes' | 'forbiddenKeywords'
 >;
 
 function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () => void }) {
@@ -113,6 +116,8 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
       ideRequestAction: form.getFieldValue('ideRequestAction'),
       maliciousRequestAction: form.getFieldValue('maliciousRequestAction'),
       maliciousResponse: form.getFieldValue('maliciousResponse'),
+      maliciousThrottleMinutes: form.getFieldValue('maliciousThrottleMinutes'),
+      forbiddenKeywords: form.getFieldValue('forbiddenKeywords'),
     });
     setBehaviorConfigTarget(target);
   };
@@ -126,6 +131,8 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
       form.setFieldsValue({
         maliciousRequestAction: values.maliciousRequestAction,
         maliciousResponse: values.maliciousResponse,
+        maliciousThrottleMinutes: values.maliciousThrottleMinutes,
+        forbiddenKeywords: values.forbiddenKeywords,
       });
     }
     setBehaviorConfigTarget(null);
@@ -207,15 +214,6 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
         </Form.Item>
 
         <Form.Item
-          name="ipRateLimitRpm"
-          label="同 IP 每分钟请求上限"
-          rules={[{ required: true, message: '必填' }]}
-          tooltip="0 表示不限流。限流是进程内的滑动窗口，多实例部署时每个实例独立计数。"
-        >
-          <InputNumber min={0} className="control-full" />
-        </Form.Item>
-
-        <Form.Item
           name="logRetentionDays"
           label="日志保留天数"
           rules={[{ required: true, message: '必填' }]}
@@ -268,7 +266,68 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
         >
           <InputNumber min={1} max={8760} className="control-full" />
         </Form.Item>
+
+        <Form.Item
+          name="fuzzyModelMatchingEnabled"
+          label="相近模型匹配"
+          valuePropName="checked"
+          tooltip="启用后，请求的模型 ID 会优先匹配到声明了近似模型名的 Provider（例如 GPT 4o mini → openai/gpt-4o-mini）。关闭后完全不处理请求中的模型 ID，按未传模型处理。"
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          name="blockedErrorMessage"
+          label="拦截 / 封禁提示消息"
+          tooltip="黑名单封禁、违禁内容触发的拦截与限流返回给客户端的报错内容。"
+        >
+          <Input placeholder="该 IP 已被禁止访问" />
+        </Form.Item>
       </div>
+
+      <Card size="small" title="同 IP 请求上限（多窗口同时生效）" className="nested-settings-card">
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          每个窗口独立计数、独立判定，任一窗口超限即拒绝该请求，多个上限可以同时生效。0 表示不启用对应窗口。
+          限流在统一网关层执行，超限请求不会被读取请求体。
+        </Typography.Paragraph>
+        <div className="settings-grid">
+          <Form.Item
+            name="ipRateLimitRpm"
+            label="每分钟上限"
+            tooltip="0 表示不启用。限流是进程内的滑动窗口，多实例部署时每个实例独立计数。"
+          >
+            <InputNumber min={0} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="ipRateLimitPer10Min"
+            label="每 10 分钟上限"
+            tooltip="0 表示不启用。"
+          >
+            <InputNumber min={0} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="ipRateLimitPer30Min"
+            label="每 30 分钟上限"
+            tooltip="0 表示不启用。"
+          >
+            <InputNumber min={0} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="ipRateLimitPerXHours"
+            label="自定义窗口内上限"
+            tooltip="0 表示不启用。与下方窗口时长搭配生效。"
+          >
+            <InputNumber min={0} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="ipRateLimitHours"
+            label="自定义窗口时长（小时）"
+            tooltip="例如填 6 + 上限 100，表示同一 IP 每 6 小时最多 100 次请求。"
+          >
+            <InputNumber min={0} max={8760} className="control-full" />
+          </Form.Item>
+        </div>
+      </Card>
 
       <div hidden>
         <Form.Item name="globalSystemPrompt">
@@ -281,6 +340,12 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           <Input />
         </Form.Item>
         <Form.Item name="maliciousResponse">
+          <Input />
+        </Form.Item>
+        <Form.Item name="maliciousThrottleMinutes">
+          <Input />
+        </Form.Item>
+        <Form.Item name="forbiddenKeywords">
           <Input />
         </Form.Item>
       </div>
@@ -395,11 +460,18 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
             <>
               <Form.Item
                 name="maliciousRequestAction"
-                label="检测到恶意行为内容后"
-                tooltip="覆盖逆序、越狱、破解、攻击和明显违法内容等模式。"
+                label="检测到违禁提示词后"
+                tooltip="覆盖逆序、越狱、破解、攻击和明显违法内容等模式，以及下方自定义违禁词。"
                 rules={[{ required: true, message: '请选择处理方式' }]}
               >
                 <Select options={MALICIOUS_ACTION_OPTIONS} />
+              </Form.Item>
+              <Form.Item
+                name="maliciousThrottleMinutes"
+                label="拦截 / 限流时长（分钟）"
+                extra="仅当处理方式为“拦截该 IP”或“限流该 IP”时生效。"
+              >
+                <InputNumber min={1} className="control-full" />
               </Form.Item>
               <Form.Item
                 name="maliciousResponse"
@@ -409,6 +481,16 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
                 <Input.TextArea
                   autoSize={{ minRows: 4, maxRows: 10 }}
                   placeholder="请输入要返回给客户端的内容"
+                />
+              </Form.Item>
+              <Form.Item
+                name="forbiddenKeywords"
+                label="自定义违禁提示词"
+                tooltip="每行或逗号分隔一个词；用户消息命中任一词汇即按上述方式处理。"
+              >
+                <Input.TextArea
+                  autoSize={{ minRows: 3, maxRows: 8 }}
+                  placeholder={'例如：\n泄露公司机密\n攻击内网服务器'}
                 />
               </Form.Item>
             </>
@@ -597,9 +679,10 @@ function RuntimePanel() {
             </div>
           </div>
           <div>
-            <div className="stat-label">限流桶 / 轮转游标</div>
+            <div className="stat-label">限流桶 / 轮转游标 / 临时拦截</div>
             <div className="stat-value">
-              {data.counters.ipBuckets} / {data.counters.rotationCursors}
+              {data.counters.ipBuckets} / {data.counters.rotationCursors} /{' '}
+              {data.counters.temporaryBlocks + data.counters.temporaryThrottles}
             </div>
             <div className="stat-hint">均有上界，超出后按最久未用淘汰</div>
           </div>

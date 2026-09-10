@@ -83,12 +83,15 @@ function editDistance(a: string, b: string): number {
 /**
  * 模型名匹配分数。优先级依次为原名、忽略分隔符、忽略厂商前缀、前缀/后缀与轻微拼写差异。
  * 低于阈值即视为不同模型，防止“模糊匹配”扩散成任意模型路由。
+ *
+ * fuzzy=false 时只认完全一致的模型 ID（大小写不敏感），关闭相近匹配能力。
  */
-export function modelMatchScore(requested: string, available: string): number {
+export function modelMatchScore(requested: string, available: string, fuzzy = true): number {
   const requestRaw = requested.trim().toLowerCase();
   const availableRaw = available.trim().toLowerCase();
   if (!requestRaw || !availableRaw) return 0;
   if (requestRaw === availableRaw) return 100;
+  if (!fuzzy) return 0;
 
   const requestCanonical = canonicalModelName(requestRaw);
   const availableCanonical = canonicalModelName(availableRaw);
@@ -110,15 +113,20 @@ export function modelMatchScore(requested: string, available: string): number {
   return similarity >= 0.8 ? 72 + similarity * 8 : 0;
 }
 
-function bestProviderModelScore(provider: ProviderRecord, requestedModel: string): number {
+function bestProviderModelScore(provider: ProviderRecord, requestedModel: string, fuzzy: boolean): number {
+  // 配置了不参与模型匹配的 Provider（或其全部模型）永远不被模型匹配选中，只能被正常路由命中。
+  if (provider.excludeFromModelMatching) return 0;
   // 未声明模型表示 provider 接受客户端模型透传。
   if (provider.models.length === 0) return 100;
-  return Math.max(0, ...provider.models.map((model) => modelMatchScore(requestedModel, model)));
+  const matchable = provider.models.filter((model) => !provider.modelMatchExcludeModels.includes(model));
+  if (matchable.length === 0) return 0;
+  return Math.max(0, ...matchable.map((model) => modelMatchScore(requestedModel, model, fuzzy)));
 }
 
 /**
  * 候选筛选只负责找出指定模型的最佳匹配 Provider。
- * 没有指定模型或没有达到匹配阈值时返回全部启用的 primary Provider。
+ * 没有指定模型、关闭相近匹配、或没有达到匹配阈值时返回全部启用的 primary Provider。
+ * 配置了不参与模型匹配的 Provider 不会出现在匹配结果里，但保留在正常路由中。
  *
  * 注意：这里的匹配结果只用于“优先尝试谁”，不能作为完整主链；否则最佳
  * Provider 失败后会跳过其余正常路由，直接落到 fallback。
@@ -126,11 +134,15 @@ function bestProviderModelScore(provider: ProviderRecord, requestedModel: string
 export function selectCandidates(
   providers: ProviderRecord[],
   requestedModel: string | null,
+  fuzzy = true,
 ): ProviderRecord[] {
   const primary = providers.filter((p) => p.kind === 'primary' && p.enabled);
-  if (!requestedModel) return primary;
+  // 关闭相近匹配 = 不处理请求中的模型 id，按未传模型处理
+  if (!requestedModel || !fuzzy) return primary;
 
-  const scored = primary.map((provider) => ({ provider, score: bestProviderModelScore(provider, requestedModel) }));
+  const scored = primary
+    .filter((provider) => !provider.excludeFromModelMatching)
+    .map((provider) => ({ provider, score: bestProviderModelScore(provider, requestedModel, fuzzy) }));
   const bestScore = Math.max(0, ...scored.map((item) => item.score));
   if (bestScore < 72) return primary;
 
@@ -182,6 +194,7 @@ export function buildAttemptChain(
   requestedModel: string | null,
   globalRule: RoutingRule,
   cursor: RotationCursor,
+  fuzzy = true,
 ): ProviderRecord[] {
   const primary = providers.filter((provider) => provider.kind === 'primary' && provider.enabled);
   if (primary.length === 0) return [];
@@ -197,8 +210,9 @@ export function buildAttemptChain(
     ),
   );
 
-  if (!requestedModel) return ordered;
-  const preferredIds = new Set(selectCandidates(primary, requestedModel).map((provider) => provider.id));
+  // 关闭相近匹配 = 不处理请求中的模型 id，按未传模型处理（不做任何模型优先）
+  if (!requestedModel || !fuzzy) return ordered;
+  const preferredIds = new Set(selectCandidates(primary, requestedModel, fuzzy).map((provider) => provider.id));
   if (preferredIds.size === primary.length) return ordered;
 
   return [
@@ -243,6 +257,7 @@ export function buildModelCandidates(
   rule: RoutingRule,
   cursor: RotationCursor,
   maxCount: number,
+  fuzzy = true,
 ): string[] {
   const models = [...new Set(provider.models.map((m) => m.trim()).filter(Boolean))];
 
@@ -259,9 +274,22 @@ export function buildModelCandidates(
   }
 
   const effectiveRequestedModel = provider.kind === 'fallback' ? null : requestedModel;
+  /*
+   * 满足以下条件才尝试把请求模型映射到 provider 的模型：
+   *   - 相近匹配开关开启（关闭 = 不处理模型 id，按未传模型处理）
+   *   - 该 Provider 未被配置为不参与模型匹配
+   *   - 还存在未被排除的模型可参与匹配
+   * 被排除的模型不会被匹配选中，但仍可被正常策略（priority/random/average）命中。
+   */
+  const matchableModels = models.filter((model) => !provider.modelMatchExcludeModels.includes(model));
+  const canMatch =
+    !!effectiveRequestedModel && fuzzy && !provider.excludeFromModelMatching && matchableModels.length > 0;
 
-  if (effectiveRequestedModel) {
-    const scored = models.map((model) => ({ model, score: modelMatchScore(effectiveRequestedModel, model) }));
+  if (canMatch) {
+    const scored = matchableModels.map((model) => ({
+      model,
+      score: modelMatchScore(effectiveRequestedModel, model, fuzzy),
+    }));
     const bestScore = Math.max(0, ...scored.map((item) => item.score));
     if (bestScore >= 72) {
       const matched = scored.filter((item) => item.score >= bestScore - 1).map((item) => item.model);
@@ -269,7 +297,8 @@ export function buildModelCandidates(
     }
   }
 
-  // 未指定模型，或指定模型在当前 provider 无匹配时，走正常模型选择策略。
+  // 未指定模型、关闭相近匹配、Provider 被排除、或指定模型在匹配池中无命中时，
+  // 走正常模型选择策略（被排除的模型仍可能在这里被随机/轮转命中）。
   return applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor).slice(0, maxCount);
 }
 

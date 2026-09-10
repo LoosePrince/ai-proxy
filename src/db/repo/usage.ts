@@ -81,17 +81,31 @@ function toBreakdown(row: Record<string, unknown> | null | undefined): OutcomeBr
 /**
  * 由分类计数派生两个成功率。这是全站唯一的成功率定义处。
  *
- *   serviceSuccessRate  交付率：缓存复用算成功，客户端取消从分母剔除
+ *   serviceSuccessRate  交付率：缓存复用算成功，客户端取消从分母剔除；
+ *                       被网关拦截 / 封禁的请求是策略决定而非服务故障，
+ *                       也一并剔除，否则会虚拉低交付率
  *   upstreamSuccessRate 上游健康度：只看真正打到上游的调用
  */
 export function successRatesOf(breakdown: OutcomeBreakdown): SuccessRates {
   const delivered = breakdown.upstreamOk + breakdown.cacheHit;
-  const attributable = Math.max(breakdown.requests - breakdown.clientAbort, 0);
+  const attributable = Math.max(breakdown.requests - breakdown.clientAbort - breakdown.rejected, 0);
   const upstreamCalls = breakdown.upstreamOk + breakdown.upstreamError;
 
   return {
     serviceSuccessRate: percent(delivered, attributable),
     upstreamSuccessRate: percent(breakdown.upstreamOk, upstreamCalls),
+  };
+}
+
+/**
+ * 剥离被拦截 / 封禁的请求，用于对外公开的统计口径：
+ * 被策略拒绝的请求不应计入公开的请求数与失败数。
+ */
+function withoutRejected(breakdown: OutcomeBreakdown): OutcomeBreakdown {
+  return {
+    ...breakdown,
+    requests: Math.max(breakdown.requests - breakdown.rejected, 0),
+    rejected: 0,
   };
 }
 
@@ -123,7 +137,8 @@ export async function getPublicStats(detailedStatsEnabled: boolean): Promise<Pub
        from global_usage where id = 1`,
   );
 
-  const breakdown = toBreakdown(row);
+  // 被拦截 / 封禁的请求不记入对外统计
+  const breakdown = withoutRejected(toBreakdown(row));
 
   return {
     totalRequests: breakdown.requests,
@@ -405,17 +420,19 @@ const PUBLIC_DETAIL_DAYS = 30;
 const PUBLIC_MODEL_LIMIT = 12;
 
 function toPublicDaily(row: UsageDailyDTO): PublicDailyStatsDTO {
+  // 被拦截 / 封禁的请求不记入对外统计
+  const stripped = withoutRejected(row);
   return {
     day: row.day,
     isHistorical: row.isHistorical,
-    requests: row.requests,
-    success: row.upstreamOk + row.cacheHit,
-    failed: row.upstreamError + row.rejected,
-    cacheHit: row.cacheHit,
-    clientAbort: row.clientAbort,
+    requests: stripped.requests,
+    success: stripped.upstreamOk + stripped.cacheHit,
+    failed: stripped.upstreamError + stripped.rejected,
+    cacheHit: stripped.cacheHit,
+    clientAbort: stripped.clientAbort,
     totalTokens: row.totalTokens,
-    serviceSuccessRate: row.serviceSuccessRate,
-    upstreamSuccessRate: row.upstreamSuccessRate,
+    serviceSuccessRate: successRatesOf(stripped).serviceSuccessRate,
+    upstreamSuccessRate: successRatesOf(stripped).upstreamSuccessRate,
   };
 }
 
@@ -442,7 +459,8 @@ export async function getPublicDetailedStats(): Promise<PublicDetailedStatsDTO> 
     ),
   ]);
 
-  const breakdown = sumBreakdown(daily);
+  // 被拦截 / 封禁的请求不记入对外统计
+  const breakdown = withoutRejected(sumBreakdown(daily));
   const promptTokens = daily.reduce((sum, row) => sum + row.promptTokens, 0);
   const completionTokens = daily.reduce((sum, row) => sum + row.completionTokens, 0);
 

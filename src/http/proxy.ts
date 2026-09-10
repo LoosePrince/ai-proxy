@@ -17,7 +17,12 @@ import express, { type Request, type RequestHandler, type Response } from 'expre
 
 import { createRaceWindow, createResponseGate, ResponseClaimedError, type ResponseGate } from '../core/gate';
 import { normalizeChatPayload, responsesPayloadToChat, type JsonRecord } from '../core/protocol';
-import { inspectRequest, keepOnlyUserMessages, stripClientSystemPrompts } from '../core/request-policy';
+import {
+  inspectRequest,
+  keepOnlyUserMessages,
+  parseForbiddenKeywords,
+  stripClientSystemPrompts,
+} from '../core/request-policy';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import {
@@ -41,14 +46,23 @@ import {
 import type { ProviderRecord } from '../db/repo/providers';
 import { findReusableResponse, saveCachedResponse } from '../db/repo/response-cache';
 import type { RequestContentInput } from '../db/repo/requests';
-import { getConfig, type ConfigSnapshot } from '../runtime/config-cache';
-import { checkRateLimit, rotationCursor } from '../runtime/counters';
+import { addIpBlacklist } from '../db/repo/ip-blacklist';
+import { getConfig, invalidateConfig, peekConfig, type ConfigSnapshot } from '../runtime/config-cache';
+import {
+  blockIpTemporarily,
+  checkRateLimit,
+  rotationCursor,
+  temporaryBlockRemainingSec,
+  temporaryThrottleRemainingSec,
+  throttleIpTemporarily,
+  type RateLimitRule,
+} from '../runtime/counters';
 import { publishPublicContent } from '../runtime/public-content-stream';
 import { enqueueRequestEvent } from '../runtime/write-queue';
 import { invokeProviderScript } from '../upstream/script';
 import { getUpstreamClient } from '../upstream/client';
 import { invokeUpstream, writeStreamError, type InvokeResult } from '../upstream/invoke';
-import type { AttemptRole } from '../types/api';
+import type { AttemptRole, SettingsDTO } from '../types/api';
 
 const router = express.Router();
 
@@ -73,6 +87,29 @@ function getClientIp(req: Request): string {
     return normalizeIp(forwarded.split(',')[0]?.trim() || 'unknown');
   }
   return normalizeIp(req.ip || 'unknown');
+}
+
+/**
+ * 从 settings 编译多窗口限流规则。任一窗口超限即拒绝，多个上限同时生效。
+ * 0 / 缺省值表示该窗口不启用。
+ */
+function rateLimitRules(settings: SettingsDTO): RateLimitRule[] {
+  const rules: RateLimitRule[] = [];
+  if (settings.ipRateLimitRpm > 0) rules.push({ windowMs: 60_000, limit: settings.ipRateLimitRpm, label: '每分钟' });
+  if (settings.ipRateLimitPer10Min > 0) {
+    rules.push({ windowMs: 600_000, limit: settings.ipRateLimitPer10Min, label: '每 10 分钟' });
+  }
+  if (settings.ipRateLimitPer30Min > 0) {
+    rules.push({ windowMs: 1_800_000, limit: settings.ipRateLimitPer30Min, label: '每 30 分钟' });
+  }
+  if (settings.ipRateLimitHours > 0 && settings.ipRateLimitPerXHours > 0) {
+    rules.push({
+      windowMs: settings.ipRateLimitHours * 3_600_000,
+      limit: settings.ipRateLimitPerXHours,
+      label: `每 ${settings.ipRateLimitHours} 小时`,
+    });
+  }
+  return rules;
 }
 
 function errorStatus(error: unknown): number {
@@ -155,6 +192,7 @@ async function attemptProvider(args: {
     groupRule,
     rotationCursor,
     config.settings.maxModelRetryCount,
+    config.settings.fuzzyModelMatchingEnabled,
   );
 
   // provider 无可用模型：不发起调用，但仍留痕以便排查配置问题
@@ -368,13 +406,6 @@ async function handleProxyRequest(
   contentLoggingEnabled = settings.requestContentLoggingEnabled;
   publicContentStreamEnabled = settings.publicRequestContentStreamEnabled;
 
-  if (config.blacklistedIps.has(ip)) {
-    const message = '该 IP 已被禁止访问';
-    finish({ outcome: 'rejected', httpStatus: 403, errorCode: 'ip_blacklisted', errorMessage: message });
-    res.status(403).json({ error: { message, type: 'ip_blacklisted' } });
-    return;
-  }
-
   const respondLocally = (content: string, reason: 'ide_request' | 'malicious_request'): void => {
     trace = withFirstResponse(trace);
     const synthetic = writeSyntheticSuccess(
@@ -406,17 +437,52 @@ async function handleProxyRequest(
 
   const inspection =
     settings.ideRequestHandlingEnabled || settings.maliciousRequestHandlingEnabled
-      ? inspectRequest(payload)
+      ? inspectRequest(payload, { customKeywords: parseForbiddenKeywords(settings.forbiddenKeywords) })
       : { isIdeRequest: false, isMalicious: false };
   if (settings.maliciousRequestHandlingEnabled && inspection.isMalicious) {
-    if (settings.maliciousRequestAction === 'error') {
+    const action = settings.maliciousRequestAction;
+
+    // 封禁 / 拦截 / 限流是 IP 级动作：本次请求直接拒绝，后续流量在网关层拦截
+    if (action === 'ban') {
+      if (ip && ip !== 'unknown') {
+        try {
+          await addIpBlacklist(ip, '触发违禁内容策略，自动封禁');
+        } catch (error) {
+          console.warn(`[Proxy] 自动封禁写入失败: ${errorMessage(error)}`);
+        }
+        invalidateConfig();
+      }
+      const message = settings.blockedErrorMessage;
+      finish({ outcome: 'rejected', httpStatus: 403, errorCode: 'ip_blacklisted', errorMessage: message });
+      res.status(403).json({ error: { message, code: 'ip_blacklisted' } });
+      return;
+    }
+
+    if (action === 'block') {
+      if (ip && ip !== 'unknown') blockIpTemporarily(ip, settings.maliciousThrottleMinutes);
+      const message = settings.blockedErrorMessage;
+      finish({ outcome: 'rejected', httpStatus: 403, errorCode: 'ip_blocked', errorMessage: message });
+      res.status(403).json({ error: { message, code: 'ip_blocked' } });
+      return;
+    }
+
+    if (action === 'throttle') {
+      if (ip && ip !== 'unknown') throttleIpTemporarily(ip, settings.maliciousThrottleMinutes);
+      const message = settings.blockedErrorMessage;
+      const retryAfterSec = Math.max(1, settings.maliciousThrottleMinutes * 60);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      finish({ outcome: 'rejected', httpStatus: 429, errorCode: 'ip_throttled', errorMessage: message });
+      res.status(429).json({ error: { message, code: 'ip_throttled' } });
+      return;
+    }
+
+    if (action === 'error') {
       rejectByPolicy('malicious_request_blocked', '请求包含被安全策略拒绝的内容');
       return;
     }
-    respondLocally(
-      settings.maliciousRequestAction === 'response' ? settings.maliciousResponse : '',
-      'malicious_request',
-    );
+
+    // empty（空回复）与 response（返回指定响应内容）
+    respondLocally(action === 'response' ? settings.maliciousResponse : '', 'malicious_request');
     return;
   }
 
@@ -435,19 +501,8 @@ async function handleProxyRequest(
         : stripClientSystemPrompts(payload);
   }
 
-  // ---- 限流（内存滑动窗口，阈值来自配置快照）----
-  const rate = checkRateLimit(ip, settings.ipRateLimitRpm);
-  if (rate.limit > 0) {
-    res.setHeader('X-RateLimit-Limit', String(rate.limit));
-    res.setHeader('X-RateLimit-Remaining', String(rate.remaining ?? 0));
-  }
-  if (!rate.allowed) {
-    res.setHeader('Retry-After', String(rate.retryAfterSec));
-    const message = `请求过于频繁，同 IP 每分钟最多 ${rate.limit} 次请求，请 ${rate.retryAfterSec} 秒后重试`;
-    finish({ outcome: 'rejected', httpStatus: 429, errorCode: 'rate_limit_exceeded', errorMessage: message });
-    res.status(429).json({ error: { message, type: 'rate_limit_exceeded' } });
-    return;
-  }
+  // ---- 限流已前移到 gatewayGuard：黑名单、临时拦截/限流与多窗口限流
+  // 都在 body 解析前统一拦截，命中时请求体根本不会被读取。
 
   const cachePayload = {
     ...payload,
@@ -508,6 +563,7 @@ async function handleProxyRequest(
     requestedModel,
     settings.globalRule,
     rotationCursor,
+    settings.fuzzyModelMatchingEnabled,
   ).slice(0, settings.maxPrimaryAttempts);
 
   const parallelProvider = findSpecialProvider(config.providers, 'parallel');
@@ -716,41 +772,89 @@ registerProxyRoutes(router, handleProxyRequest);
 const PROXY_POST_PATHS: ReadonlySet<string> = new Set<string>(PROXY_ROUTES.map((route) => route.path as string));
 
 /**
- * 黑名单前置拦截：必须在 express.json 之前挂载。
+ * 统一网关前置拦截：必须在 express.json 之前挂载。
  *
- * 旧实现把黑名单检查放在 handleProxyRequest 里，而 body 解析是更早的全局
- * 中间件——被封禁的 IP 已经把完整请求体（上限 10MB）传完了才收到 403，
- * 白白消耗服务端带宽，也让攻击者可以用大 body 消耗资源。
+ * 所有 IP 级拦截 —— 黑名单（永久封禁）、临时拦截 / 限流（违禁内容策略产物）、
+ * 以及多窗口请求上限 —— 都在这一个中间件里完成。命中时直接返回，
+ * 请求体（上限 10MB）根本不会被读取，不消耗服务端带宽，也让攻击者
+ * 无法用大 body 消耗资源。
  *
- * 这里在解析 body 之前只看 IP：命中黑名单立即 403，请求体根本不会被读取。
  * 被拒绝的请求仍然记入日志（此时没有 payload，仅记录 IP 与错误码）。
  * 配置读取失败时不拦截，交给正常链路返回 503，避免缓存故障放大成全站拒绝。
+ * 内容类检查（违禁词 / IDE 检测）必须读取请求体，仍留在 handleProxyRequest。
  */
-export const blacklistedIpGuard: RequestHandler = (req, res, next) => {
+export const gatewayGuard: RequestHandler = (req, res, next) => {
   if (req.method !== 'POST' || !PROXY_POST_PATHS.has(req.path)) {
     next();
     return;
   }
   const ip = getClientIp(req);
+
+  /*
+   * 内存级临时拦截 / 限流不依赖配置快照，先同步判断，配置异常时依然生效。
+   * 已有配置快照时用配置的拦截提示消息，否则退回默认文案。
+   */
+  const blockedMessage = peekConfig()?.settings.blockedErrorMessage ?? DEFAULT_BLOCKED_MESSAGE;
+  const blockRemaining = temporaryBlockRemainingSec(ip);
+  if (blockRemaining > 0) {
+    gatewayReject(req, res, 403, 'ip_blocked', blockedMessage, blockRemaining);
+    return;
+  }
+  const throttleRemaining = temporaryThrottleRemainingSec(ip);
+  if (throttleRemaining > 0) {
+    gatewayReject(req, res, 429, 'ip_throttled', blockedMessage, throttleRemaining);
+    return;
+  }
+
   void getConfig()
     .then((config) => {
-      if (!config.blacklistedIps.has(ip)) {
-        next();
+      const message = config.settings.blockedErrorMessage;
+
+      if (config.blacklistedIps.has(ip)) {
+        gatewayReject(req, res, 403, 'ip_blacklisted', message);
         return;
       }
-      const message = '该 IP 已被禁止访问';
-      enqueueRequestEvent(
-        toRequestEvent(createTrace({ requestedModel: null, stream: false, ip }), {
-          outcome: 'rejected',
-          httpStatus: 403,
-          errorCode: 'ip_blacklisted',
-          errorMessage: message,
-        }),
-      );
-      res.status(403).json({ error: { message, type: 'ip_blacklisted' } });
+
+      // 多窗口限流：任一窗口超限即拒绝
+      const rate = checkRateLimit(ip, rateLimitRules(config.settings));
+      if (rate.limit > 0) {
+        res.setHeader('X-RateLimit-Limit', String(rate.limit));
+        res.setHeader('X-RateLimit-Remaining', String(rate.remaining ?? 0));
+      }
+      if (!rate.allowed) {
+        const text = `请求过于频繁，同 IP ${rate.rule?.label ?? ''}最多 ${rate.limit} 次请求，请 ${rate.retryAfterSec} 秒后重试`;
+        gatewayReject(req, res, 429, 'rate_limit_exceeded', text, rate.retryAfterSec);
+        return;
+      }
+
+      next();
     })
     .catch(() => next());
 };
+
+/** 网关拒绝的默认报错消息：配置快照不可用时的兜底文案 */
+const DEFAULT_BLOCKED_MESSAGE = '该 IP 已被禁止访问';
+
+/** 网关层统一拒绝出口：写日志 + 返回错误体，可附加 Retry-After */
+function gatewayReject(
+  req: Request,
+  res: Response,
+  status: number,
+  code: string,
+  message: string,
+  retryAfterSec?: number,
+): void {
+  if (retryAfterSec !== undefined) res.setHeader('Retry-After', String(retryAfterSec));
+  enqueueRequestEvent(
+    toRequestEvent(createTrace({ requestedModel: null, stream: false, ip: getClientIp(req) }), {
+      outcome: 'rejected',
+      httpStatus: status,
+      errorCode: code,
+      errorMessage: message,
+    }),
+  );
+  res.status(status).json({ error: { message, code } });
+}
 
 /** GET /models —— 汇总所有启用 provider 声明的模型，OpenAI 兼容格式 */
 async function listModels(_req: Request, res: Response): Promise<void> {

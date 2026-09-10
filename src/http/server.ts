@@ -29,7 +29,7 @@ import { startRetentionSweeper, stopRetentionSweeper } from '../runtime/retentio
 import { startWriteQueue, stopWriteQueue } from '../runtime/write-queue';
 import { startProviderScriptScheduler, stopProviderScriptScheduler } from '../runtime/provider-scripts';
 import adminRouter from './admin';
-import { blacklistedIpGuard } from './proxy';
+import { gatewayGuard } from './proxy';
 import proxyRouter from './proxy';
 import publicRouter from './public';
 
@@ -81,8 +81,8 @@ function buildApp(): express.Express {
   // 反代之后取真实客户端 IP，限流与 IP 统计都依赖它
   app.set('trust proxy', 1);
   app.use(cors());
-  // 黑名单必须在 body 解析前拦截，被封禁 IP 的请求体不应被读取（见 guard 注释）
-  app.use(blacklistedIpGuard);
+  // 统一网关必须在 body 解析前拦截：黑名单、临时拦截/限流与多窗口限流命中时，请求体不应被读取（见 gatewayGuard 注释）
+  app.use(gatewayGuard);
   app.use(express.json({ limit: '10mb' }));
 
   app.get('/healthz', async (_req, res) => {

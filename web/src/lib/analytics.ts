@@ -28,12 +28,13 @@ export interface WeeklyUsage {
 
 /**
  * 由分类计数派生成功率。与后端 usage.ts 的 successRatesOf 保持同一口径：
- *   交付率   缓存复用算成功，客户端取消不计入分母
+ *   交付率   缓存复用算成功，客户端取消不计入分母；
+ *            被网关拦截 / 封禁的请求是策略决定而非服务故障，也剔除，避免虚拉低交付率
  *   上游健康度 只统计真正打到上游的调用
  */
 export function successRatesOf(breakdown: OutcomeBreakdown): SuccessRates {
   const delivered = breakdown.upstreamOk + breakdown.cacheHit;
-  const attributable = Math.max(breakdown.requests - breakdown.clientAbort, 0);
+  const attributable = Math.max(breakdown.requests - breakdown.clientAbort - breakdown.rejected, 0);
   const upstreamCalls = breakdown.upstreamOk + breakdown.upstreamError;
 
   return {

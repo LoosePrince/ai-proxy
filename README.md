@@ -105,7 +105,7 @@ npm run db:migrate
 
 以下变量**只在 settings 表首次初始化时作为种子值**写入，之后一律以数据库为准，改环境变量不会覆盖后台修改：
 
-`DEFAULT_RESPONSE_TIMEOUT_MS`、`FALLBACK_RESPONSE_TIMEOUT_MS`、`PARALLEL_RESPONSE_TIMEOUT_MS`、`PRIORITY_RESPONSE_TIMEOUTS`、`IP_RATE_LIMIT_RPM`、`LOG_RETENTION_DAYS`
+`DEFAULT_RESPONSE_TIMEOUT_MS`、`FALLBACK_RESPONSE_TIMEOUT_MS`、`PARALLEL_RESPONSE_TIMEOUT_MS`、`PRIORITY_RESPONSE_TIMEOUTS`、`IP_RATE_LIMIT_RPM`、`IP_RATE_LIMIT_PER_10_MIN`、`IP_RATE_LIMIT_PER_30_MIN`、`IP_RATE_LIMIT_HOURS`、`IP_RATE_LIMIT_PER_X_HOURS`、`LOG_RETENTION_DAYS`
 
 `PRIORITY_RESPONSE_TIMEOUTS` 为 JSON 对象（key 是 priority），种子写入 `priority_groups.timeout_ms`。
 
@@ -143,13 +143,14 @@ curl -X POST http://localhost:3000/responses \
 
 不传 `model` 时在所有启用的 primary Provider 中路由。传 `model` 时：
 
-- primary Provider 支持忽略大小写、分隔符、厂商前缀、版本后缀和轻微拼写差异的相近匹配，并调用其实际配置的模型名。
+- primary Provider 支持忽略大小写、分隔符、厂商前缀、版本后缀和轻微拼写差异的相近匹配，并调用其实际配置的模型名；该能力可在后台全局设置中关闭（`相近模型匹配`），关闭后完全不处理请求中的模型 ID，按未传模型处理。
+- 单个 Provider 或单个模型可配置为「不参与模型 id 匹配」：它们永远不会被请求模型优先命中，只能通过正常路由（priority / random / average）被随机命中。
 - fallback / parallel Provider 忽略自身模型列表，严格尝试客户端指定的原始模型名。
 - 未找到相近 primary 模型时会视为未指定模型，仍可进入 parallel / fallback 特殊 Provider。
 
 思考模式参数会继续透传；assistant 历史中的 `reasoning_content` 原样回传上游，同时兼容 `reasoning`、`thinking` 和思考内容块，避免 DeepSeek 多轮思考请求因缺失 `reasoning_content` 返回 400。Responses 输出会将思考内容转换为 reasoning item/事件。
 
-> 这些端点是公开的，唯一防护是内存 IP 限流（`ipRateLimitRpm`，`0` 表示不限流）。如果部署在公网并需要鉴权，请在反向代理层添加。
+> 这些端点是公开的，唯一防护是内存 IP 限流。后台可配置多个同时生效的窗口：每分钟 / 每 10 分钟 / 每 30 分钟 / 自定义 x 小时上限，任一窗口超限即拒绝（`0` 表示不启用对应窗口）。所有 IP 级拦截（黑名单、临时拦截 / 限流、请求上限）都在统一网关层执行，命中时请求体不会被读取。如果部署在公网并需要鉴权，请在反向代理层添加。
 
 其他端点：
 
@@ -199,7 +200,7 @@ Admin API：
 
 请求结局分为 `upstream_ok`、`cache_hit`、`upstream_error`、`client_abort` 与 `rejected`。后台会同时展示两个不同的问题，避免把用户行为或缓存效果误判为上游质量：
 
-- **交付率** = `(上游成功 + 缓存复用) / (总请求 - 客户端取消)`。这是首页「成功率」的口径。
+- **交付率** = `(上游成功 + 缓存复用) / (总请求 - 客户端取消 - 被拦截/封禁)`。被网关拦截或封禁的请求是策略决定而非服务故障，不纳入分母，否则会虚拉低交付率。这是首页「成功率」的口径。
 - **上游成功率** = `上游成功 / (上游成功 + 上游失败)`。只看实际打到上游的调用，缓存复用不会虚高这个数。
 
 「公开详细统计」在后台的 **全局设置** 中启用。它只公开近 30 天的聚合趋势、请求结局和模型用量；不会公开 IP、Provider 名称、请求正文或 API Key。
