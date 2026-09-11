@@ -31,13 +31,36 @@ interface LsqliteEnvelope<Row> {
 export class LsqliteError extends Error {
   readonly code: string;
   readonly sql?: string;
+  /** 上游 HTTP 状态码；网络层失败（超时/连接重置）时为 undefined */
+  readonly status?: number;
 
-  constructor(message: string, code = 'LSQLITE_ERROR', sql?: string) {
+  constructor(message: string, code = 'LSQLITE_ERROR', sql?: string, status?: number) {
     super(message);
     this.name = 'LsqliteError';
     this.code = code;
     this.sql = sql;
+    this.status = status;
   }
+}
+
+/**
+ * 事务请求体的序列化。
+ *
+ * 写队列要用它估算「这一次 POST 会有多大」以便按字节切批，必须和
+ * `transaction()` 真正发出的字节完全一致，否则估算就失去意义。
+ */
+export function serializeTransactionBody(statements: LsqliteStatement[]): string {
+  return JSON.stringify(transactionRequestBody(statements));
+}
+
+function transactionRequestBody(statements: LsqliteStatement[]): { statements: unknown[] } {
+  return {
+    statements: statements.map((item) => ({
+      sql: item.sql,
+      params: item.params ?? [],
+      mode: item.mode ?? 'write',
+    })),
+  };
 }
 
 export interface LsqliteClientOptions {
@@ -69,6 +92,29 @@ export class LsqliteClient {
     this.maxRetries = options.maxRetries ?? 2;
   }
 
+  /**
+   * 读取响应信封。
+   *
+   * 不能直接 `response.json()`：413 / 502 之类由反向代理或 body-parser 抛出的
+   * 错误响应常常是 HTML 或纯文本，解析失败会被下面的 catch 误判成「网络错误」
+   * 并白白重试，最终把真实状态码丢掉。这里统一降级成可读的错误消息并保留状态码。
+   */
+  private async readEnvelope<Row>(response: Response): Promise<LsqliteEnvelope<Row>> {
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as LsqliteEnvelope<Row>;
+    } catch {
+      const snippet = text.trim().slice(0, 300);
+      return {
+        ok: false,
+        error: {
+          code: `HTTP_${response.status}`,
+          message: snippet || `HTTP ${response.status}`,
+        },
+      };
+    }
+  }
+
   private async post<Row>(path: string, body: unknown, sqlForError?: string): Promise<LsqliteEnvelope<Row>> {
     let lastError: unknown = null;
 
@@ -88,7 +134,9 @@ export class LsqliteClient {
         });
 
         if (!response.ok && isRetryableStatus(response.status)) {
-          lastError = new LsqliteError(`HTTP ${response.status}`, 'HTTP_ERROR', sqlForError);
+          // 未读取的响应体会让 keep-alive 连接无法复用，主动取消
+          await response.body?.cancel().catch(() => {});
+          lastError = new LsqliteError(`HTTP ${response.status}`, 'HTTP_ERROR', sqlForError, response.status);
           if (attempt < this.maxRetries) {
             await sleep(200 * 2 ** attempt);
             continue;
@@ -96,18 +144,19 @@ export class LsqliteClient {
           throw lastError;
         }
 
-        const payload = (await response.json()) as LsqliteEnvelope<Row>;
-        if (!payload.ok) {
+        const payload = await this.readEnvelope<Row>(response);
+        if (!response.ok || !payload.ok) {
           throw new LsqliteError(
             payload.error?.message || `HTTP ${response.status}`,
             payload.error?.code || 'HTTP_ERROR',
             sqlForError,
+            response.status,
           );
         }
         return payload;
       } catch (error) {
         lastError = error;
-        // SQL 语义错误直接抛出，不浪费重试
+        // SQL 语义错误（含 413 体积超限）直接抛出，不浪费重试
         if (error instanceof LsqliteError && error.code !== 'HTTP_ERROR') throw error;
 
         const aborted = (error as Error)?.name === 'AbortError';
@@ -163,13 +212,7 @@ export class LsqliteClient {
   /** 原子批量写入。任一语句失败则整体回滚，这是日聚合累加正确性的前提。 */
   async transaction(statements: LsqliteStatement[]): Promise<Array<LsqliteResult>> {
     if (statements.length === 0) return [];
-    const payload = await this.post<Record<string, unknown>>('/api/transaction', {
-      statements: statements.map((item) => ({
-        sql: item.sql,
-        params: item.params ?? [],
-        mode: item.mode ?? 'write',
-      })),
-    });
+    const payload = await this.post<Record<string, unknown>>('/api/transaction', transactionRequestBody(statements));
     return payload.results ?? [];
   }
 

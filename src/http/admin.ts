@@ -37,6 +37,7 @@ import {
   updateAnnouncement,
 } from '../db/repo/announcements';
 import { getRequestDetail, getIpDetailStats, queryRequests } from '../db/repo/requests';
+import { LsqliteError } from '../db/lsqlite';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
   getDailyUsage,
@@ -125,8 +126,23 @@ function fail(res: Response, error: unknown): void {
     return;
   }
 
+  /*
+   * 远程库故障不是调用方的输入错误。一律回 500 会让「连接失败 / 413 / 鉴权被拒」
+   * 看起来像代码 bug，排查时只能去翻容器日志；这里显式区分并带上前缀，
+   * 状态码也保留下来（超时与连接重置没有状态码）。
+   */
+  if (error instanceof LsqliteError) {
+    console.error(`[Admin] database error: ${message}${statusSuffix(error)}`);
+    res.status(502).json({ error: { message: `数据库不可用：${message}${statusSuffix(error)}` } });
+    return;
+  }
+
   console.error(`[Admin] ${message}`);
   res.status(500).json({ error: { message } });
+}
+
+function statusSuffix(error: LsqliteError): string {
+  return error.status ? ` (HTTP ${error.status})` : '';
 }
 
 function errorStatus(error: unknown): number {

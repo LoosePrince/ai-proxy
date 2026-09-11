@@ -675,7 +675,8 @@ function RuntimePanel() {
             <div className="stat-label">写队列积压</div>
             <div className="stat-value">{data.writeQueue.pending}</div>
             <div className="stat-hint">
-              已落盘 {data.writeQueue.persisted} · 丢弃 {data.writeQueue.dropped}
+              已落盘 {data.writeQueue.persisted} · 丢弃 {data.writeQueue.dropped} · 正文截断{' '}
+              {data.writeQueue.contentDropped}
             </div>
           </div>
           <div>

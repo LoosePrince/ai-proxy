@@ -264,7 +264,7 @@ export function Dashboard() {
             <StatCard
               label="写队列积压"
               value={formatCount(runtime.data.writeQueue.pending)}
-              hint={`已落盘 ${formatCount(runtime.data.writeQueue.persisted)} · 丢弃 ${formatCount(runtime.data.writeQueue.dropped)}`}
+              hint={`已落盘 ${formatCount(runtime.data.writeQueue.persisted)} · 丢弃 ${formatCount(runtime.data.writeQueue.dropped)} · 正文截断 ${formatCount(runtime.data.writeQueue.contentDropped)}`}
               tone={runtime.data.writeQueue.pending > 500 || runtime.data.writeQueue.dropped > 0 ? 'danger' : 'success'}
             />
             <StatCard

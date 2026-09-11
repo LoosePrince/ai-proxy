@@ -82,6 +82,36 @@ const UNKNOWN_MODEL = '(unspecified)';
 /** 统计展示里代替 null 模型名的占位符（与 getModelUsage 口径一致） */
 const UNKNOWN_MODEL_DISPLAY = '（未指定）';
 
+/**
+ * 单个正文段落的最大入库长度。
+ *
+ * Lsqlite 用 `express.json({ limit: '2mb' })` 限制请求体，而一次落盘事务会同时携带
+ * 多个事件的 client/upstream/response 三份正文。只要某条长上下文请求的正文足够大，
+ * 整个事务就会被 413 拒绝，进而把整批追溯记录堵在队列里。
+ * 这里给每份正文封顶，保证「统计数据永远能落盘，正文最多是被截断」。
+ */
+const MAX_BODY_CHARS = 256 * 1024;
+
+/** 保证只丢掉正文的尾部，并在原位置留下可识别的截断标记，便于排查 */
+function boundedJson(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? 'null';
+  } catch {
+    text = JSON.stringify({ unserializable: true });
+  }
+
+  if (text.length <= MAX_BODY_CHARS) return text;
+
+  return JSON.stringify({
+    truncated: true,
+    originalChars: text.length,
+    preview: text.slice(0, MAX_BODY_CHARS),
+  });
+}
+
 /** UTC 日期分桶键，聚合表按此对齐 */
 function dayOf(isoTimestamp: string): string {
   return isoTimestamp.slice(0, 10);
@@ -211,9 +241,9 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         event.promptTokens,
         event.completionTokens,
         bool(event.fallbackTriggered),
-        event.content ? JSON.stringify(event.content.clientRequest) : null,
-        event.content ? JSON.stringify(event.content.upstreamRequest) : null,
-        event.content ? JSON.stringify(event.content.aiResponse) : null,
+        event.content ? boundedJson(event.content.clientRequest) : null,
+        event.content ? boundedJson(event.content.upstreamRequest) : null,
+        event.content ? boundedJson(event.content.aiResponse) : null,
       ],
       mode: 'write',
     });

@@ -212,7 +212,7 @@ export const adminApi = {
   runtime: () =>
     request<{
       config: { cached: boolean; loadedAt: string | null; providerCount: number; groupCount: number };
-      writeQueue: { pending: number; enqueued: number; persisted: number; dropped: number; lastError: string | null };
+      writeQueue: { pending: number; enqueued: number; persisted: number; dropped: number; contentDropped: number; lastError: string | null };
       counters: {
         ipBuckets: number;
         rotationCursors: number;

@@ -153,6 +153,11 @@ function extractResponseText(value: unknown): string {
 }
 
 function extractRenderableContent(value: unknown, type: 'request' | 'response'): string {
+  // 正文超限时落盘的是截断标记而非原始结构，渲染模式下明确提示而不是空手而归
+  if (isRecord(value) && value.truncated === true) {
+    const original = typeof value.originalChars === 'number' ? `（原始 ${value.originalChars} 字符）` : '';
+    return `> 正文超过单条记录上限，已截断${original}。`;
+  }
   if (type === 'response') return extractResponseText(value);
   const messages = extractMessagesText(value);
   if (messages) return messages;
