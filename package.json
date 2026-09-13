@@ -16,6 +16,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
   },
   "license": "MIT",
+  "optionalDependencies": {
+    "@visulima/content-safety": "1.0.1",
+    "obscenity": "0.4.6",
+    "whitz-word-detector": "1.1.2"
+  },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.11.0",

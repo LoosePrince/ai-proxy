@@ -24,6 +24,10 @@ import {
   stripClientSystemPrompts,
 } from '../core/request-policy';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
+import { evaluateText } from '../core/moderation/evaluate';
+import { resolveModerationPolicy } from '../core/moderation/compile';
+import type { CompiledModerationPolicy } from '../core/moderation/types';
+import { payloadUserText, responseText as extractResponseText } from '../core/moderation/text';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import {
   buildAttemptChain,
@@ -62,9 +66,43 @@ import { enqueueRequestEvent } from '../runtime/write-queue';
 import { invokeProviderScript } from '../upstream/script';
 import { getUpstreamClient } from '../upstream/client';
 import { invokeUpstream, writeStreamError, type InvokeResult } from '../upstream/invoke';
-import type { AttemptRole, SettingsDTO } from '../types/api';
+import type { AttemptRole, MaliciousBehaviorAction, SettingsDTO } from '../types/api';
+import type { ModerationEventInput } from '../db/repo/requests';
 
 const router = express.Router();
+
+/** 审核判定 → 待落盘的审计事件 */
+function toModerationEvent(
+  decision: { stage: 'input' | 'output'; categories: string[]; detectorIds: string[]; score: number; matched: string[]; action: string; blocked: boolean; policyId: number | null; policyName: string },
+  providerName: string | null,
+  model: string | null,
+): ModerationEventInput {
+  return {
+    occurredAt: new Date().toISOString(),
+    stage: decision.stage,
+    categories: decision.categories,
+    detectorIds: decision.detectorIds,
+    score: decision.score,
+    matched: decision.matched,
+    action: decision.action,
+    blocked: decision.blocked,
+    policyId: decision.policyId,
+    policyName: decision.policyName || null,
+    providerName,
+    model,
+  };
+}
+
+/** 输出侧生效策略：总开关 / 输出开关都打开时，按 Provider→模型作用域解析 */
+function resolveOutputModeration(
+  config: ConfigSnapshot,
+  providerId: number | null,
+  model: string | null,
+): CompiledModerationPolicy | null {
+  const { settings } = config;
+  if (!settings.moderationEnabled || !settings.moderationOutputEnabled) return null;
+  return resolveModerationPolicy(config.moderation, providerId, model);
+}
 
 /** 单次 provider 尝试的结果。ok=false 时 error 一定存在。 */
 interface AttemptResult {
@@ -269,6 +307,9 @@ async function attemptProvider(args: {
                   trace = withFirstResponse(trace);
                 },
                 openEarly: role === 'fallback' && stream,
+                // 输出审核按 Provider→模型作用域解析，命中由 invoke 层执行
+                outputModeration: resolveOutputModeration(config, provider.id, model),
+                moderationStream: config.settings.moderationOutputStreamEnabled,
               },
               stream,
             );
@@ -366,6 +407,8 @@ async function handleProxyRequest(
   let trace = createTrace({ requestedModel, stream, ip });
   let contentLoggingEnabled = false;
   let publicContentStreamEnabled = false;
+  /** 本次请求产生的审核审计事件，随请求明细同批落盘 */
+  const moderationEvents: ModerationEventInput[] = [];
 
   /** 唯一的落盘出口；正文持久化与公开脱敏发布是互相独立的消费者。 */
   const finish = (outcome: TraceOutcome, content?: RequestContentInput) => {
@@ -376,6 +419,7 @@ async function handleProxyRequest(
     };
     const event = toRequestEvent(trace, outcome);
     if (contentLoggingEnabled && outcome.outcome !== 'cache_hit') event.content = snapshot;
+    if (moderationEvents.length > 0) event.moderationEvents = moderationEvents;
     enqueueRequestEvent(event);
 
     if (publicContentStreamEnabled) {
@@ -406,7 +450,7 @@ async function handleProxyRequest(
   contentLoggingEnabled = settings.requestContentLoggingEnabled;
   publicContentStreamEnabled = settings.publicRequestContentStreamEnabled;
 
-  const respondLocally = (content: string, reason: 'ide_request' | 'malicious_request'): void => {
+  const respondLocally = (content: string, reason: 'ide_request' | 'malicious_request' | 'moderation_request'): void => {
     trace = withFirstResponse(trace);
     const synthetic = writeSyntheticSuccess(
       res,
@@ -434,6 +478,60 @@ async function handleProxyRequest(
     finish({ outcome: 'rejected', httpStatus: 403, errorCode: code, errorMessage: message });
     res.status(403).json({ error: { message, code } });
   };
+
+  /*
+   * ---- 多层内容审核：请求侧
+   *
+   * 输入是 Provider 无关的，因此固定使用全局默认策略；Provider / 模型级绑定
+   * 作用于输出侧（那里才能确定 provider 与实际模型）。这与「层级」的定义一致。
+   */
+  if (settings.moderationEnabled && settings.moderationInputEnabled) {
+    const inputPolicy = resolveModerationPolicy(config.moderation, null, null);
+    if (inputPolicy) {
+      const decision = evaluateText(payloadUserText(payload), inputPolicy, 'input');
+      if (decision.blocked) {
+        moderationEvents.push(toModerationEvent(decision, null, requestedModel));
+        const action = decision.action as MaliciousBehaviorAction;
+        const policyMessage = decision.action === 'response' ? inputPolicy.response : '';
+
+        // ban / block / throttle 是 IP 级动作：本次拒绝，后续流量在网关层拦截
+        if (action === 'ban' || action === 'block' || action === 'throttle') {
+          if (ip && ip !== 'unknown') {
+            if (action === 'ban') {
+              try {
+                await addIpBlacklist(ip, '触发内容审核策略，自动封禁');
+              } catch (error) {
+                console.warn(`[Proxy] 审核自动封禁写入失败: ${errorMessage(error)}`);
+              }
+              invalidateConfig();
+            } else if (action === 'block') {
+              blockIpTemporarily(ip, settings.maliciousThrottleMinutes);
+            } else {
+              throttleIpTemporarily(ip, settings.maliciousThrottleMinutes);
+            }
+          }
+          const message = settings.blockedErrorMessage;
+          const status = action === 'throttle' ? 429 : 403;
+          const code = action === 'ban' ? 'ip_blacklisted' : action === 'block' ? 'ip_blocked' : 'ip_throttled';
+          if (status === 429) {
+            res.setHeader('Retry-After', String(Math.max(1, settings.maliciousThrottleMinutes * 60)));
+          }
+          finish({ outcome: 'rejected', httpStatus: status, errorCode: code, errorMessage: message });
+          res.status(status).json({ error: { message, code } });
+          return;
+        }
+
+        if (action === 'error') {
+          rejectByPolicy('moderation_blocked', '请求包含被内容审核策略拦截的内容');
+          return;
+        }
+
+        // empty（空回复）与 response（返回指定响应内容）
+        respondLocally(policyMessage, 'moderation_request');
+        return;
+      }
+    }
+  }
 
   const inspection =
     settings.ideRequestHandlingEnabled || settings.maliciousRequestHandlingEnabled
@@ -521,6 +619,66 @@ async function handleProxyRequest(
     try {
       const cached = await findReusableResponse(cacheKey, settings.requestCacheReuseHours);
       if (cached) {
+        /*
+         * 缓存命中也要重跑输出审核：缓存可能是旧策略下写入的，
+         * 直接回放会让新策略被绕过。缓存正文是字符串，重判成本极低。
+         */
+        const cachedPolicy = resolveOutputModeration(config, cached.finalProviderId, cached.actualModel);
+        if (cachedPolicy) {
+          const cachedBody = parseCapturedBody(cached.responseBody, cached.contentType);
+          const decision = evaluateText(extractResponseText(cachedBody), cachedPolicy, 'output');
+          if (decision.blocked) {
+            moderationEvents.push(
+              toModerationEvent(decision, cached.finalProviderName, cached.actualModel),
+            );
+            const blockedMessage = '模型输出被内容审核策略拦截';
+            const attribution = {
+              finalProviderId: cached.finalProviderId,
+              finalProviderName: cached.finalProviderName,
+              finalRole: cached.finalRole,
+              finalModel: cached.actualModel,
+            };
+
+            if (decision.action === 'error') {
+              finish({
+                outcome: 'rejected',
+                httpStatus: 403,
+                errorCode: 'moderation_output_blocked',
+                errorMessage: blockedMessage,
+                ...attribution,
+              });
+              res.status(403).json({ error: { message: blockedMessage, code: 'moderation_output_blocked' } });
+              return;
+            }
+
+            const replacement = decision.action === 'response' ? cachedPolicy.outputResponse ?? '' : '';
+            trace = withFirstResponse(trace);
+            const synthetic = writeSyntheticSuccess(
+              res,
+              protocol,
+              originalPayload,
+              cached.actualModel ?? requestedModel ?? 'ai-proxy-policy',
+              stream,
+              replacement,
+            );
+            finish(
+              {
+                outcome: 'rejected',
+                httpStatus: 200,
+                errorCode: 'moderation_output_blocked',
+                errorMessage: blockedMessage,
+                ...attribution,
+              },
+              {
+                clientRequest: originalPayload,
+                upstreamRequest: { cacheHit: true, moderationBlocked: true },
+                aiResponse: synthetic.responseBody,
+              },
+            );
+            return;
+          }
+        }
+
         trace = withFirstResponse(trace);
         res.status(200);
         res.setHeader('Content-Type', cached.contentType);
@@ -616,21 +774,44 @@ async function handleProxyRequest(
         }
       : undefined;
 
+    const moderation = result?.moderation;
+    if (moderation) {
+      moderationEvents.push(
+        toModerationEvent(moderation, outcome.provider.name, result?.actualModel ?? null),
+      );
+    }
+    // 输出被拦截是策略决定而不是服务故障：记 rejected，交付率不把它算作上游失败
+    const outputBlocked = moderation?.blocked === true;
+    const attribution = {
+      finalProviderId: outcome.provider.id,
+      finalProviderName: outcome.provider.name,
+      finalRole: outcome.role,
+      finalModel: result?.actualModel ?? null,
+    };
+
     finish(
-      {
-        outcome: 'upstream_ok',
-        httpStatus: 200,
-        finalProviderId: outcome.provider.id,
-        finalProviderName: outcome.provider.name,
-        finalRole: outcome.role,
-        finalModel: result?.actualModel ?? null,
-        promptTokens: result?.promptTokens ?? 0,
-        completionTokens: result?.completionTokens ?? 0,
-      },
+      outputBlocked
+        ? {
+            outcome: 'rejected',
+            httpStatus: result?.responseStatus ?? 200,
+            errorCode: 'moderation_output_blocked',
+            errorMessage: '模型输出被内容审核策略拦截',
+            ...attribution,
+            promptTokens: result?.promptTokens ?? 0,
+            completionTokens: result?.completionTokens ?? 0,
+          }
+        : {
+            outcome: 'upstream_ok',
+            httpStatus: 200,
+            ...attribution,
+            promptTokens: result?.promptTokens ?? 0,
+            completionTokens: result?.completionTokens ?? 0,
+          },
       content,
     );
 
-    if (cacheKey && result) {
+    // 被拦截的响应不写缓存，否则后续请求会被旧内容直接绕过新策略
+    if (cacheKey && result && !outputBlocked) {
       try {
         await saveCachedResponse({
           cacheKey,

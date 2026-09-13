@@ -20,6 +20,14 @@ import type {
   IpDetailStatsDTO,
   IpUsageDTO,
   ModelUsageDTO,
+  ModerationBindingDTO,
+  ModerationBindingInput,
+  ModerationCategory,
+  ModerationDetectorInfoDTO,
+  ModerationEventDTO,
+  ModerationEventQuery,
+  ModerationPolicyDTO,
+  ModerationPolicyInput,
   Paged,
   PriorityGroupDTO,
   ProviderDTO,
@@ -225,4 +233,38 @@ export const adminApi = {
 
   sweepRetention: () =>
     request<{ deleted: number }>('/admin/api/retention/sweep', { method: 'POST' }),
+
+  // ---- 内容审核
+
+  moderationPolicies: () => request<ModerationPolicyDTO[]>('/admin/api/moderation/policies'),
+
+  createModerationPolicy: (input: ModerationPolicyInput) =>
+    request<ModerationPolicyDTO>('/admin/api/moderation/policies', { method: 'POST', ...json(input) }),
+
+  updateModerationPolicy: (id: number, patch: Partial<ModerationPolicyInput>) =>
+    request<ModerationPolicyDTO>(`/admin/api/moderation/policies/${id}`, { method: 'PUT', ...json(patch) }),
+
+  deleteModerationPolicy: (id: number) =>
+    request<{ success: boolean }>(`/admin/api/moderation/policies/${id}`, { method: 'DELETE' }),
+
+  moderationDetectors: () =>
+    request<ModerationDetectorInfoDTO[]>('/admin/api/moderation/detectors'),
+
+  moderationCategories: () =>
+    request<Array<{ category: ModerationCategory; label: string; parent: ModerationCategory | null; defaultSensitivity: number }>>(
+      '/admin/api/moderation/categories',
+    ),
+
+  moderationBindings: () => request<ModerationBindingDTO[]>('/admin/api/moderation/bindings'),
+
+  saveModerationBinding: (input: ModerationBindingInput) =>
+    request<{ success: boolean }>('/admin/api/moderation/bindings', { method: 'PUT', ...json(input) }),
+
+  deleteModerationBinding: (id: number) =>
+    request<{ success: boolean }>(`/admin/api/moderation/bindings/${id}`, { method: 'DELETE' }),
+
+  moderationEvents: (query: ModerationEventQuery & { blockedOnly?: boolean } = {}) =>
+    request<Paged<ModerationEventDTO>>(
+      `/admin/api/moderation/events${toQuery(query as Record<string, unknown>)}`,
+    ),
 };

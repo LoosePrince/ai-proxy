@@ -32,7 +32,7 @@ POST /v1/chat/completions 或 /v1/responses（也支持省略 /v1）
 ```
 src/
   db/        Lsqlite 客户端、SQL DSL、迁移、仓储（唯一的 DB 访问出口）
-  core/      纯函数：routing / protocol / timeout / trace / gate / contribution（可单测）
+  core/      纯函数：routing / protocol / timeout / trace / gate / contribution / moderation（可单测）
   runtime/   config-cache、write-queue、counters、retention
   upstream/  OpenAI 客户端 LRU、SSE 透传与 usage 旁路解析
   http/      proxy / public / admin / server
@@ -123,6 +123,82 @@ npm run db:migrate
 
 所有尝试（包括中途失败和被更快响应抢占的）都会写入 `request_attempts`，后台日志页可展开查看时间线。
 
+## 内容审核
+
+多层可配置的内容审核系统，默认**关闭**（`moderationEnabled=false`），与旧版「恶意内容检测」并存互不影响。
+
+### 识别方向（类别）
+
+固定类别契约，采用 OpenAI moderation 风格的层级命名：
+
+```
+sexual, sexual/minors
+harassment, harassment/threatening
+hate, hate/threatening
+self-harm, self-harm/intent, self-harm/instructions
+violence, violence/graphic
+illicit, illicit/violent
+profanity
+```
+
+子类别以 `父/子` 命名。策略里**未显式出现**的类别继承祖先的启用状态（只配父类别等于启用整棵子树），显式给子类别 `enabled=false` 又能单独关掉它。
+
+### 敏感度
+
+每个类别 0-100，越高越严格：命中阈值 `= 1 - 敏感度/100`。内置词库的单次命中分数为 0.5，两次 0.75，三次 0.875（收敛到 1）；因此默认敏感度下单个违禁词即拦截，调低敏感度则需要多次命中。
+
+### 检测引擎与组合模式
+
+引擎可插拔，未安装的库自动禁用、不影响启动：
+
+| 引擎 | 依赖 | 类别能力 |
+|---|---|---|
+| `builtin-lexicon` | 无（内置） | 原生分类，唯一负责类别归属 |
+| `whitz` | `whitz-word-detector`（可选依赖） | 原生分类，提供 leet/近似拼写模糊匹配 |
+| `visulima` | `@visulima/content-safety`（可选依赖） | 19 语言词库，通用命中 |
+| `obscenity` | `obscenity`（可选依赖） | 英文脏话稳健匹配，通用命中 |
+
+组合模式（`combineMode`）：
+
+- `strict` —— 任一启用引擎命中即拦截（**默认**，等价「通过所有库的检测」）
+- `majority` —— 超过半数启用引擎命中才拦截
+- `lenient` —— 全部启用引擎都命中才拦截
+
+「启用引擎」指策略里勾选且依赖可用（`isAvailable()`）的引擎；未安装的库不计入分母。
+
+> 这些库都是词表/正则匹配，不具备语义审核能力。`visulima` 与 `obscenity` 无法区分脏话与仇恨/色情，默认只归属到 `profanity`，避免把普通脏话误标成严重类别；需要更精细归属时在审核页按引擎勾选。
+
+### 作用域层级
+
+请求侧审核使用**全局默认策略**（输入与 Provider 无关）；响应侧审核按 `模型级 > Provider 级 > 全局默认` 解析。绑定指向已停用/已删除策略时静默退回上一层。
+
+### 请求侧与响应侧
+
+- 命中动作复用旧版恶意内容动作：`ban / block / throttle / empty / error / response`。`ban/block/throttle` 是 IP 级动作，本次拒绝并写入内存拦截或黑名单。
+- 响应侧动作：`empty`（清空正文）/ `error`（错误码）/ `response`（替换为指定文本）。
+- **流式响应审核**采用滞后缓冲：保留末尾 `holdBackChars` 个正文字符不立即发出，先把「即将放行 + 仍在缓冲」的正文一起送审，通过才放行，因此跨 chunk 拆开的关键词也能被拦住。
+- 受限之处：滞后窗口只能覆盖窗口长度以内的跨块拆词，已放行的前缀无法撤回；`holdBackChars` 越大越安全，代价是首字延迟。
+- 缓存命中会重跑一次输出审核，避免旧策略写入的缓存绕过新策略；被拦截的响应不写缓存。
+- 输出被拦截记为 `rejected`（策略决定而非服务故障），不计入交付率分母。
+
+### 审计与保留
+
+命中事件写入 `moderation_events`，与请求明细同批落盘（保持热路径零 DB 往返），记录阶段、类别、引擎、分数、截断后的命中片段、动作、策略、IP 与最终 Provider/模型。`settings.moderationAuditRetentionDays` 控制清理，`0` 表示永不清理。该表仅供后台读取。
+
+### 相关设置
+
+| key | 说明 |
+|---|---|
+| `moderationEnabled` | 总开关，默认关闭 |
+| `moderationInputEnabled` | 审核请求侧内容 |
+| `moderationOutputEnabled` | 审核响应侧内容 |
+| `moderationOutputStreamEnabled` | 流式响应逐块审核（关闭时流式跳过，仅审非流式） |
+| `moderationAuditRetentionDays` | 审计日志保留天数，0 = 永不清理 |
+
+### 扩展新引擎
+
+实现 `ModerationDetector` 接口（同步、离线、内部吞异常）并注册进 `src/core/moderation/detectors.ts` 的 `MODERATION_DETECTORS` 即可；策略与后台会自动列出它。依赖用 `tryLoad` 懒加载，未安装时 `isAvailable()` 返回 false。
+
 ## API
 
 聊天补全（OpenAI 兼容，无需 API Key；`/v1` 可省略）：
@@ -177,7 +253,7 @@ curl -X POST http://localhost:3000/api/contributions \
 
 ## 管理后台
 
-`/admin`，React Router 真实 URL，页面包括仪表盘、Provider、设置、模型统计、IP 统计、请求日志。
+`/admin`，React Router 真实 URL，页面包括仪表盘、Provider、设置、内容审核、模型统计、IP 统计、请求日志、公告。
 
 Admin API：
 
@@ -190,6 +266,11 @@ Admin API：
 | `GET /admin/api/requests?limit&offset&success&requestedModel&ip&providerId&from&to` | 服务端分页日志 |
 | `GET /admin/api/requests/:id` | 单请求含全部 attempts |
 | `GET /admin/api/dashboard` | 概览聚合 |
+| `GET|POST /admin/api/moderation/policies`、`PUT|DELETE /admin/api/moderation/policies/:id` | 审核策略 CRUD |
+| `GET /admin/api/moderation/detectors` | 检测引擎注册表与可用性 |
+| `GET /admin/api/moderation/categories` | 类别体系元数据 |
+| `GET /admin/api/moderation/bindings`、`PUT /admin/api/moderation/bindings`、`DELETE /admin/api/moderation/bindings/:id` | 作用域绑定 |
+| `GET /admin/api/moderation/events` | 审核审计日志分页 |
 | `GET /admin/api/usage?dimension=model|ip|provider&from&to` | 维度聚合 |
 | `GET /admin/api/runtime` | 写队列与缓存运行状态 |
 | `POST /admin/api/retention/sweep` | 手动触发明细清理 |

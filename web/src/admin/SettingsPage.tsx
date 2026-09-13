@@ -81,6 +81,8 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
   const promptEnabled = Form.useWatch('globalSystemPromptEnabled', form) === true;
   const ideHandlingEnabled = Form.useWatch('ideRequestHandlingEnabled', form) === true;
   const maliciousHandlingEnabled = Form.useWatch('maliciousRequestHandlingEnabled', form) === true;
+  const moderationEnabled = Form.useWatch('moderationEnabled', form) === true;
+  const moderationOutputEnabled = Form.useWatch('moderationOutputEnabled', form) === true;
 
   // 数据重新拉取后同步进表单，避免用户看到的是上一次的旧值
   useEffect(() => {
@@ -398,6 +400,54 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
               ) : null}
             </Space>
           </div>
+        </div>
+      </Card>
+
+      <Card size="small" title="多层内容审核" className="nested-settings-card">
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          类别、敏感度、检测引擎与作用域绑定在{' '}
+          <Link to="/admin/moderation">内容审核</Link> 页配置。此开关只控制整套系统是否生效。
+        </Typography.Paragraph>
+        <div className="settings-grid">
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="moderationEnabled" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <Typography.Text>启用内容审核系统</Typography.Text>
+            </Space>
+          </div>
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="moderationInputEnabled" valuePropName="checked" noStyle>
+                <Switch disabled={!moderationEnabled} />
+              </Form.Item>
+              <Typography.Text>审核请求侧内容</Typography.Text>
+            </Space>
+          </div>
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="moderationOutputEnabled" valuePropName="checked" noStyle>
+                <Switch disabled={!moderationEnabled} />
+              </Form.Item>
+              <Typography.Text>审核响应侧内容</Typography.Text>
+            </Space>
+          </div>
+          <div>
+            <Space align="center" wrap>
+              <Form.Item name="moderationOutputStreamEnabled" valuePropName="checked" noStyle>
+                <Switch disabled={!moderationEnabled || !moderationOutputEnabled} />
+              </Form.Item>
+              <Typography.Text>流式响应逐块审核</Typography.Text>
+            </Space>
+          </div>
+          <Form.Item
+            name="moderationAuditRetentionDays"
+            label="审核审计日志保留天数"
+            tooltip="0 表示永不清理；仅影响审核审计表，不影响请求日志。"
+          >
+            <InputNumber min={0} max={3650} className="control-full" disabled={!moderationEnabled} />
+          </Form.Item>
         </div>
       </Card>
 

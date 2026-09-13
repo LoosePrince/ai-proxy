@@ -10,6 +10,7 @@
  */
 
 import { pruneOldRequests } from '../db/repo/requests';
+import { pruneOldModerationEvents } from '../db/repo/moderation';
 import { pruneExpiredCachedResponses } from '../db/repo/response-cache';
 import { getConfig } from './config-cache';
 
@@ -21,9 +22,10 @@ export async function runRetentionSweep(): Promise<number> {
   const { settings } = await getConfig();
 
   try {
-    const [requestDeleted, cacheDeleted] = await Promise.all([
+    const [requestDeleted, cacheDeleted, moderationDeleted] = await Promise.all([
       settings.logRetentionDays > 0 ? pruneOldRequests(settings.logRetentionDays) : Promise.resolve(0),
       pruneExpiredCachedResponses(settings.requestCacheReuseHours),
+      pruneOldModerationEvents(settings.moderationAuditRetentionDays),
     ]);
     if (requestDeleted > 0) {
       console.log(`[Retention] pruned ${requestDeleted} requests older than ${settings.logRetentionDays}d`);
@@ -31,7 +33,12 @@ export async function runRetentionSweep(): Promise<number> {
     if (cacheDeleted > 0) {
       console.log(`[Cache] pruned ${cacheDeleted} responses older than ${settings.requestCacheReuseHours}h`);
     }
-    return requestDeleted + cacheDeleted;
+    if (moderationDeleted > 0) {
+      console.log(
+        `[Retention] pruned ${moderationDeleted} moderation events older than ${settings.moderationAuditRetentionDays}d`,
+      );
+    }
+    return requestDeleted + cacheDeleted + moderationDeleted;
   } catch (error) {
     console.error(`[Retention] sweep failed: ${(error as Error).message}`);
     return 0;

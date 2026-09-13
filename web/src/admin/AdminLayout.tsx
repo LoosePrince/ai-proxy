@@ -22,6 +22,7 @@ import {
   GlobalOutlined,
   MenuOutlined,
   ProfileOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 
@@ -36,6 +37,7 @@ import { ModelStats } from './ModelStats';
 import { IpStats } from './IpStats';
 import { RequestLogs } from './RequestLogs';
 import { AnnouncementsAdmin } from './Announcements';
+import { ModerationAdmin } from './Moderation';
 import './admin.css';
 
 const { Sider, Content, Header } = Layout;
@@ -53,6 +55,7 @@ const NAV = [
   { key: 'models', icon: <BarChartOutlined />, label: '模型统计', desc: '模型调用与 Token 分布' },
   { key: 'ips', icon: <GlobalOutlined />, label: 'IP 统计', desc: '访问来源与用量分析' },
   { key: 'announcements', icon: <BellOutlined />, label: '公告', desc: '首页公告发布与管理' },
+  { key: 'moderation', icon: <SafetyCertificateOutlined />, label: '内容审核', desc: '类别、敏感度与多引擎策略' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置', desc: '路由策略与运行参数' },
 ];
 
@@ -188,6 +191,7 @@ export default function AdminLayout() {
               <Route path="models" element={<ModelStats />} />
               <Route path="ips" element={<IpStats />} />
               <Route path="announcements" element={<AnnouncementsAdmin />} />
+              <Route path="moderation" element={<ModerationAdmin />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>

@@ -52,6 +52,11 @@ const HARD_DEFAULTS: SettingsDTO = {
   maliciousThrottleMinutes: 30,
   blockedErrorMessage: '该 IP 已被禁止访问',
   fuzzyModelMatchingEnabled: true,
+  moderationEnabled: false,
+  moderationInputEnabled: true,
+  moderationOutputEnabled: false,
+  moderationOutputStreamEnabled: false,
+  moderationAuditRetentionDays: 0,
 };
 
 export function normalizeRoutingRule(value: unknown): RoutingRule {
@@ -167,6 +172,17 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
       raw.fuzzyModelMatchingEnabled,
       HARD_DEFAULTS.fuzzyModelMatchingEnabled,
     ),
+    moderationEnabled: normalizeBoolean(raw.moderationEnabled, HARD_DEFAULTS.moderationEnabled),
+    moderationInputEnabled: normalizeBoolean(raw.moderationInputEnabled, HARD_DEFAULTS.moderationInputEnabled),
+    moderationOutputEnabled: normalizeBoolean(raw.moderationOutputEnabled, HARD_DEFAULTS.moderationOutputEnabled),
+    moderationOutputStreamEnabled: normalizeBoolean(
+      raw.moderationOutputStreamEnabled,
+      HARD_DEFAULTS.moderationOutputStreamEnabled,
+    ),
+    moderationAuditRetentionDays: normalizeNonNegativeInt(
+      raw.moderationAuditRetentionDays,
+      HARD_DEFAULTS.moderationAuditRetentionDays,
+    ),
     ipRateLimitPer10Min: normalizeNonNegativeInt(raw.ipRateLimitPer10Min, HARD_DEFAULTS.ipRateLimitPer10Min),
     ipRateLimitPer30Min: normalizeNonNegativeInt(raw.ipRateLimitPer30Min, HARD_DEFAULTS.ipRateLimitPer30Min),
     ipRateLimitHours: normalizeNonNegativeInt(raw.ipRateLimitHours, HARD_DEFAULTS.ipRateLimitHours),
@@ -268,6 +284,11 @@ export async function seedSettingsFromEnv(): Promise<void> {
     maliciousThrottleMinutes: HARD_DEFAULTS.maliciousThrottleMinutes,
     blockedErrorMessage: HARD_DEFAULTS.blockedErrorMessage,
     fuzzyModelMatchingEnabled: HARD_DEFAULTS.fuzzyModelMatchingEnabled,
+    moderationEnabled: HARD_DEFAULTS.moderationEnabled,
+    moderationInputEnabled: HARD_DEFAULTS.moderationInputEnabled,
+    moderationOutputEnabled: HARD_DEFAULTS.moderationOutputEnabled,
+    moderationOutputStreamEnabled: HARD_DEFAULTS.moderationOutputStreamEnabled,
+    moderationAuditRetentionDays: HARD_DEFAULTS.moderationAuditRetentionDays,
   };
 
   const statements: LsqliteStatement[] = Object.entries(seeds).map(([key, value]) =>

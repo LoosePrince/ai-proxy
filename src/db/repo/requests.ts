@@ -50,6 +50,25 @@ export interface RequestContentInput {
   aiResponse: unknown;
 }
 
+/**
+ * 一次审核命中的审计记录。
+ * 与请求明细同批落盘（见 buildIngestStatements），因此没有独立的写队列。
+ */
+export interface ModerationEventInput {
+  occurredAt: string;
+  stage: 'input' | 'output';
+  categories: string[];
+  detectorIds: string[];
+  score: number | null;
+  matched: string[];
+  action: string;
+  blocked: boolean;
+  policyId: number | null;
+  policyName: string | null;
+  providerName: string | null;
+  model: string | null;
+}
+
 export interface RequestEventInput {
   traceId: string;
   startedAt: string;
@@ -76,6 +95,8 @@ export interface RequestEventInput {
   cacheKey?: string | null;
   attempts: AttemptEventInput[];
   content?: RequestContentInput | null;
+  /** 本次请求产生的审核审计事件（输入侧 + 输出侧） */
+  moderationEvents?: ModerationEventInput[];
 }
 
 const UNKNOWN_MODEL = '(unspecified)';
@@ -247,6 +268,32 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
       ],
       mode: 'write',
     });
+
+    for (const moderation of event.moderationEvents ?? []) {
+      statements.push({
+        sql: `insert into moderation_events (
+                trace_id, occurred_at, stage, categories, detector_ids, score, matched, action,
+                blocked, ip, policy_id, policy_name, provider_name, model
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [
+          event.traceId,
+          moderation.occurredAt,
+          moderation.stage,
+          moderation.categories.join(', '),
+          moderation.detectorIds.join(', '),
+          moderation.score,
+          moderation.matched.join(' | '),
+          moderation.action,
+          bool(moderation.blocked),
+          event.ip,
+          moderation.policyId,
+          moderation.policyName,
+          moderation.providerName,
+          moderation.model,
+        ],
+        mode: 'write',
+      });
+    }
 
     for (const attempt of event.attempts) {
       statements.push({

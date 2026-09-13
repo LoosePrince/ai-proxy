@@ -18,6 +18,46 @@ export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt' |
  */
 export type MaliciousBehaviorAction = 'ban' | 'block' | 'throttle' | 'empty' | 'error' | 'response';
 
+/**
+ * 内容审核类别（识别方向）。
+ *
+ * 采用 OpenAI moderation 风格的层级命名：子类别以 `父/子` 表示，
+ * 例如 `violence/graphic` 属于 `violence`。父类别启用即覆盖其全部子类别，
+ * 子类别可单独关闭或调高敏感度。
+ */
+export type ModerationCategory =
+  | 'sexual'
+  | 'sexual/minors'
+  | 'harassment'
+  | 'harassment/threatening'
+  | 'hate'
+  | 'hate/threatening'
+  | 'self-harm'
+  | 'self-harm/intent'
+  | 'self-harm/instructions'
+  | 'violence'
+  | 'violence/graphic'
+  | 'illicit'
+  | 'illicit/violent'
+  | 'profanity';
+
+/**
+ * 多个检测引擎之间的组合模式。
+ *   strict    任一启用引擎命中即拦截（每个引擎都必须放行，默认，等价「通过所有库的检测」）
+ *   majority  超过半数启用引擎命中才拦截
+ *   lenient   全部启用引擎都命中才拦截
+ */
+export type ModerationCombineMode = 'strict' | 'majority' | 'lenient';
+
+/** 审核阶段：请求侧（用户输入）或响应侧（模型输出） */
+export type ModerationStage = 'input' | 'output';
+
+/** 作用域层级：全局默认策略被 Provider / 模型级绑定覆盖 */
+export type ModerationScopeType = 'provider' | 'model';
+
+/** 输出侧命中后的处理方式，HTTP 状态码已可能写出，因此不含 IP 级动作 */
+export type ModerationOutputAction = 'empty' | 'error' | 'response';
+
 /** primary 参与常规路由；fallback / parallel 是单例特殊角色，DB 里同样是真实行 */
 export type ProviderKind = 'primary' | 'fallback' | 'parallel';
 
@@ -233,6 +273,16 @@ export interface SettingsDTO {
   blockedErrorMessage: string;
   /** 是否启用模型名相近匹配（例如用模型 ID 优先匹配到声明了近似模型名的 Provider） */
   fuzzyModelMatchingEnabled: boolean;
+  /** 是否启用多层内容审核系统（与旧版恶意内容检测并存，默认关闭） */
+  moderationEnabled: boolean;
+  /** 审核请求侧内容（用户输入） */
+  moderationInputEnabled: boolean;
+  /** 审核响应侧内容（模型输出） */
+  moderationOutputEnabled: boolean;
+  /** 流式响应是否逐块审核；关闭时流式响应跳过输出审核，仅审非流式 */
+  moderationOutputStreamEnabled: boolean;
+  /** 审核事件审计日志保留天数，0 表示永不清理 */
+  moderationAuditRetentionDays: number;
   /** 同 IP 每 10 分钟请求数上限，0 表示不启用 */
   ipRateLimitPer10Min: number;
   /** 同 IP 每 30 分钟请求数上限，0 表示不启用 */
@@ -524,6 +574,130 @@ export interface ContributionSubmitResult {
     'id' | 'name' | 'contributor' | 'contributorType' | 'displayName' | 'avatarUrl' | 'enabled' | 'modelCount'
   >;
   results: ContributionModelResult[];
+}
+
+// ------------------------------------------------------------------ 内容审核
+
+/** 单个类别的策略配置 */
+export interface ModerationCategorySettingDTO {
+  category: ModerationCategory;
+  enabled: boolean;
+  /** 敏感度 0-100：越高越严格。阈值 = 1 - 敏感度/100，命中分 >= 阈值即判定命中。 */
+  sensitivity: number;
+}
+
+/** 单个检测引擎在策略中的配置 */
+export interface ModerationDetectorSettingDTO {
+  detectorId: string;
+  enabled: boolean;
+  /** 非原生分类引擎（visulima / obscenity）的通用命中归属到这些类别 */
+  categories: ModerationCategory[];
+}
+
+export interface ModerationPolicyDTO {
+  id: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  /** 全局默认策略；同一时间只允许一条 */
+  isDefault: boolean;
+  combineMode: ModerationCombineMode;
+  /** 请求侧命中动作，复用旧版恶意内容动作（含 IP 级 ban/block/throttle） */
+  action: MaliciousBehaviorAction;
+  /** 响应侧命中动作 */
+  outputAction: ModerationOutputAction;
+  /** outputAction=response 时替换的文本 */
+  outputResponse: string;
+  /** 流式输出审核的滞后窗口（字符），越大越能拦住跨块拆词，代价是首字延迟 */
+  holdBackChars: number;
+  /** 请求侧命中可返回的文本（action=response） */
+  response: string;
+  /** 自定义违禁词，每行或逗号分隔一个；作为 builtin-lexicon 的扩展词条 */
+  forbiddenKeywords: string;
+  categories: ModerationCategorySettingDTO[];
+  detectors: ModerationDetectorSettingDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModerationPolicyInput {
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  isDefault?: boolean;
+  combineMode?: ModerationCombineMode;
+  action?: MaliciousBehaviorAction;
+  outputAction?: ModerationOutputAction;
+  outputResponse?: string;
+  holdBackChars?: number;
+  response?: string;
+  forbiddenKeywords?: string;
+  categories?: ModerationCategorySettingDTO[];
+  detectors?: ModerationDetectorSettingDTO[];
+}
+
+export interface ModerationBindingDTO {
+  id: number;
+  scopeType: ModerationScopeType;
+  /** scopeType=provider 时生效 */
+  providerId: number | null;
+  providerName: string | null;
+  /** scopeType=model 时生效 */
+  model: string | null;
+  policyId: number;
+  policyName: string | null;
+  createdAt: string;
+}
+
+export interface ModerationBindingInput {
+  scopeType: ModerationScopeType;
+  providerId?: number | null;
+  model?: string | null;
+  policyId: number;
+}
+
+/** 引擎能力描述，供后台展示可用性并决定可选类别 */
+export interface ModerationDetectorInfoDTO {
+  id: string;
+  label: string;
+  description: string;
+  /** 依赖是否已安装且可加载 */
+  available: boolean;
+  /** 是否自行输出类别（否则命中归属由策略配置决定） */
+  nativeCategories: boolean;
+  /** 引擎可识别的类别；'all' 表示可承担策略里配置的任意类别 */
+  categories: ModerationCategory[] | 'all';
+  languages: string[];
+}
+
+export interface ModerationEventDTO {
+  id: number;
+  traceId: string;
+  occurredAt: string;
+  stage: ModerationStage;
+  /** 命中的类别，逗号分隔的类别 id 列表 */
+  categories: ModerationCategory[];
+  detectorIds: string[];
+  score: number | null;
+  /** 已脱敏的命中片段 */
+  matched: string[];
+  action: string;
+  blocked: boolean;
+  ip: string | null;
+  policyId: number | null;
+  policyName: string | null;
+  providerName: string | null;
+  model: string | null;
+}
+
+export interface ModerationEventQuery {
+  limit?: number;
+  offset?: number;
+  stage?: ModerationStage;
+  category?: ModerationCategory;
+  blockedOnly?: boolean;
+  from?: string;
+  to?: string;
 }
 
 export interface AuthStateDTO {

@@ -15,6 +15,10 @@ import { Readable } from 'node:stream';
 
 import { ResponseClaimedError, type GateOwner, type ResponseGate } from '../core/gate';
 import { createResponseEnvelope, type JsonRecord } from '../core/protocol';
+import { evaluateText } from '../core/moderation/evaluate';
+import { StreamModerationGuard } from '../core/moderation/stream-guard';
+import { responseText as extractResponseText } from '../core/moderation/text';
+import type { CompiledModerationPolicy, ModerationDecision } from '../core/moderation/types';
 import { readChunkWithTimeout, withTimeout } from '../core/timeout';
 import {
   SSE_DONE,
@@ -37,6 +41,26 @@ export interface InvokeResult {
   completionTokens: number;
   upstreamRequest: JsonRecord;
   capturedResponse: CapturedResponse;
+  /** 输出审核命中时的判定（仅命中时存在），由 http 层落审计并改记结局 */
+  moderation?: ModerationDecision;
+  /** 实际写出的 HTTP 状态码；输出审核改写响应时可能不是 200 */
+  responseStatus?: number;
+}
+
+/** 流式输出审核命中：用异常把控制流从写响应的深层收回到统一终止处 */
+class OutputModerationBlocked extends Error {
+  constructor(
+    readonly decision: ModerationDecision,
+    readonly partial: Partial<InvokeResult>,
+  ) {
+    super('Output blocked by content moderation');
+    this.name = 'OutputModerationBlocked';
+  }
+}
+
+function blockedStreamMessage(ctx: InvokeContext, decision: ModerationDecision): string {
+  if (decision.action === 'response') return ctx.outputModeration?.outputResponse || '模型输出被内容审核策略拦截';
+  return '模型输出被内容审核策略拦截';
 }
 
 export type ProxyProtocol = 'chat' | 'responses';
@@ -64,6 +88,25 @@ export interface InvokeContext {
    * 避免客户端在漫长的重试链之后已经超时断开。
    */
   openEarly?: boolean;
+  /** 输出侧生效策略；null / 缺省表示不审核模型输出 */
+  outputModeration?: CompiledModerationPolicy | null;
+  /** 流式响应是否也审核（关闭时流式跳过，仅非流式审核） */
+  moderationStream?: boolean;
+}
+
+/** 输出审核命中后改写 chat 响应的正文 */
+function replaceChatContent(body: JsonRecord, content: string): JsonRecord {
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  return {
+    ...body,
+    choices: choices.map((choice) => {
+      if (!isJsonRecord(choice)) return choice;
+      const message = isJsonRecord(choice.message)
+        ? { ...choice.message, content, reasoning_content: null, reasoning: null }
+        : { role: 'assistant', content };
+      return { ...choice, message };
+    }),
+  };
 }
 
 function setStreamHeaders(res: Response): void {
@@ -154,15 +197,57 @@ export async function invokeNonStream(ctx: InvokeContext): Promise<InvokeResult>
         })
       : response;
 
-  ctx.res.json(responseBody);
-  const responseText = JSON.stringify(responseBody);
+  const actualModel = body.model || ctx.model;
+  const promptTokens = body.usage?.prompt_tokens ?? 0;
+  const completionTokens = body.usage?.completion_tokens ?? 0;
+  const upstreamRequest = { ...ctx.payload, model: ctx.model, stream: false } as JsonRecord;
+
+  // ---- 输出侧审核：在写出之前判定，命中则替换正文或改写为错误响应
+  let finalBody: unknown = responseBody;
+  let moderation: ModerationDecision | undefined;
+  let responseStatus = 200;
+
+  if (ctx.outputModeration) {
+    const decision = evaluateText(extractResponseText(responseBody), ctx.outputModeration, 'output');
+    if (decision.blocked) {
+      moderation = decision;
+      if (decision.action === 'error') {
+        const errorBody = { error: { message: '模型输出被内容审核策略拦截', code: 'moderation_output_blocked' } };
+        ctx.res.status(403).json(errorBody);
+        return {
+          actualModel,
+          promptTokens,
+          completionTokens,
+          upstreamRequest,
+          capturedResponse: { contentType: 'application/json; charset=utf-8', body: JSON.stringify(errorBody) },
+          moderation,
+          responseStatus: 403,
+        };
+      }
+      const replacement = decision.action === 'response' ? ctx.outputModeration.outputResponse ?? '' : '';
+      finalBody =
+        ctx.protocol === 'responses'
+          ? createResponseEnvelope({
+              request: ctx.responseRequest ?? {},
+              model: actualModel,
+              content: replacement,
+              id: body.id,
+              createdAt: body.created,
+            })
+          : replaceChatContent(responseBody as JsonRecord, replacement);
+    }
+  }
+
+  ctx.res.json(finalBody);
+  const serialized = JSON.stringify(finalBody);
 
   return {
-    actualModel: body.model || ctx.model,
-    promptTokens: body.usage?.prompt_tokens ?? 0,
-    completionTokens: body.usage?.completion_tokens ?? 0,
-    upstreamRequest: { ...ctx.payload, model: ctx.model, stream: false },
-    capturedResponse: { contentType: 'application/json; charset=utf-8', body: responseText },
+    actualModel,
+    promptTokens,
+    completionTokens,
+    upstreamRequest,
+    capturedResponse: { contentType: 'application/json; charset=utf-8', body: serialized },
+    ...(moderation ? { moderation, responseStatus } : {}),
   };
 }
 
@@ -179,7 +264,7 @@ interface ResponseToolState {
 }
 
 /** Responses 流式格式由 Chat Completions chunk 增量转换，保持现有 Provider 兼容性。 */
-async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> {
+async function invokeResponsesStreamInner(ctx: InvokeContext): Promise<InvokeResult> {
   const responseId = `resp_${randomUUID().replace(/-/g, '')}`;
   const messageId = `msg_${responseId.slice(5)}`;
   const reasoningId = `rs_${responseId.slice(5)}`;
@@ -199,11 +284,36 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
   let reasoningTokens = 0;
   const tools = new Map<number, ResponseToolState>();
   const capturedChunks: string[] = [];
+  const guard =
+    ctx.outputModeration && ctx.moderationStream ? new StreamModerationGuard(ctx.outputModeration) : null;
+  let upstreamRequest: JsonRecord = { ...ctx.payload, model: ctx.model, stream: true };
 
+  /** 每个 Responses 事件都经此：守卫按 delta 正文判定，命中就抛出终止信号 */
   const emit = (event: JsonRecord): void => {
     const chunk = formatResponseEvent({ ...event, sequence_number: sequence++ });
-    capturedChunks.push(chunk);
-    write(ctx.res, chunk);
+    if (!guard) {
+      capturedChunks.push(chunk);
+      write(ctx.res, chunk);
+      return;
+    }
+    const deltaText = typeof event.delta === 'string' ? event.delta : '';
+    const result = guard.pushEvent(chunk, deltaText);
+    if (result.release) {
+      capturedChunks.push(result.release);
+      write(ctx.res, result.release);
+    }
+    if (result.decision) {
+      throw new OutputModerationBlocked(result.decision, {
+        actualModel,
+        promptTokens,
+        completionTokens,
+        upstreamRequest,
+        capturedResponse: {
+          contentType: 'text/event-stream; charset=utf-8',
+          body: capturedChunks.join(''),
+        },
+      });
+    }
   };
 
   const ensureOpened = (): void => {
@@ -264,7 +374,6 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
 
   const base = { ...ctx.payload, model: ctx.model, stream: true };
   let upstream: unknown;
-  let upstreamRequest: JsonRecord;
   try {
     upstreamRequest = { ...base, stream_options: { include_usage: true } };
     upstream = await createStream(upstreamRequest);
@@ -469,6 +578,27 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
     id: responseId,
     createdAt,
   });
+  // 收尾前把滞后缓冲里的尾部正文做终审：命中则不发 completed，直接终止
+  if (guard) {
+    const flushed = guard.flush();
+    if (flushed.release) {
+      capturedChunks.push(flushed.release);
+      write(ctx.res, flushed.release);
+    }
+    if (flushed.decision) {
+      throw new OutputModerationBlocked(flushed.decision, {
+        actualModel,
+        promptTokens,
+        completionTokens,
+        upstreamRequest,
+        capturedResponse: {
+          contentType: 'text/event-stream; charset=utf-8',
+          body: capturedChunks.join(''),
+        },
+      });
+    }
+  }
+
   emit({ type: 'response.completed', response });
   if (!ctx.res.writableEnded) ctx.res.end();
 
@@ -481,15 +611,44 @@ async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> 
   };
 }
 
+/**
+ * Responses 流式的外层包装：守卫命中时用异常把控制流带到此处，
+ * 统一发终止事件并回填部分结果（模型、token、已放行正文）。
+ */
+async function invokeResponsesStream(ctx: InvokeContext): Promise<InvokeResult> {
+  try {
+    return await invokeResponsesStreamInner(ctx);
+  } catch (error) {
+    if (!(error instanceof OutputModerationBlocked)) throw error;
+    writeStreamError(ctx.res, blockedStreamMessage(ctx, error.decision), ctx.protocol);
+    if (!ctx.res.writableEnded) ctx.res.end();
+    return {
+      actualModel: error.partial.actualModel ?? ctx.model,
+      promptTokens: error.partial.promptTokens ?? 0,
+      completionTokens: error.partial.completionTokens ?? 0,
+      upstreamRequest: error.partial.upstreamRequest ?? { ...ctx.payload, model: ctx.model, stream: true },
+      capturedResponse: error.partial.capturedResponse ?? {
+        contentType: 'text/event-stream; charset=utf-8',
+        body: '',
+      },
+      moderation: error.decision,
+      responseStatus: 200,
+    };
+  }
+}
+
 function isJsonRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
   if (ctx.protocol === 'responses') return invokeResponsesStream(ctx);
+  const guard =
+    ctx.outputModeration && ctx.moderationStream ? new StreamModerationGuard(ctx.outputModeration) : null;
   let headersOpened = false;
   let state: SseScanState = createScanState();
   const capturedChunks: string[] = [];
+  let upstreamRequest: JsonRecord = { ...ctx.payload, model: ctx.model, stream: true };
 
   const ensureOpened = (): void => {
     if (headersOpened) return;
@@ -497,6 +656,32 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
     ctx.onFirstResponse?.();
     setStreamHeaders(ctx.res);
     headersOpened = true;
+  };
+
+  /** 所有 chat 流式输出都经此：有守卫则先缓冲再审，命中就抛出终止信号 */
+  const emit = (text: string): void => {
+    if (!guard) {
+      capturedChunks.push(text);
+      write(ctx.res, text);
+      return;
+    }
+    const result = guard.pushRawSse(text);
+    if (result.release) {
+      capturedChunks.push(result.release);
+      write(ctx.res, result.release);
+    }
+    if (result.decision) {
+      throw new OutputModerationBlocked(result.decision, {
+        actualModel: state.actualModel || ctx.model,
+        promptTokens: state.promptTokens,
+        completionTokens: state.completionTokens,
+        upstreamRequest,
+        capturedResponse: {
+          contentType: 'text/event-stream; charset=utf-8',
+          body: capturedChunks.join(''),
+        },
+      });
+    }
   };
 
   const createStream = (payload: Record<string, unknown>): Promise<unknown> =>
@@ -507,81 +692,119 @@ export async function invokeStream(ctx: InvokeContext): Promise<InvokeResult> {
       ctx.clientSignal,
     );
 
-  if (ctx.openEarly) {
-    ensureOpened();
-    const warmup = formatSseData({
-      id: 'ai-proxy-warmup',
-      object: 'chat.completion.chunk',
-      created: Math.floor(Date.now() / 1000),
-      model: ctx.model,
-      choices: [{ index: 0, delta: {}, finish_reason: null }],
-    });
-    capturedChunks.push(warmup);
-    write(ctx.res, warmup);
-  }
-
-  const base = { ...ctx.payload, model: ctx.model, stream: true };
-  let upstream: unknown;
-  let upstreamRequest: JsonRecord;
   try {
-    // 优先索取 usage，拿不到才降级 —— 否则 token 统计会缺失
-    upstreamRequest = { ...base, stream_options: { include_usage: true } };
-    upstream = await createStream(upstreamRequest);
+    if (ctx.openEarly) {
+      ensureOpened();
+      emit(
+        formatSseData({
+          id: 'ai-proxy-warmup',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: ctx.model,
+          choices: [{ index: 0, delta: {}, finish_reason: null }],
+        }),
+      );
+    }
+
+    const base = { ...ctx.payload, model: ctx.model, stream: true };
+    let upstream: unknown;
+    try {
+      // 优先索取 usage，拿不到才降级 —— 否则 token 统计会缺失
+      upstreamRequest = { ...base, stream_options: { include_usage: true } };
+      upstream = await createStream(upstreamRequest);
+    } catch (error) {
+      if (!isUnsupportedStreamOption(error)) throw error;
+      upstreamRequest = base;
+      upstream = await createStream(base);
+    }
+
+    const rawStream = extractRawStream(upstream);
+
+    if (rawStream) {
+      const iterator = rawStream[Symbol.asyncIterator]();
+
+      for (;;) {
+        const { value, done } = await readChunkWithTimeout(
+          iterator,
+          ctx.timeoutMs,
+          `Model ${ctx.model} stalled for ${ctx.timeoutMs}ms`,
+          ctx.clientSignal,
+        );
+        if (done) break;
+
+        ensureOpened();
+        const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
+        state = scanText(state, text);
+        emit(text);
+      }
+    } else {
+      const iterator = (upstream as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
+
+      for (;;) {
+        const { value: chunk, done } = await readChunkWithTimeout(
+          iterator,
+          ctx.timeoutMs,
+          `Model ${ctx.model} stalled for ${ctx.timeoutMs}ms`,
+          ctx.clientSignal,
+        );
+        if (done) break;
+
+        ensureOpened();
+        const text = formatSseData(chunk);
+        state = scanText(state, text);
+        emit(text);
+      }
+
+      // SDK 迭代器路径不带 [DONE]，需要补上
+      if (headersOpened) emit(SSE_DONE);
+    }
+
+    // 上游一个 chunk 都没给：视为失败，让调用方继续尝试下一个 provider
+    if (!headersOpened) {
+      throw new Error(`Model ${ctx.model} returned an empty stream`);
+    }
+
+    // 流结束：把滞后缓冲里的尾部正文做终审，命中则同样终止
+    if (guard) {
+      const flushed = guard.flush();
+      if (flushed.release) {
+        capturedChunks.push(flushed.release);
+        write(ctx.res, flushed.release);
+      }
+      if (flushed.decision) {
+        const decision = flushed.decision;
+        writeStreamError(ctx.res, blockedStreamMessage(ctx, decision), ctx.protocol);
+        if (!ctx.res.writableEnded) ctx.res.end();
+        return {
+          actualModel: state.actualModel || ctx.model,
+          promptTokens: state.promptTokens,
+          completionTokens: state.completionTokens,
+          upstreamRequest,
+          capturedResponse: {
+            contentType: 'text/event-stream; charset=utf-8',
+            body: capturedChunks.join(''),
+          },
+          moderation: decision,
+          responseStatus: 200,
+        };
+      }
+    }
   } catch (error) {
-    if (!isUnsupportedStreamOption(error)) throw error;
-    upstreamRequest = base;
-    upstream = await createStream(base);
-  }
-
-  const rawStream = extractRawStream(upstream);
-
-  if (rawStream) {
-    const iterator = rawStream[Symbol.asyncIterator]();
-
-    for (;;) {
-      const { value, done } = await readChunkWithTimeout(
-        iterator,
-        ctx.timeoutMs,
-        `Model ${ctx.model} stalled for ${ctx.timeoutMs}ms`,
-        ctx.clientSignal,
-      );
-      if (done) break;
-
-      ensureOpened();
-      const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
-      capturedChunks.push(text);
-      write(ctx.res, text);
-      state = scanText(state, text);
-    }
-  } else {
-    const iterator = (upstream as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
-
-    for (;;) {
-      const { value: chunk, done } = await readChunkWithTimeout(
-        iterator,
-        ctx.timeoutMs,
-        `Model ${ctx.model} stalled for ${ctx.timeoutMs}ms`,
-        ctx.clientSignal,
-      );
-      if (done) break;
-
-      ensureOpened();
-      const text = formatSseData(chunk);
-      capturedChunks.push(text);
-      state = scanText(state, text);
-      write(ctx.res, text);
-    }
-
-    // SDK 迭代器路径不带 [DONE]，需要补上
-    if (headersOpened) {
-      capturedChunks.push(SSE_DONE);
-      write(ctx.res, SSE_DONE);
-    }
-  }
-
-  // 上游一个 chunk 都没给：视为失败，让调用方继续尝试下一个 provider
-  if (!headersOpened) {
-    throw new Error(`Model ${ctx.model} returned an empty stream`);
+    if (!(error instanceof OutputModerationBlocked)) throw error;
+    writeStreamError(ctx.res, blockedStreamMessage(ctx, error.decision), ctx.protocol);
+    if (!ctx.res.writableEnded) ctx.res.end();
+    return {
+      actualModel: error.partial.actualModel ?? ctx.model,
+      promptTokens: error.partial.promptTokens ?? 0,
+      completionTokens: error.partial.completionTokens ?? 0,
+      upstreamRequest: error.partial.upstreamRequest ?? upstreamRequest,
+      capturedResponse: error.partial.capturedResponse ?? {
+        contentType: 'text/event-stream; charset=utf-8',
+        body: '',
+      },
+      moderation: error.decision,
+      responseStatus: 200,
+    };
   }
 
   if (!ctx.res.writableEnded) ctx.res.end();

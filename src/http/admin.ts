@@ -36,7 +36,21 @@ import {
   listAnnouncements,
   updateAnnouncement,
 } from '../db/repo/announcements';
+import {
+  createModerationPolicy,
+  defaultDetectorSettings,
+  deleteModerationBinding,
+  deleteModerationPolicy,
+  findModerationPolicyById,
+  listModerationBindings,
+  listModerationPolicies,
+  queryModerationEvents,
+  updateModerationPolicy,
+  upsertModerationBinding,
+} from '../db/repo/moderation';
 import { getRequestDetail, getIpDetailStats, queryRequests } from '../db/repo/requests';
+import { listDetectorInfo, detectorById } from '../core/moderation/detectors';
+import { MODERATION_CATEGORIES, categoryMeta } from '../core/moderation/taxonomy';
 import { LsqliteError } from '../db/lsqlite';
 import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
 import {
@@ -72,6 +86,14 @@ import type {
   SettingsPatch,
   ProviderRequestMode,
   ProviderVariableDefinition,
+  ModerationCategory,
+  ModerationCategorySettingDTO,
+  ModerationCombineMode,
+  ModerationDetectorSettingDTO,
+  ModerationEventQuery,
+  ModerationOutputAction,
+  ModerationPolicyInput,
+  ModerationScopeType,
 } from '../types/api';
 import { toProviderDTO } from './dto';
 
@@ -790,6 +812,22 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.fuzzyModelMatchingEnabled !== undefined) {
       patch.fuzzyModelMatchingEnabled = !!body.fuzzyModelMatchingEnabled;
     }
+    if (body.moderationEnabled !== undefined) patch.moderationEnabled = !!body.moderationEnabled;
+    if (body.moderationInputEnabled !== undefined) {
+      patch.moderationInputEnabled = !!body.moderationInputEnabled;
+    }
+    if (body.moderationOutputEnabled !== undefined) {
+      patch.moderationOutputEnabled = !!body.moderationOutputEnabled;
+    }
+    if (body.moderationOutputStreamEnabled !== undefined) {
+      patch.moderationOutputStreamEnabled = !!body.moderationOutputStreamEnabled;
+    }
+    if (body.moderationAuditRetentionDays !== undefined) {
+      patch.moderationAuditRetentionDays = toNonNegativeInt(
+        body.moderationAuditRetentionDays,
+        '审核审计日志保留天数',
+      );
+    }
 
     const settings = await saveSettings(patch);
     invalidateConfig();
@@ -1037,6 +1075,240 @@ router.delete('/api/announcements/:id', requireAuth, async (req: Request, res: R
       return;
     }
     res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// ------------------------------------------------------------------ 内容审核
+
+const COMBINE_MODES: readonly ModerationCombineMode[] = ['strict', 'majority', 'lenient'];
+const OUTPUT_ACTIONS: readonly ModerationOutputAction[] = ['empty', 'error', 'response'];
+
+function toCombineMode(value: unknown): ModerationCombineMode {
+  if (COMBINE_MODES.includes(value as ModerationCombineMode)) return value as ModerationCombineMode;
+  throw new BadRequest('审核组合模式只允许 strict / majority / lenient');
+}
+
+function toOutputAction(value: unknown): ModerationOutputAction {
+  if (OUTPUT_ACTIONS.includes(value as ModerationOutputAction)) return value as ModerationOutputAction;
+  throw new BadRequest('输出审核处理方式只允许 empty / error / response');
+}
+
+function toModerationCategory(value: unknown): ModerationCategory {
+  if (typeof value === 'string' && (MODERATION_CATEGORIES as readonly string[]).includes(value)) {
+    return value as ModerationCategory;
+  }
+  throw new BadRequest(`未知审核类别：${String(value)}`);
+}
+
+function toCategorySettings(value: unknown): ModerationCategorySettingDTO[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new BadRequest('categories 必须是数组');
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') throw new BadRequest(`第 ${index + 1} 个类别配置无效`);
+    const item = raw as Record<string, unknown>;
+    const category = toModerationCategory(item.category);
+    const sensitivity = Number(item.sensitivity ?? 50);
+    if (!Number.isFinite(sensitivity) || sensitivity < 0 || sensitivity > 100) {
+      throw new BadRequest(`类别 ${category} 的敏感度必须是 0-100 的整数`);
+    }
+    return {
+      category,
+      enabled: item.enabled === undefined ? true : !!item.enabled,
+      sensitivity: Math.round(sensitivity),
+    };
+  });
+}
+
+function toDetectorSettings(value: unknown): ModerationDetectorSettingDTO[] {
+  if (value === undefined) return defaultDetectorSettings();
+  if (!Array.isArray(value)) throw new BadRequest('detectors 必须是数组');
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') throw new BadRequest(`第 ${index + 1} 个引擎配置无效`);
+    const item = raw as Record<string, unknown>;
+    const detectorId = requireString(item.detectorId, `第 ${index + 1} 个引擎 id`);
+    if (!detectorById(detectorId)) throw new BadRequest(`未知检测引擎：${detectorId}`);
+    const categories = Array.isArray(item.categories) ? item.categories.map(toModerationCategory) : [];
+    return {
+      detectorId,
+      enabled: item.enabled === undefined ? true : !!item.enabled,
+      categories,
+    };
+  });
+}
+
+function toModerationScope(value: unknown): ModerationScopeType {
+  if (value === 'provider' || value === 'model') return value;
+  throw new BadRequest('作用域只允许 provider / model');
+}
+
+router.get('/api/moderation/policies', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json(await listModerationPolicies());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.get('/api/moderation/detectors', requireAuth, (_req: Request, res: Response) => {
+  res.json(listDetectorInfo());
+});
+
+router.get('/api/moderation/categories', requireAuth, (_req: Request, res: Response) => {
+  res.json(
+    MODERATION_CATEGORIES.map((category) => {
+      const meta = categoryMeta(category);
+      return {
+        category: meta.id,
+        label: meta.label,
+        parent: meta.parent,
+        defaultSensitivity: meta.defaultSensitivity,
+      };
+    }),
+  );
+});
+
+router.post('/api/moderation/policies', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const input: ModerationPolicyInput = {
+      name: requireString(body.name, '策略名称'),
+      description: body.description === undefined ? '' : String(body.description),
+      enabled: body.enabled === undefined ? true : !!body.enabled,
+      isDefault: !!body.isDefault,
+      combineMode: body.combineMode === undefined ? 'strict' : toCombineMode(body.combineMode),
+      action: body.action === undefined ? 'empty' : toMaliciousAction(body.action),
+      outputAction: body.outputAction === undefined ? 'empty' : toOutputAction(body.outputAction),
+      outputResponse: body.outputResponse === undefined ? '' : String(body.outputResponse),
+      response: body.response === undefined ? '' : String(body.response),
+      holdBackChars: body.holdBackChars === undefined ? 96 : toNonNegativeInt(body.holdBackChars, '滞后窗口字符数'),
+      forbiddenKeywords: body.forbiddenKeywords === undefined ? '' : String(body.forbiddenKeywords),
+      categories: toCategorySettings(body.categories),
+      detectors: toDetectorSettings(body.detectors),
+    };
+    const created = await createModerationPolicy(input);
+    invalidateConfig();
+    res.status(201).json(created);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.put('/api/moderation/policies/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await findModerationPolicyById(id);
+    if (!existing) {
+      res.status(404).json({ error: { message: '审核策略不存在' } });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const patch: Partial<ModerationPolicyInput> = {};
+    if (body.name !== undefined) patch.name = requireString(body.name, '策略名称');
+    if (body.description !== undefined) patch.description = String(body.description);
+    if (body.enabled !== undefined) patch.enabled = !!body.enabled;
+    if (body.isDefault !== undefined) patch.isDefault = !!body.isDefault;
+    if (body.combineMode !== undefined) patch.combineMode = toCombineMode(body.combineMode);
+    if (body.action !== undefined) patch.action = toMaliciousAction(body.action);
+    if (body.outputAction !== undefined) patch.outputAction = toOutputAction(body.outputAction);
+    if (body.outputResponse !== undefined) patch.outputResponse = String(body.outputResponse);
+    if (body.response !== undefined) patch.response = String(body.response);
+    if (body.holdBackChars !== undefined) {
+      patch.holdBackChars = toNonNegativeInt(body.holdBackChars, '滞后窗口字符数');
+    }
+    if (body.forbiddenKeywords !== undefined) patch.forbiddenKeywords = String(body.forbiddenKeywords);
+    if (body.categories !== undefined) patch.categories = toCategorySettings(body.categories);
+    if (body.detectors !== undefined) patch.detectors = toDetectorSettings(body.detectors);
+
+    const updated = await updateModerationPolicy(id, patch);
+    invalidateConfig();
+    res.json(updated);
+  } catch (error) {
+    const message = (error as Error)?.message ?? '';
+    if (/unique/i.test(message)) {
+      res.status(409).json({ error: { message: '策略名称已存在' } });
+      return;
+    }
+    fail(res, error);
+  }
+});
+
+router.delete('/api/moderation/policies/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const deleted = await deleteModerationPolicy(Number(req.params.id));
+    if (!deleted) {
+      res.status(404).json({ error: { message: '审核策略不存在' } });
+      return;
+    }
+    invalidateConfig();
+    res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.get('/api/moderation/bindings', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json(await listModerationBindings());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.put('/api/moderation/bindings', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const scopeType = toModerationScope(body.scopeType);
+    const providerId = Number(body.providerId);
+    if (!Number.isInteger(providerId) || providerId <= 0) throw new BadRequest('Provider id 无效');
+    const policyId = Number(body.policyId);
+    if (!Number.isInteger(policyId) || policyId <= 0) throw new BadRequest('策略 id 无效');
+
+    const policy = await findModerationPolicyById(policyId);
+    if (!policy) throw new BadRequest('绑定的策略不存在');
+
+    let model: string | null = null;
+    if (scopeType === 'model') {
+      model = requireString(body.model, '模型名');
+    }
+
+    await upsertModerationBinding({ scopeType, providerId, model, policyId });
+    invalidateConfig();
+    res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.delete('/api/moderation/bindings/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const deleted = await deleteModerationBinding(Number(req.params.id));
+    if (!deleted) {
+      res.status(404).json({ error: { message: '绑定不存在' } });
+      return;
+    }
+    invalidateConfig();
+    res.json({ success: true });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.get('/api/moderation/events', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const query: ModerationEventQuery = {};
+    const raw = req.query as Record<string, unknown>;
+    if (raw.limit !== undefined) query.limit = Number(raw.limit) || 50;
+    if (raw.offset !== undefined) query.offset = Number(raw.offset) || 0;
+    if (raw.stage === 'input' || raw.stage === 'output') query.stage = raw.stage;
+    if (raw.category) query.category = toModerationCategory(raw.category);
+    if (raw.blockedOnly === 'true') query.blockedOnly = true;
+    if (raw.from) query.from = String(raw.from);
+    if (raw.to) query.to = String(raw.to);
+
+    res.json(await queryModerationEvents(query));
   } catch (error) {
     fail(res, error);
   }

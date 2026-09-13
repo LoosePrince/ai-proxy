@@ -14,6 +14,8 @@
 import { loadRoutingSnapshot, type PriorityGroupRecord, type ProviderRecord } from '../db/repo/providers';
 import { loadSettings } from '../db/repo/settings';
 import { loadBlacklistedIps } from '../db/repo/ip-blacklist';
+import { loadModerationSnapshot } from '../db/repo/moderation';
+import { compileModerationConfig, type ModerationConfig } from '../core/moderation/compile';
 import type { SettingsDTO } from '../types/api';
 
 export interface ConfigSnapshot {
@@ -21,6 +23,8 @@ export interface ConfigSnapshot {
   groups: Map<number, PriorityGroupRecord>;
   settings: SettingsDTO;
   blacklistedIps: ReadonlySet<string>;
+  /** 审核策略已预编译：热路径只做内存查表与词表匹配 */
+  moderation: ModerationConfig;
   loadedAtMs: number;
 }
 
@@ -28,11 +32,12 @@ let snapshot: ConfigSnapshot | null = null;
 let loading: Promise<ConfigSnapshot> | null = null;
 
 async function build(): Promise<ConfigSnapshot> {
-  // 两次查询并发，重建成本约等于一次往返
-  const [routing, settings, blacklistedIps] = await Promise.all([
+  // 并发查询，重建成本约等于一次往返
+  const [routing, settings, blacklistedIps, moderationSnapshot] = await Promise.all([
     loadRoutingSnapshot(),
     loadSettings(),
     loadBlacklistedIps(),
+    loadModerationSnapshot(),
   ]);
 
   return {
@@ -40,6 +45,7 @@ async function build(): Promise<ConfigSnapshot> {
     groups: routing.groups,
     settings,
     blacklistedIps,
+    moderation: compileModerationConfig(moderationSnapshot.policies, moderationSnapshot.bindings),
     loadedAtMs: Date.now(),
   };
 }

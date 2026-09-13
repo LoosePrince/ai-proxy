@@ -23,6 +23,7 @@ import { getDb } from '../db/lsqlite';
 import { runMigrations } from '../db/migrate';
 import { syncEnvProviders, type EnvProviderSpec } from '../db/repo/providers';
 import { seedSettingsFromEnv } from '../db/repo/settings';
+import { seedModerationDefaults } from '../db/repo/moderation';
 import { invalidateConfig, warmConfig } from '../runtime/config-cache';
 import { sweepRateLimitBuckets } from '../runtime/counters';
 import { startRetentionSweeper, stopRetentionSweeper } from '../runtime/retention';
@@ -115,6 +116,8 @@ async function bootstrap(): Promise<void> {
   console.log(`[Startup] migrations applied=${result.applied.length} skipped=${result.skipped.length}`);
 
   await seedSettingsFromEnv();
+  // 审核默认策略依赖 core 的类别默认敏感度，因此放在迁移之后、由代码播种
+  await seedModerationDefaults();
 
   const specs = parseEnvProviders(process.env.FALLBACK_PROVIDERS);
   if (specs.length > 0) {
