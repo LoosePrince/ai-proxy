@@ -1,7 +1,7 @@
 # 多阶段构建：构建阶段带完整 devDependencies（tsc/vite），运行阶段只留生产依赖与产物。
 # 旧镜像把源码、Prisma CLI、前端构建链一起打进运行镜像，体积与攻击面都没必要。
 
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN npm run build:server && npm run build:web
 
 # ---------------------------------------------------------------- 运行阶段
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -29,6 +29,10 @@ ENV PORT=3000
 
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
+
+# 审核引擎放在 optionalDependencies：一旦镜像把可选依赖裁掉，宁可在这里构建失败，
+# 也不要运行时静默降级成「未安装」。确实需要精简镜像时删掉这一行即可。
+RUN node -e "require('@visulima/content-safety'); require('whitz-word-detector'); require('obscenity')"
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web/dist

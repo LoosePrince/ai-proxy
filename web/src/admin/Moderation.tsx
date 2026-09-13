@@ -26,6 +26,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -56,6 +57,21 @@ const ACTION_OPTIONS: Array<{ label: string; value: MaliciousBehaviorAction }> =
   { label: '报错（返回错误码）', value: 'error' },
   { label: '返回指定响应内容', value: 'response' },
 ];
+
+/**
+ * 不可用引擎的原因提示。
+ * 只显示「未安装」会让人无从下手，这里把加载失败原因与可直接执行的修复命令
+ * 一起挂到 Tag 上；可用引擎不挂提示，避免鼠标经过时弹出无意义空框。
+ */
+function reasonTooltip(info: ModerationDetectorInfoDTO | undefined) {
+  if (!info || info.available || !info.reason) return undefined;
+  return (
+    <Space direction="vertical" size={0}>
+      <span>{info.reason}</span>
+      {info.hint ? <Typography.Text style={{ color: 'inherit', fontSize: 12 }}>{info.hint}</Typography.Text> : null}
+    </Space>
+  );
+}
 
 const OUTPUT_ACTION_OPTIONS: Array<{ label: string; value: ModerationOutputAction }> = [
   { label: '空回复（清空正文）', value: 'empty' },
@@ -288,12 +304,17 @@ function PoliciesTab({
               const enabled = record.detectors.filter((item) => item.enabled);
               return (
                 <Space wrap>
-                  {enabled.map((item) => (
-                    <Tag key={item.detectorId} color={detectorInfo.get(item.detectorId)?.available ? 'green' : 'default'}>
-                      {item.detectorId}
-                      {detectorInfo.get(item.detectorId)?.available ? '' : '（未安装）'}
-                    </Tag>
-                  ))}
+                  {enabled.map((item) => {
+                    const info = detectorInfo.get(item.detectorId);
+                    return (
+                      <Tooltip key={item.detectorId} title={reasonTooltip(info)}>
+                        <Tag color={info?.available ? 'green' : 'default'}>
+                          {item.detectorId}
+                          {info?.available ? '' : '（未安装）'}
+                        </Tag>
+                      </Tooltip>
+                    );
+                  })}
                   {enabled.length === 0 ? <Tag>无</Tag> : null}
                 </Space>
               );
@@ -500,12 +521,19 @@ function DetectorMatrix({
             <Space direction="vertical" size={0}>
               <Space>
                 <span>{record.label}</span>
-                <Tag color={record.available ? 'green' : 'default'}>{record.available ? '可用' : '未安装'}</Tag>
+                <Tooltip title={reasonTooltip(record)}>
+                  <Tag color={record.available ? 'green' : 'default'}>{record.available ? '可用' : '未安装'}</Tag>
+                </Tooltip>
                 {record.nativeCategories ? <Tag color="purple">原生分类</Tag> : <Tag>通用命中</Tag>}
               </Space>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {record.description}
               </Typography.Text>
+              {!record.available && record.reason ? (
+                <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  {record.reason}；{record.hint ?? '重装依赖后重启服务'}
+                </Typography.Text>
+              ) : null}
             </Space>
           ),
         },
@@ -679,7 +707,7 @@ function DetectorsTab({ detectors }: { detectors: ModerationDetectorInfoDTO[] })
         showIcon
         style={{ marginBottom: 16 }}
         message="引擎为可选依赖，未安装时自动禁用，不影响服务启动"
-        description="当前内置适配器：内置分类词库（原生分类）、whitz-word-detector、@visulima/content-safety、obscenity。新增引擎需要实现 ModerationDetector 接口并注册。"
+        description="当前内置适配器：内置分类词库（原生分类）、whitz-word-detector、@visulima/content-safety、obscenity。新增引擎需要实现 ModerationDetector 接口并注册。排查未安装原因可执行 npm run moderation:doctor。"
       />
       <Table<ModerationDetectorInfoDTO>
         rowKey="id"
@@ -688,6 +716,7 @@ function DetectorsTab({ detectors }: { detectors: ModerationDetectorInfoDTO[] })
         columns={[
           { title: 'id', dataIndex: 'id', width: 180 },
           { title: '名称', dataIndex: 'label' },
+          { title: '依赖', dataIndex: 'dependency', width: 200, render: (value: string | null) => value ?? '内置' },
           { title: '说明', dataIndex: 'description' },
           {
             title: '类别能力',
@@ -700,9 +729,19 @@ function DetectorsTab({ detectors }: { detectors: ModerationDetectorInfoDTO[] })
           },
           {
             title: '状态',
-            dataIndex: 'available',
-            width: 110,
-            render: (value: boolean) => <Tag color={value ? 'green' : 'default'}>{value ? '可用' : '未安装'}</Tag>,
+            width: 140,
+            render: (_, record) => (
+              <Space direction="vertical" size={0}>
+                <Tooltip title={reasonTooltip(record)}>
+                  <Tag color={record.available ? 'green' : 'default'}>{record.available ? '可用' : '未安装'}</Tag>
+                </Tooltip>
+                {!record.available && record.reason ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {record.reason}
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            ),
           },
         ]}
       />

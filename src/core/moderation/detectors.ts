@@ -21,11 +21,82 @@ import type { DetectorContext, DetectorFinding, ModerationDetector } from './typ
 
 const req = createRequire(__filename);
 
+/**
+ * 可选依赖的元信息：包名 + 该包声明的 Node 版本要求。
+ * reason 只说明「为什么没加载成功」，真正能直接照做的修复写在 hint 里。
+ */
+const DEPENDENCY_INFO: Record<string, { pkg: string; engines: string }> = {
+  whitz: { pkg: 'whitz-word-detector', engines: '>=18' },
+  visulima: { pkg: '@visulima/content-safety', engines: '^22.14.0 || >=24.10.0' },
+  obscenity: { pkg: 'obscenity', engines: '>=18' },
+};
+
+/** 记录加载失败的原始原因，供 /admin/api/moderation/detectors 展示 */
+const loadFailures = new Map<string, { code: string; message: string }>();
+
 function tryLoad<T>(id: string): T | null {
   try {
     return req(id) as T;
-  } catch {
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    loadFailures.set(id, {
+      code: err?.code ?? 'LOAD_FAILED',
+      message: err?.message ?? String(error),
+    });
     return null;
+  }
+}
+
+/**
+ * 依赖装上了但导出不符合预期（残缺包 / 版本不兼容 / 被其它工具改写过）。
+ * 这种情况必须也报出来：否则 isAvailable() 返回 true，策略勾了却永远不命中。
+ */
+function apiShapeFailure(id: string, detail: string): false {
+  const pkg = DEPENDENCY_INFO[id]?.pkg;
+  if (pkg) loadFailures.set(pkg, { code: 'INCOMPATIBLE_API', message: detail });
+  return false;
+}
+
+/**
+ * 把 Node 的错误码翻译成人能照做的说明。
+ *
+ * 这里覆盖的是实际会遇到的几类：包没装、Node 太老不支持 require(ESM)、
+ * 包内含顶层 await（无法同步加载）。其它错误原样保留首行，不吞信息。
+ */
+function describeDetectorFailure(id: string): { reason: string; hint: string } | null {
+  const info = DEPENDENCY_INFO[id];
+  if (!info) return null;
+  const failure = loadFailures.get(info.pkg);
+  if (!failure) return null;
+
+  const install = `npm install ${info.pkg}`;
+  switch (failure.code) {
+    case 'MODULE_NOT_FOUND':
+    case 'ERR_MODULE_NOT_FOUND':
+      return {
+        reason: '依赖未安装（MODULE_NOT_FOUND）',
+        hint: `${install}；若部署时使用了 --omit=optional / omit=optional，请去掉该参数后重新安装`,
+      };
+    case 'ERR_REQUIRE_ESM':
+      return {
+        reason: `该包是纯 ESM，当前 Node (${process.version}) 不支持 require(ESM) 加载`,
+        hint: `升级到 Node 22.12+ / 20.19+，或改用 Node ${info.engines}（该包声明的 engines）后重启服务`,
+      };
+    case 'ERR_REQUIRE_ASYNC_MODULE':
+      return {
+        reason: `该包含顶层 await，无法同步加载（当前 Node ${process.version}）`,
+        hint: `升级 Node 到最新 LTS 后重启服务；审核管线为同步设计，暂不支持异步初始化引擎`,
+      };
+    case 'INCOMPATIBLE_API':
+      return {
+        reason: `已安装但导出不完整：${failure.message}`,
+        hint: `删除后重装：${install}，并确认 Node 满足 ${info.engines}`,
+      };
+    default:
+      return {
+        reason: `加载失败（${failure.code}）：${failure.message.split('\n')[0]}`,
+        hint: `${install}，并确认依赖未被裁剪（Docker/CI 的 --omit=optional）`,
+      };
   }
 }
 
@@ -131,7 +202,13 @@ const whitzAdapter: ModerationDetector = {
   nativeCategories: true,
   categories: 'all',
   languages: ['zh', 'en'],
-  isAvailable: () => !!whitzModule,
+  isAvailable: () => {
+    if (!whitzModule) return false;
+    if (typeof whitzModule.NodeWordDetector !== 'function') {
+      return apiShapeFailure('whitz', '缺少 NodeWordDetector 构造器');
+    }
+    return true;
+  },
   inspect(text, context) {
     const detector = whitzDetectorFor(context.customKeywords);
     if (!detector) return [];
@@ -223,7 +300,13 @@ const visulimaAdapter: ModerationDetector = {
   nativeCategories: false,
   categories: 'all',
   languages: ['en', 'de', 'fr', 'es', 'ja', 'ko', 'zh', 'ru', 'pt', 'it', 'pl', 'ar', 'hi'],
-  isAvailable: () => !!visulimaModule,
+  isAvailable: () => {
+    if (!visulimaModule) return false;
+    if (typeof visulimaModule.createChecker !== 'function') {
+      return apiShapeFailure('visulima', '缺少 createChecker 导出');
+    }
+    return true;
+  },
   inspect(text, context) {
     const checker = visulimaCheckerFor(context.customKeywords);
     if (!checker) return [];
@@ -285,7 +368,13 @@ const obscenityAdapter: ModerationDetector = {
   nativeCategories: false,
   categories: ['profanity', 'harassment', 'hate'],
   languages: ['en'],
-  isAvailable: () => !!obscenityModule,
+  isAvailable: () => {
+    if (!obscenityModule) return false;
+    if (typeof obscenityModule.RegExpMatcher !== 'function') {
+      return apiShapeFailure('obscenity', '缺少 RegExpMatcher 导出');
+    }
+    return true;
+  },
   inspect(text, context) {
     const matcher = getObscenityMatcher();
     if (!matcher) return [];
@@ -325,15 +414,22 @@ export function detectorById(id: string): ModerationDetector | undefined {
 }
 
 export function listDetectorInfo(): ModerationDetectorInfoDTO[] {
-  return MODERATION_DETECTORS.map((detector) => ({
-    id: detector.id,
-    label: detector.label,
-    description: detector.description,
-    available: safeAvailable(detector),
-    nativeCategories: detector.nativeCategories,
-    categories: detector.categories,
-    languages: detector.languages,
-  }));
+  return MODERATION_DETECTORS.map((detector) => {
+    const available = safeAvailable(detector);
+    const failure = available ? null : describeDetectorFailure(detector.id);
+    return {
+      id: detector.id,
+      label: detector.label,
+      description: detector.description,
+      available,
+      nativeCategories: detector.nativeCategories,
+      categories: detector.categories,
+      languages: detector.languages,
+      dependency: DEPENDENCY_INFO[detector.id]?.pkg ?? null,
+      reason: failure?.reason ?? null,
+      hint: failure?.hint ?? null,
+    };
+  });
 }
 
 function safeAvailable(detector: ModerationDetector): boolean {

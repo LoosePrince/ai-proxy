@@ -668,6 +668,12 @@ export interface ModerationDetectorInfoDTO {
   /** 引擎可识别的类别；'all' 表示可承担策略里配置的任意类别 */
   categories: ModerationCategory[] | 'all';
   languages: string[];
+  /** 可选依赖包名；内置引擎为 null */
+  dependency: string | null;
+  /** 不可用时的原因（已翻译为可读说明），可用时为 null */
+  reason: string | null;
+  /** 不可用时的修复建议（可直接执行的命令或版本要求） */
+  hint: string | null;
 }
 
 export interface ModerationEventDTO {

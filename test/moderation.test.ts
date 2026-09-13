@@ -105,6 +105,25 @@ describe('moderation detectors', () => {
     assert.equal(builtin.available, true);
     assert.equal(builtin.nativeCategories, true);
   });
+
+  it('可选依赖引擎标注依赖包名，可用时不带失败原因', () => {
+    const info = listDetectorInfo();
+    const visulima = info.find((detector) => detector.id === 'visulima');
+    assert.ok(visulima);
+    assert.equal(visulima.dependency, '@visulima/content-safety');
+    // 本仓库已安装全部可选依赖；一旦某个引擎不可用，必须给出原因与修复建议，
+    // 否则后台只能显示「未安装」，排查无从下手。
+    for (const detector of info) {
+      if (detector.id === 'builtin-lexicon') assert.equal(detector.dependency, null);
+      if (detector.available) {
+        assert.equal(detector.reason, null, `${detector.id} 可用时不应带原因`);
+        assert.equal(detector.hint, null, `${detector.id} 可用时不应带修复建议`);
+      } else {
+        assert.ok(detector.reason, `${detector.id} 不可用时必须说明原因`);
+        assert.ok(detector.hint, `${detector.id} 不可用时必须给出修复建议`);
+      }
+    }
+  });
 });
 
 describe('moderation combine', () => {

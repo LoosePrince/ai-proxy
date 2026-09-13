@@ -12,10 +12,14 @@
     "dev:web": "vite --config web/vite.config.ts",
     "start": "node dist/http/server.js",
     "db:migrate": "tsx src/db/migrate-cli.ts",
+    "moderation:doctor": "tsx src/core/moderation/detector-doctor.ts",
     "test": "node --test --import tsx test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "optionalDependencies": {
     "@visulima/content-safety": "1.0.1",
     "obscenity": "0.4.6",

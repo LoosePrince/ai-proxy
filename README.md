@@ -199,6 +199,25 @@ profanity
 
 实现 `ModerationDetector` 接口（同步、离线、内部吞异常）并注册进 `src/core/moderation/detectors.ts` 的 `MODERATION_DETECTORS` 即可；策略与后台会自动列出它。依赖用 `tryLoad` 懒加载，未安装时 `isAvailable()` 返回 false。
 
+### 引擎显示「未安装」时怎么查
+
+三个引擎都是 `optionalDependencies`，后台的「未安装」只是一个结论。原因只有四类，先跑自检命令：
+
+```bash
+npm run moderation:doctor
+```
+
+它会打印 Node 版本、`require(ESM)` 能力、每个引擎的加载失败原因与修复命令（任一可选依赖不可用时退出码为 1，可接进 CI/构建自检）。对照下表处理：
+
+| 原因 | 现象 | 解决 |
+|---|---|---|
+| 依赖被裁掉 | 三个引擎全部「未安装」 | `npm install --include=optional @visulima/content-safety whitz-word-detector obscenity`；若 npm 配置或 CI/Docker 带了 `--omit=optional` / `omit=optional`，去掉它。注意 `--omit=dev` **不会**去掉可选依赖，`--omit=optional` 才会 |
+| Node 不支持 `require(ESM)` | 只有 `visulima`/`whitz` 未安装，`obscenity` 可用 | `@visulima/content-safety` 与 `whitz-word-detector` 是纯 ESM 包，而 `obscenity` 提供 CJS 入口，所以旧 Node 上只有前者失败。升级到 **Node 22.12+ / 20.19+**（`@visulima/content-safety` 自身声明 `engines: ^22.14.0 \|\| >=24.10.0`）后重启服务 |
+| 装了但导出不完整 | 显示「已安装但导出不完整」 | 依赖被其它工具改写或版本不兼容，删除 `node_modules/@visulima` 后重装 |
+| 进程早于安装启动 | 文件明明在，仍是「未安装」 | 可用性在模块加载时定一次，`npm install` 后必须**重启服务**（`npm run dev` 需重启 watch 进程） |
+
+Node 版本要求已写入 `package.json` 的 `engines`（`>=20.19.0`）。Dockerfile 的运行阶段用 `node:22-alpine`，并在 `npm ci --omit=dev` 后校验可选依赖确实存在，避免镜像裁剪后运行时静默降级。
+
 ## API
 
 聊天补全（OpenAI 兼容，无需 API Key；`/v1` 可省略）：
