@@ -628,6 +628,120 @@ describe('usage daily aggregation', () => {
     assert.deepEqual(slices.map((slice) => slice.label), ['p1', 'p2', 'p3', '其他']);
     assert.equal(slices.at(-1)?.value, 100);
   });
+
+  /*
+   * 端点健康聚合（后台「状态监控」页的数据源）。
+   * 参数顺序：[provider_id, provider_name, model, day, success, failed, claimed,
+   *            duration_sum_ms, duration_count, ttfb_min_ms, last_seen_at]
+   */
+  const healthParamsOf = (input: RequestEventInput): unknown[][] =>
+    buildIngestStatements([input])
+      .filter((item) => item.sql.includes('insert into endpoint_health_daily'))
+      .map((item) => item.params as unknown[]);
+
+  it('每个 attempt 都写一条端点健康聚合，失败也留痕', () => {
+    const rows = healthParamsOf(
+      event({
+        outcome: 'upstream_ok',
+        success: true,
+        ttfbMs: 120,
+        attempts: [
+          {
+            seq: 1,
+            role: 'primary',
+            providerId: 9,
+            providerName: 'p9',
+            priority: 0,
+            attemptedModel: 'm1',
+            actualModel: null,
+            timeoutMs: 30_000,
+            status: 'failed',
+            errorMessage: 'boom',
+            startedAt: '2026-08-09T11:59:58.000Z',
+            durationMs: 2_000,
+          },
+          {
+            seq: 2,
+            role: 'primary',
+            providerId: 9,
+            providerName: 'p9',
+            priority: 0,
+            attemptedModel: 'm1',
+            actualModel: 'm1-real',
+            timeoutMs: 30_000,
+            status: 'success',
+            errorMessage: null,
+            startedAt: '2026-08-09T12:00:00.000Z',
+            durationMs: 1_200,
+          },
+        ],
+      }),
+    );
+
+    assert.equal(rows.length, 2);
+    // 失败尝试：只记 failed，不进延迟统计，也不拿 TTFB
+    assert.deepEqual(rows[0], [9, 'p9', 'm1', '2026-08-09', 0, 1, 0, 0, 0, null, '2026-08-09T11:59:58.000Z']);
+    // 成功尝试：记成功与耗时，TTFB 只归给真正交付的那次
+    assert.deepEqual(rows[1], [9, 'p9', 'm1-real', '2026-08-09', 1, 0, 0, 1_200, 1, 120, '2026-08-09T12:00:00.000Z']);
+  });
+
+  it('并行竞速落败单独计数，不算成功也不算失败', () => {
+    const rows = healthParamsOf(
+      event({
+        ttfbMs: 90,
+        attempts: [
+          {
+            seq: 1,
+            role: 'parallel',
+            providerId: 3,
+            providerName: 'p3',
+            priority: 1,
+            attemptedModel: 'm1',
+            actualModel: null,
+            timeoutMs: 14_000,
+            status: 'claimed-by-other',
+            errorMessage: 'claimed',
+            startedAt: '2026-08-09T12:00:00.000Z',
+            durationMs: 800,
+          },
+        ],
+      }),
+    );
+
+    assert.deepEqual(rows[0], [3, 'p3', 'm1', '2026-08-09', 0, 0, 1, 0, 0, null, '2026-08-09T12:00:00.000Z']);
+  });
+
+  it('没有 provider 归属的尝试归到 0，模型名缺失时用占位符', () => {
+    const rows = healthParamsOf(
+      event({
+        attempts: [
+          {
+            seq: 1,
+            role: 'primary',
+            providerId: null,
+            providerName: '',
+            priority: null,
+            attemptedModel: null,
+            actualModel: null,
+            timeoutMs: null,
+            status: 'failed',
+            errorMessage: 'no model',
+            startedAt: '2026-08-09T12:00:00.000Z',
+            durationMs: 0,
+          },
+        ],
+      }),
+    );
+
+    assert.deepEqual(rows[0]?.slice(0, 4), [0, '', '(unspecified)', '2026-08-09']);
+  });
+
+  it('缓存命中没有触及上游，因此不产生端点健康记录', () => {
+    assert.equal(
+      healthParamsOf(event({ outcome: 'cache_hit', cacheHit: true, success: true, httpStatus: 200 })).length,
+      0,
+    );
+  });
 });
 
 describe('counters/multi-window rate limit', () => {

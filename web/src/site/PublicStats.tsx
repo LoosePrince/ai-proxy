@@ -104,7 +104,7 @@ export function PublicStats() {
               查看详细运行状态
             </Button>
           </Link>
-          <span className="faint">近 30 天趋势、结局分布与模型用量</span>
+          <span className="faint">近 30 天趋势与请求结局分布</span>
         </div>
       ) : null}
     </section>

@@ -20,6 +20,7 @@ import {
   BellOutlined,
   DashboardOutlined,
   GlobalOutlined,
+  HeartOutlined,
   MenuOutlined,
   ProfileOutlined,
   SafetyCertificateOutlined,
@@ -31,6 +32,7 @@ import { useAsync } from '../hooks/useAsync';
 import { useTheme, type ThemeMode } from '../theme/ThemeProvider';
 import { LoginGate } from './LoginGate';
 import { Dashboard } from './Dashboard';
+import { Monitor } from './Monitor';
 import { Providers } from './Providers';
 import { SettingsPage } from './SettingsPage';
 import { ModelStats } from './ModelStats';
@@ -50,6 +52,7 @@ const THEME_LABEL: Record<ThemeMode, string> = {
 
 const NAV = [
   { key: '', icon: <DashboardOutlined />, label: '概览', desc: '全站用量与运行状态' },
+  { key: 'monitor', icon: <HeartOutlined />, label: '状态监控', desc: '模型与渠道的可用率与延迟' },
   { key: 'providers', icon: <ApiOutlined />, label: 'Provider', desc: '上游节点与路由分组' },
   { key: 'logs', icon: <ProfileOutlined />, label: '请求日志', desc: '调用链路与错误详情' },
   { key: 'models', icon: <BarChartOutlined />, label: '模型统计', desc: '模型调用与 Token 分布' },
@@ -186,6 +189,7 @@ export default function AdminLayout() {
             </div>
             <Routes>
               <Route index element={<Dashboard />} />
+              <Route path="monitor" element={<Monitor />} />
               <Route path="providers" element={<Providers />} />
               <Route path="logs" element={<RequestLogs />} />
               <Route path="models" element={<ModelStats />} />

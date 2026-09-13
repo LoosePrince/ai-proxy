@@ -63,13 +63,25 @@ interface Point {
   row: UsageDailyDTO;
 }
 
-export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
+/**
+ * 每日请求与交付率趋势。
+ *
+ * `showRequestAxis` 控制左侧请求数刻度：公开状态页关掉它（只留右侧百分比刻度，
+ * 图上更干净，数值仍可在圆点悬浮提示里看到），后台概览保持原样。
+ */
+export function UsageTrendChart({
+  rows,
+  showRequestAxis = true,
+}: {
+  rows: UsageDailyDTO[];
+  showRequestAxis?: boolean;
+}) {
   const active = rows.filter((row) => row.requests > 0);
   if (rows.length === 0 || active.length === 0) return <EmptyChart />;
 
   const width = 720;
   const height = 250;
-  const padding = { left: 44, right: 44, top: 20, bottom: 34 };
+  const padding = { left: showRequestAxis ? 44 : 16, right: 44, top: 20, bottom: 34 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const realRows = rows.filter((row) => !row.isHistorical);
@@ -110,9 +122,11 @@ export function UsageTrendChart({ rows }: { rows: UsageDailyDTO[] }) {
           return (
             <g key={ratio}>
               <line className="chart-grid-line" x1={padding.left} x2={width - padding.right} y1={y} y2={y} />
-              <text className="chart-axis-label" x={padding.left - 7} y={y + 3} textAnchor="end">
-                {formatCount(Math.round(maxRequests * (1 - ratio)))}
-              </text>
+              {showRequestAxis ? (
+                <text className="chart-axis-label" x={padding.left - 7} y={y + 3} textAnchor="end">
+                  {formatCount(Math.round(maxRequests * (1 - ratio)))}
+                </text>
+              ) : null}
               <text className="chart-axis-label" x={width - padding.right + 7} y={y + 3}>
                 {Math.round(100 * (1 - ratio))}%
               </text>

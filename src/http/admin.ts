@@ -60,6 +60,7 @@ import {
   getModelUsage,
   getProviderUsage,
 } from '../db/repo/usage';
+import { getEndpointHealth } from '../db/repo/endpoint-health';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { getConfig, invalidateConfig, peekConfig } from '../runtime/config-cache';
 import { resolveTimeoutMs } from '../core/timeout';
@@ -953,6 +954,20 @@ router.get('/api/usage', requireAuth, async (req: Request, res: Response) => {
     }
 
     throw new BadRequest('dimension 只允许 daily / provider / model / ip');
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+/**
+ * 端点健康（后台「状态监控」页）。
+ *
+ * 只读 endpoint_health_daily 的日聚合：窗口固定 30 天，7 / 15 / 30 天可用率
+ * 由同一份逐日样本切出；没有「选择窗口」参数，避免多个口径彼此漂移。
+ */
+router.get('/api/endpoint-health', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json(await getEndpointHealth());
   } catch (error) {
     fail(res, error);
   }

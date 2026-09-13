@@ -453,6 +453,77 @@ export interface ModelUsageDTO {
   actualResolved: Array<{ model: string; requests: number }>;
 }
 
+/**
+ * 端点健康状态。由后端根据窗口内的真实上游尝试判定，前端只负责上色，
+ * 保证「正常 / 降级 / 异常」在各处只有一个判定源。
+ *
+ *   ok       可用率 ≥ 95%
+ *   degraded 可用率 ≥ 80%
+ *   down     可用率 < 80%
+ *   idle     窗口内没有打到上游的尝试（无流量，不代表故障）
+ */
+export type EndpointHealthState = 'ok' | 'degraded' | 'down' | 'idle';
+
+/** 逐日健康样本，供状态页的色条渲染；窗口内没有样本的日期由后端补 idle 占位 */
+export interface EndpointHealthSampleDTO {
+  day: string;
+  attempts: number;
+  success: number;
+  failed: number;
+  state: EndpointHealthState;
+  /** 当日可用率（%）；当日无样本时为 null */
+  availability: number | null;
+}
+
+/** 渠道（Provider）维度的健康视图，对应后台状态监控页的渠道行 */
+export interface ChannelHealthDTO {
+  /** 0 表示尝试没有 provider 归属 */
+  providerId: number;
+  name: string;
+  /** provider 行已被删除时为 null，历史数据仍保留 */
+  kind: ProviderKind | null;
+  enabled: boolean;
+  state: EndpointHealthState;
+  /** 最近有流量的那天的平均对话耗时（成功尝试的 duration_ms） */
+  latestLatencyMs: number | null;
+  /** 窗口内成功请求首字节的最小值，作为端点连通延迟的近似 */
+  pingMs: number | null;
+  availability7d: number | null;
+  availability30d: number | null;
+  avgLatency7d: number | null;
+  attempts7d: number;
+  success7d: number;
+  failed7d: number;
+  /** 并行竞速落败的次数，不计入可用率分母 */
+  claimed7d: number;
+  attempts30d: number;
+  lastSeenAt: string | null;
+  samples: EndpointHealthSampleDTO[];
+}
+
+/** 模型维度的健康视图，对应后台状态监控页的模型表 */
+export interface ModelHealthDTO {
+  model: string;
+  state: EndpointHealthState;
+  latestLatencyMs: number | null;
+  availability7d: number | null;
+  availability15d: number | null;
+  availability30d: number | null;
+  avgLatency7d: number | null;
+  attempts7d: number;
+  attempts30d: number;
+  lastSeenAt: string | null;
+  samples: EndpointHealthSampleDTO[];
+}
+
+export interface EndpointHealthDTO {
+  /** 统计窗口天数，样本数组就是这个长度 */
+  windowDays: number;
+  channels: ChannelHealthDTO[];
+  models: ModelHealthDTO[];
+  generatedAt: string;
+}
+
 export interface IpBlacklistDTO {
   ip: string;
   note: string | null;
@@ -510,8 +581,6 @@ export interface PublicDetailedStatsDTO {
   /** 参与路由的 Provider 数量，只给规模感，不披露具体身份 */
   activeProviders: number;
   daily: PublicDailyStatsDTO[];
-  /** 真实模型分布（按实际路由到的 actual_model 聚合），按请求量降序 */
-  models: PublicModelStatsDTO[];
   generatedAt: string;
 }
 
@@ -524,12 +593,6 @@ export interface PublicDailyStatsDTO extends SuccessRates {
   failed: number;
   cacheHit: number;
   clientAbort: number;
-  totalTokens: number;
-}
-
-export interface PublicModelStatsDTO {
-  model: string;
-  requests: number;
   totalTokens: number;
 }
 

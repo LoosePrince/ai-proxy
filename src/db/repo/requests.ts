@@ -325,6 +325,62 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
       });
     }
 
+    /*
+     * 端点健康：后台「状态监控」页的渠道/模型可用率与延迟。
+     *
+     * 刻意与请求明细分开累加：明细会被保留策略清理，而聚合永久保留，
+     * 30 天可用率才不会因为清理而突然变成「无数据」。
+     * 口径见 migrations/015_endpoint_health.ts 的注释。
+     */
+    const winnerIndex = event.attempts.findIndex((item) => item.status === 'success');
+
+    for (const [index, attempt] of event.attempts.entries()) {
+      const succeeded = attempt.status === 'success';
+      const durationMs = attempt.durationMs;
+      statements.push({
+        sql: `insert into endpoint_health_daily (
+                provider_id, provider_name, model, day,
+                attempts, success, failed, claimed,
+                duration_sum_ms, duration_count, ttfb_min_ms, last_seen_at
+              ) values (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+              on conflict (provider_id, model, day) do update set
+                attempts = endpoint_health_daily.attempts + 1,
+                success = endpoint_health_daily.success + excluded.success,
+                failed = endpoint_health_daily.failed + excluded.failed,
+                claimed = endpoint_health_daily.claimed + excluded.claimed,
+                duration_sum_ms = endpoint_health_daily.duration_sum_ms + excluded.duration_sum_ms,
+                duration_count = endpoint_health_daily.duration_count + excluded.duration_count,
+                ttfb_min_ms = case
+                    when excluded.ttfb_min_ms is null then endpoint_health_daily.ttfb_min_ms
+                    when endpoint_health_daily.ttfb_min_ms is null then excluded.ttfb_min_ms
+                    when excluded.ttfb_min_ms < endpoint_health_daily.ttfb_min_ms then excluded.ttfb_min_ms
+                    else endpoint_health_daily.ttfb_min_ms
+                  end,
+                last_seen_at = case
+                    when endpoint_health_daily.last_seen_at is null then excluded.last_seen_at
+                    when excluded.last_seen_at is null then endpoint_health_daily.last_seen_at
+                    when excluded.last_seen_at > endpoint_health_daily.last_seen_at then excluded.last_seen_at
+                    else endpoint_health_daily.last_seen_at
+                  end,
+                provider_name = excluded.provider_name`,
+        params: [
+          attempt.providerId ?? 0,
+          attempt.providerName,
+          attempt.actualModel ?? attempt.attemptedModel ?? UNKNOWN_MODEL,
+          day,
+          succeeded ? 1 : 0,
+          attempt.status === 'failed' ? 1 : 0,
+          attempt.status === 'claimed-by-other' ? 1 : 0,
+          succeeded ? durationMs ?? 0 : 0,
+          succeeded && durationMs !== null ? 1 : 0,
+          // TTFB 是请求级指标，只能归给真正交付的那次尝试（成功的那条）
+          succeeded && index === winnerIndex ? event.ttfbMs : null,
+          attempt.startedAt,
+        ],
+        mode: 'write',
+      });
+    }
+
     // 全站汇总：公开统计接口只读这一行，避免全表扫描
     statements.push({
       sql: `update global_usage set

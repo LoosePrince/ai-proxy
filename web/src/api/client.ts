@@ -16,6 +16,7 @@ import type {
   ContributionSubmitInput,
   ContributionSubmitResult,
   DashboardSummaryDTO,
+  EndpointHealthDTO,
   IpBlacklistDTO,
   IpDetailStatsDTO,
   IpUsageDTO,
@@ -205,6 +206,8 @@ export const adminApi = {
 
   ipUsage: (range: { from?: string; to?: string } = {}) =>
     request<IpUsageDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'ip' })}`),
+
+  endpointHealth: () => request<EndpointHealthDTO>('/admin/api/endpoint-health'),
 
   ipBlacklist: () => request<IpBlacklistDTO[]>('/admin/api/ip-blacklist'),
 

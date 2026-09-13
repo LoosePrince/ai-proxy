@@ -23,6 +23,7 @@ import { migration011CacheSourceRequest } from './migrations/011_cache_source_re
 import { migration012Announcements } from './migrations/012_announcements';
 import { migration013ModelMatchExclusion } from './migrations/013_model_match_exclusion';
 import { migration014Moderation } from './migrations/014_moderation';
+import { migration015EndpointHealth } from './migrations/015_endpoint_health';
 
 export interface Migration {
   id: string;
@@ -46,6 +47,7 @@ const MIGRATIONS: Migration[] = [
   migration012Announcements,
   migration013ModelMatchExclusion,
   migration014Moderation,
+  migration015EndpointHealth,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

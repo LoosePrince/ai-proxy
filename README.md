@@ -252,7 +252,7 @@ curl -X POST http://localhost:3000/responses \
 - `GET /v1/models` — 聚合所有启用 Provider 的模型
 - `GET /healthz` — 服务与 Lsqlite 连通性
 - `GET /api/public-stats` — 首页公开统计；成功率含缓存复用，不含客户端主动取消
-- `GET /api/public-stats/detailed` — 近 30 天公开详细状态；仅在后台启用「公开详细统计」后开放
+- `GET /api/public-stats/detailed` — 近 30 天公开详细状态（结局分布与每日趋势）；仅在后台启用「公开详细统计」后开放
 - `GET|POST /api/contributions` — 公开贡献列表与提交
 
 ## 贡献 API
@@ -272,7 +272,7 @@ curl -X POST http://localhost:3000/api/contributions \
 
 ## 管理后台
 
-`/admin`，React Router 真实 URL，页面包括仪表盘、Provider、设置、内容审核、模型统计、IP 统计、请求日志、公告。
+`/admin`，React Router 真实 URL，页面包括仪表盘、状态监控、Provider、设置、内容审核、模型统计、IP 统计、请求日志、公告。
 
 Admin API：
 
@@ -285,6 +285,7 @@ Admin API：
 | `GET /admin/api/requests?limit&offset&success&requestedModel&ip&providerId&from&to` | 服务端分页日志 |
 | `GET /admin/api/requests/:id` | 单请求含全部 attempts |
 | `GET /admin/api/dashboard` | 概览聚合 |
+| `GET /admin/api/endpoint-health` | 渠道与模型的可用率、延迟与逐日状态 |
 | `GET|POST /admin/api/moderation/policies`、`PUT|DELETE /admin/api/moderation/policies/:id` | 审核策略 CRUD |
 | `GET /admin/api/moderation/detectors` | 检测引擎注册表与可用性 |
 | `GET /admin/api/moderation/categories` | 类别体系元数据 |
@@ -303,7 +304,9 @@ Admin API：
 - **交付率** = `(上游成功 + 缓存复用) / (总请求 - 客户端取消 - 被拦截/封禁)`。被网关拦截或封禁的请求是策略决定而非服务故障，不纳入分母，否则会虚拉低交付率。这是首页「成功率」的口径。
 - **上游成功率** = `上游成功 / (上游成功 + 上游失败)`。只看实际打到上游的调用，缓存复用不会虚高这个数。
 
-「公开详细统计」在后台的 **全局设置** 中启用。它只公开近 30 天的聚合趋势、请求结局和模型用量；不会公开 IP、Provider 名称、请求正文或 API Key。
+「公开详细统计」在后台的 **全局设置** 中启用。它只公开近 30 天的聚合趋势与请求结局分布；不会公开 IP、Provider 名称、请求正文或 API Key。
+
+后台的 **状态监控** 页展示渠道与模型的可用率、延迟和逐日状态。它的数据由真实请求的 attempts 记录聚合而来（`endpoint_health_daily`），没有主动探测：可用率的分母只包含真正打到上游的尝试，并行竞速落败（`claimed-by-other`）与缓存命中都不计分；延迟只取成功尝试；「端点 PING」是窗口内成功请求首字节的最小值，作为端点连通延迟的近似。状态阈值为 7 天可用率 ≥ 95% 正常、≥ 80% 降级、其余异常，窗口内没有上游尝试则显示为「无流量」。
 
 `source=env` 的 Provider 可在后台停用，但不可修改连接信息、不可删除。
 

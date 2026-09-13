@@ -1136,3 +1136,153 @@ svg .heat-cell {
     padding-inline: 21px;
   }
 }
+/* ---------------------------------------------------------- 状态监控 */
+
+.sample-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sample-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sample-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-height: 22px;
+}
+
+/* 色条等分容器宽度：窗口窄时变细而不是把整行撑出横向滚动 */
+.sample-cell {
+  display: block;
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--bg-muted);
+}
+
+/* 图例里的色块要与文字基线对齐，因此比数据条更方更小 */
+.sample-legend .sample-cell {
+  flex: 0 0 auto;
+  width: 11px;
+  min-width: 0;
+  height: 11px;
+}
+
+.sample-cell.state-ok {
+  background: var(--success);
+}
+
+.sample-cell.state-degraded {
+  background: var(--warning);
+}
+
+.sample-cell.state-down {
+  background: var(--danger);
+}
+
+.sample-cell.state-idle {
+  background: var(--border-strong);
+}
+
+.channel-table {
+  overflow-x: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 渠道多、指标密，窄屏改为横向滚动而不是把每格压到不可读 */
+.channel-row {
+  display: grid;
+  min-width: 700px;
+  grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(80px, 0.7fr)) minmax(140px, 1.6fr) minmax(70px, auto);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.channel-head {
+  padding-block: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.channel-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.channel-name strong {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.channel-name small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metric-cell span {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.metric-cell strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.channel-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.channel-samples small {
+  font-size: 10px;
+}
+
+.channel-state {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.model-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * 状态列吸附在右侧：渠道行比内容区宽时会出现横向滚动，
+ * 而「状态」是最该一直可见的一列。分隔线让不滚动时也像有意设计的列分界。
+ */
+.channel-state {
+  position: sticky;
+  right: 0;
+  padding-left: 12px;
+  z-index: 1;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}

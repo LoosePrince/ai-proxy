@@ -21,7 +21,6 @@ import type {
   ProviderUsageDTO,
   PublicDailyStatsDTO,
   PublicDetailedStatsDTO,
-  PublicModelStatsDTO,
   PublicStatsDTO,
   SuccessRates,
   UsageDailyDTO,
@@ -340,42 +339,6 @@ export async function getModelUsage(range: UsageRange = {}): Promise<ModelUsageD
   return [...grouped.values()].sort((a, b) => b.requests - a.requests);
 }
 
-interface ActualModelUsageRow {
-  actual_model: string;
-  requests: number;
-  prompt_tokens: number;
-  completion_tokens: number;
-}
-
-/**
- * 按真实模型聚合。
- *
- * `getModelUsage` 的职责是后台的「请求模型 -> 真实模型」映射，
- * 它先按 requested_model 分组。公开状态页不需要请求别名，而是需要展示
- * 实际被路由到的模型列表，因此在这里直接按 actual_model 汇总。
- */
-async function getActualModelUsage(range: UsageRange): Promise<PublicModelStatsDTO[]> {
-  const { sql: whereSql, params } = dayRange(range);
-  const rows = await getDb().select<ActualModelUsageRow>(
-    `select
-        actual_model,
-        sum(requests) as requests,
-        sum(prompt_tokens) as prompt_tokens,
-        sum(completion_tokens) as completion_tokens
-       from model_usage_daily
-       ${whereSql}
-       group by actual_model
-       order by requests desc, actual_model asc`,
-    params,
-  );
-
-  return rows.map((row) => ({
-    model: row.actual_model,
-    requests: num(row.requests),
-    totalTokens: num(row.prompt_tokens) + num(row.completion_tokens),
-  }));
-}
-
 interface IpUsageRow {
   ip: string | null;
   requests: number;
@@ -416,9 +379,6 @@ export async function getIpUsage(range: UsageRange = {}, limit = 200): Promise<I
 
 /** 详细状态页的天数窗口。固定上限，避免公开接口被用来拉全量历史。 */
 const PUBLIC_DETAIL_DAYS = 30;
-/** 公开页最多列出的模型数，长尾合并成「其他」 */
-const PUBLIC_MODEL_LIMIT = 12;
-
 function toPublicDaily(row: UsageDailyDTO): PublicDailyStatsDTO {
   // 被拦截 / 封禁的请求不记入对外统计
   const stripped = withoutRejected(row);
@@ -446,15 +406,16 @@ function dayOffset(days: number): string {
  * 刻意只暴露聚合口径：Provider 名称、IP 与请求正文都不出站，
  * 因此这里不复用 getProviderUsage 的结果，只取一个「参与路由的 Provider 数量」
  * 让访客能判断服务规模，而不泄露谁在提供服务。
+ *
+ * 模型列表曾经也在这里返回（公开页有一张「模型用量」表），但那块列表已从
+ * 公开页移除，字段随之删掉：没有页面消费的模型分布没必要继续出站。
  */
 export async function getPublicDetailedStats(): Promise<PublicDetailedStatsDTO> {
   const from = dayOffset(PUBLIC_DETAIL_DAYS - 1);
-  const db = getDb();
 
-  const [daily, models, providerRow] = await Promise.all([
+  const [daily, providerRow] = await Promise.all([
     getDailyUsage({ from }),
-    getActualModelUsage({ from }),
-    db.selectOne<{ total: number }>(
+    getDb().selectOne<{ total: number }>(
       `select count(*) as total from providers where enabled = 1`,
     ),
   ]);
@@ -464,17 +425,6 @@ export async function getPublicDetailedStats(): Promise<PublicDetailedStatsDTO> 
   const promptTokens = daily.reduce((sum, row) => sum + row.promptTokens, 0);
   const completionTokens = daily.reduce((sum, row) => sum + row.completionTokens, 0);
 
-  // 已按真实模型聚合并排序；这里只负责控制公开页列表长度。
-  const visible = models.slice(0, PUBLIC_MODEL_LIMIT);
-  const tail = models.slice(PUBLIC_MODEL_LIMIT);
-  if (tail.length > 0) {
-    visible.push({
-      model: `其他 ${tail.length} 个模型`,
-      requests: tail.reduce((sum, row) => sum + row.requests, 0),
-      totalTokens: tail.reduce((sum, row) => sum + row.totalTokens, 0),
-    });
-  }
-
   return {
     overall: { ...breakdown, ...successRatesOf(breakdown) },
     totalTokens: promptTokens + completionTokens,
@@ -482,7 +432,6 @@ export async function getPublicDetailedStats(): Promise<PublicDetailedStatsDTO> 
     completionTokens,
     activeProviders: num(providerRow?.total),
     daily: daily.map(toPublicDaily),
-    models: visible,
     generatedAt: new Date().toISOString(),
   };
 }

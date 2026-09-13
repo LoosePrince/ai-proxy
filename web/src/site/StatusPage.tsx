@@ -4,13 +4,16 @@
  * 与首页三张卡的关系：首页回答「服务规模和能不能用」，这里回答「为什么是这个数」。
  * 因此本页的主线是把请求结局拆开展示，而不是再堆更多总量数字。
  *
+ * 页面只有三块：四个指标卡、请求结局分布、近 30 天趋势。每日明细与模型用量
+ * 列表曾经也在这里，但它们本质上是后台的排查视图，对访客只是噪声，已移除。
+ *
  * 披露边界由后端把控：接口只返回聚合口径，不含 IP、Provider 名称与请求正文。
  * 后台开关关闭时接口返回 404，本页据此显示「未开放」而不是报错。
  */
 
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Alert, Card, Empty, Skeleton, Table, Tooltip } from 'antd';
+import { Alert, Card, Empty, Skeleton, Tooltip } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 
 import { publicApi } from '../api/client';
@@ -21,7 +24,7 @@ import { useAsync } from '../hooks/useAsync';
 import { formatCount, formatDateTime, formatPercent, formatTokens } from '../lib/format';
 import { SiteFooter } from './SiteFooter';
 import { SiteHeader } from './SiteHeader';
-import type { PublicDailyStatsDTO, PublicModelStatsDTO, UsageDailyDTO } from '@shared/api';
+import type { PublicDailyStatsDTO, UsageDailyDTO } from '@shared/api';
 import './site.css';
 
 const REFRESH_MS = 60_000;
@@ -51,82 +54,6 @@ function toChartRow(row: PublicDailyStatsDTO): UsageDailyDTO {
   };
 }
 
-function OutcomeTable({ rows }: { rows: PublicDailyStatsDTO[] }) {
-  return (
-    <Table<PublicDailyStatsDTO>
-      rowKey="day"
-      size="small"
-      pagination={false}
-      scroll={{ x: 'max-content', y: 420 }}
-      dataSource={[...rows].reverse()}
-      columns={[
-        {
-          title: '日期',
-          dataIndex: 'day',
-          width: 150,
-          render: (value: string, row) => (
-            <span className={row.isHistorical ? 'historical-day' : undefined}>
-              {value}{row.isHistorical ? ' · 历史累计' : ''}
-            </span>
-          ),
-        },
-        { title: '请求', dataIndex: 'requests', align: 'right', render: formatCount },
-        { title: '成功', dataIndex: 'success', align: 'right', render: formatCount },
-        { title: '失败', dataIndex: 'failed', align: 'right', render: formatCount },
-        {
-          title: '复用缓存',
-          dataIndex: 'cacheHit',
-          align: 'right',
-          render: formatCount,
-        },
-        {
-          title: '客户端取消',
-          dataIndex: 'clientAbort',
-          align: 'right',
-          render: formatCount,
-        },
-        {
-          title: '交付率',
-          dataIndex: 'serviceSuccessRate',
-          align: 'right',
-          render: (value: number) => formatPercent(value),
-        },
-        {
-          title: '上游成功率',
-          dataIndex: 'upstreamSuccessRate',
-          align: 'right',
-          render: (value: number) => formatPercent(value),
-        },
-        { title: 'Token', dataIndex: 'totalTokens', align: 'right', render: formatTokens },
-      ]}
-    />
-  );
-}
-
-function ModelTable({ rows }: { rows: PublicModelStatsDTO[] }) {
-  const total = rows.reduce((sum, row) => sum + row.requests, 0);
-
-  return (
-    <Table<PublicModelStatsDTO>
-      rowKey="model"
-      size="small"
-      pagination={false}
-      scroll={{ x: 'max-content' }}
-      dataSource={rows}
-      columns={[
-        { title: '模型', dataIndex: 'model' },
-        { title: '请求数', dataIndex: 'requests', align: 'right', render: formatCount },
-        {
-          title: '占比',
-          align: 'right',
-          render: (_: unknown, row) => formatPercent(total > 0 ? (row.requests / total) * 100 : 0),
-        },
-        { title: 'Token', dataIndex: 'totalTokens', align: 'right', render: formatTokens },
-      ]}
-    />
-  );
-}
-
 export function StatusPage() {
   const stats = useAsync(() => publicApi.detailedStats(), []);
 
@@ -148,7 +75,7 @@ export function StatusPage() {
           <SectionHead
             kicker="Service status"
             title="详细运行状态"
-            desc="近 30 天的请求结局分布。缓存复用与客户端取消单独成列，因此可以分开判断服务交付情况和上游健康程度。"
+            desc="近 30 天的请求结局分布与交付率趋势，用来看清服务交付情况和上游健康程度。"
           />
 
           <p className="status-back">
@@ -221,29 +148,16 @@ export function StatusPage() {
                       <strong>{formatCount(overall.clientAbort)}</strong>
                     </div>
                   </Tooltip>
-                  <Tooltip title="被网关自身拒绝，例如触发同 IP 限流。未触达上游。">
-                    <div className="outcome-item tone-warning">
-                      <span>网关拒绝</span>
-                      <strong>{formatCount(overall.rejected)}</strong>
-                    </div>
-                  </Tooltip>
                 </div>
               </Card>
 
               <Card title="近 30 天趋势" bordered={false} className="status-card">
                 {data.daily.length > 0 ? (
-                  <UsageTrendChart rows={data.daily.map(toChartRow)} />
+                  // 左侧请求数刻度在公开页关闭：数值仍可在圆点悬浮提示里看到
+                  <UsageTrendChart rows={data.daily.map(toChartRow)} showRequestAxis={false} />
                 ) : (
                   <Empty description="暂无数据" />
                 )}
-              </Card>
-
-              <Card title="每日明细" bordered={false} className="status-card">
-                {data.daily.length > 0 ? <OutcomeTable rows={data.daily} /> : <Empty description="暂无数据" />}
-              </Card>
-
-              <Card title="模型用量" bordered={false} className="status-card">
-                {data.models.length > 0 ? <ModelTable rows={data.models} /> : <Empty description="暂无数据" />}
               </Card>
 
               <p className="faint status-footnote">
