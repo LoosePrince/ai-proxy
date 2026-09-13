@@ -681,8 +681,9 @@ describe('usage daily aggregation', () => {
     assert.equal(rows.length, 2);
     // 失败尝试：只记 failed，不进延迟统计，也不拿 TTFB
     assert.deepEqual(rows[0], [9, 'p9', 'm1', '2026-08-09', 0, 1, 0, 0, 0, null, '2026-08-09T11:59:58.000Z']);
-    // 成功尝试：记成功与耗时，TTFB 只归给真正交付的那次
-    assert.deepEqual(rows[1], [9, 'p9', 'm1-real', '2026-08-09', 1, 0, 0, 1_200, 1, 120, '2026-08-09T12:00:00.000Z']);
+    // 成功尝试：健康键是 attempted_model（站点按声明模型发请求时的名字），
+    // 不用上游响应自报的 m1-real
+    assert.deepEqual(rows[1], [9, 'p9', 'm1', '2026-08-09', 1, 0, 0, 1_200, 1, 120, '2026-08-09T12:00:00.000Z']);
   });
 
   it('并行竞速落败单独计数，不算成功也不算失败', () => {

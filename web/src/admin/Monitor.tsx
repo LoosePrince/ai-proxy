@@ -16,7 +16,20 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Empty, Skeleton, Space, Table, Tag, Tooltip } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Drawer,
+  Empty,
+  Skeleton,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  message,
+} from 'antd';
 
 import { adminApi } from '../api/client';
 import { StatCard } from '../components/StatCard';
@@ -24,6 +37,7 @@ import { useAsync } from '../hooks/useAsync';
 import { formatCount, formatDateTime, formatMs, formatPercent } from '../lib/format';
 import type {
   ChannelHealthDTO,
+  ChannelModelHealthDTO,
   EndpointHealthSampleDTO,
   EndpointHealthState,
   ModelHealthDTO,
@@ -35,14 +49,19 @@ const REFRESH_SECONDS = 60;
 
 const STATE_LABEL: Record<EndpointHealthState, string> = {
   ok: '正常',
+  slow: '延迟',
   degraded: '降级',
-  down: '异常',
+  error: '异常',
+  down: '不可用',
   idle: '无流量',
 };
 
+/** 与阈值约定一致：绿 / 黄绿 / 黄 / 橙 / 红 / 灰 */
 const STATE_COLOR: Record<EndpointHealthState, string> = {
   ok: 'green',
+  slow: 'lime',
   degraded: 'gold',
+  error: 'orange',
   down: 'red',
   idle: 'default',
 };
@@ -101,7 +120,15 @@ function channelTooltip(row: ChannelHealthDTO, windowDays: number): string {
     .join('；');
 }
 
-function ChannelRow({ row, windowDays }: { row: ChannelHealthDTO; windowDays: number }) {
+function ChannelRow({
+  row,
+  windowDays,
+  onOpen,
+}: {
+  row: ChannelHealthDTO;
+  windowDays: number;
+  onOpen: (providerId: number) => void;
+}) {
   return (
     <div className="channel-row">
       <div className="channel-name">
@@ -133,8 +160,161 @@ function ChannelRow({ row, windowDays }: { row: ChannelHealthDTO; windowDays: nu
       </div>
       <div className="channel-state">
         <StateTag state={row.state} tooltip={channelTooltip(row, windowDays)} />
+        <Button type="link" size="small" onClick={() => onOpen(row.providerId)} disabled={row.providerId <= 0}>
+          模型状态
+        </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * 渠道弹窗：该渠道声明的全部模型（含已停用）逐个展示状态，
+ * 并可直接停用/恢复 —— 停用 = 路由视为无该模型。
+ */
+function ChannelModelDrawer({
+  providerId,
+  channelName,
+  open,
+  onClose,
+}: {
+  providerId: number | null;
+  channelName: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const health = useAsync(() => (providerId === null ? Promise.resolve(null) : adminApi.providerModelHealth(providerId)), [providerId, open]);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  const toggle = async (model: string, enabled: boolean) => {
+    if (providerId === null) return;
+    setToggling(model);
+    try {
+      await adminApi.setProviderModelEnabled(providerId, model, enabled);
+      message.success(enabled ? `已恢复模型 ${model}` : `已停用模型 ${model}（路由视为无该模型）`);
+      health.reload();
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const data = health.data as ChannelModelHealthDTO | null;
+
+  return (
+    <Drawer
+      title={`渠道模型状态 · ${channelName}`}
+      open={open}
+      onClose={onClose}
+      width={860}
+      destroyOnClose
+    >
+      {health.status === 'error' ? (
+        <Alert
+          type="error"
+          showIcon
+          message="模型状态加载失败"
+          description={health.error}
+          action={<Button onClick={health.reload}>重试</Button>}
+        />
+      ) : null}
+      {health.status === 'loading' ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+      {data ? (
+        <>
+          <Table<ModelHealthDTO>
+            rowKey="model"
+            size="small"
+            pagination={data.models.length > 20 ? { pageSize: 20, hideOnSinglePage: true } : false}
+            scroll={{ x: 'max-content' }}
+            dataSource={data.models}
+            expandable={{
+              expandedRowRender: (row) => (
+                <div className="model-samples">
+                  <SampleBar samples={row.samples} />
+                  <small className="faint">
+                    近 30 天上游尝试 {formatCount(row.attempts30d)} 次 · 最近 7 天 {formatCount(row.attempts7d)} 次 ·
+                    最后活动 {formatDateTime(row.lastSeenAt)}
+                  </small>
+                </div>
+              ),
+              rowExpandable: () => true,
+            }}
+            columns={[
+              {
+                title: '模型',
+                dataIndex: 'model',
+                render: (model: string, row) => (
+                  <Space size={6}>
+                    <span style={row.disabled ? { textDecoration: 'line-through', opacity: 0.55 } : undefined}>
+                      {model}
+                    </span>
+                    {row.disabled ? <Tag color="orange">已停用</Tag> : null}
+                  </Space>
+                ),
+              },
+              {
+                title: '最新状态',
+                dataIndex: 'state',
+                width: 110,
+                render: (state: EndpointHealthState, row) => (
+                  <StateTag
+                    state={state}
+                    tooltip={
+                      row.disabled
+                        ? '已停用：不再参与路由；恢复后立即可用'
+                        : `最近 7 天上游尝试 ${formatCount(row.attempts7d)} 次`
+                    }
+                  />
+                ),
+              },
+              {
+                title: '最新延迟 (MS)',
+                dataIndex: 'latestLatencyMs',
+                align: 'right',
+                render: (value: number | null) => <Tooltip title={formatMs(value)}>{formatMillis(value)}</Tooltip>,
+              },
+              {
+                title: '7 天可用率',
+                dataIndex: 'availability7d',
+                align: 'right',
+                render: (value: number | null) => formatRate(value),
+              },
+              {
+                title: '30 天可用率',
+                dataIndex: 'availability30d',
+                align: 'right',
+                render: (value: number | null) => formatRate(value),
+              },
+              {
+                title: '7 天平均延迟 (MS)',
+                dataIndex: 'avgLatency7d',
+                align: 'right',
+                render: (value: number | null) => <Tooltip title={formatMs(value)}>{formatMillis(value)}</Tooltip>,
+              },
+              {
+                title: '启用',
+                key: 'enabled',
+                width: 90,
+                render: (_: unknown, row) => (
+                  <Switch
+                    size="small"
+                    checked={!row.disabled}
+                    loading={toggling === row.model}
+                    onChange={(checked) => void toggle(row.model, checked)}
+                  />
+                ),
+              },
+            ]}
+          />
+          <p className="faint">
+            数据更新于 {formatDateTime(data.generatedAt)}。列表覆盖该渠道声明的全部模型（含已停用）：
+            模型状态按「站点通过渠道声明模型发起请求」的口径统计，不使用客户端自定义填写的模型名，
+            也不使用上游响应返回的实际模型名。
+          </p>
+        </>
+      ) : null}
+    </Drawer>
   );
 }
 
@@ -174,8 +354,12 @@ export function Monitor() {
   const channels = health.data?.channels ?? [];
   const models = health.data?.models ?? [];
 
+  // 渠道弹窗：查看该渠道声明的全部模型状态并可停用
+  const [drawerProviderId, setDrawerProviderId] = useState<number | null>(null);
+  const drawerProvider = channels.find((row) => row.providerId === drawerProviderId) ?? null;
+
   const counts = useMemo(() => {
-    const byState: Record<EndpointHealthState, number> = { ok: 0, degraded: 0, down: 0, idle: 0 };
+    const byState: Record<EndpointHealthState, number> = { ok: 0, slow: 0, degraded: 0, error: 0, down: 0, idle: 0 };
     for (const row of channels) byState[row.state] += 1;
     return byState;
   }, [channels]);
@@ -197,18 +381,18 @@ export function Monitor() {
           label="正常渠道"
           value={`${counts.ok} / ${channels.length}`}
           hint="近 7 天可用率 ≥ 95% 的渠道数量"
-          tone={counts.ok > 0 && counts.down + counts.degraded === 0 ? 'success' : 'default'}
+          tone={counts.ok > 0 && counts.down + counts.error + counts.degraded + counts.slow === 0 ? 'success' : 'default'}
         />
         <StatCard
-          label="降级渠道"
-          value={counts.degraded}
-          hint="近 7 天可用率 80% – 95%"
-          tone={counts.degraded > 0 ? 'warning' : 'default'}
+          label="非正常渠道"
+          value={counts.slow + counts.degraded + counts.error + counts.down}
+          hint="延迟（≥85%）+ 降级（≥60%）+ 异常（≥30%）+ 不可用（<30%）之和，近 7 天口径"
+          tone={counts.slow + counts.degraded + counts.error + counts.down > 0 ? 'warning' : 'default'}
         />
         <StatCard
-          label="异常渠道"
+          label="不可用渠道"
           value={counts.down}
-          hint="近 7 天可用率 < 80%"
+          hint="近 7 天可用率 < 30%"
           tone={counts.down > 0 ? 'danger' : 'default'}
         />
         <StatCard
@@ -237,7 +421,7 @@ export function Monitor() {
           <>
             <div className="sample-legend">
               <span className="faint">近 {windowDays} 天逐日状态</span>
-              {(['ok', 'degraded', 'down', 'idle'] as EndpointHealthState[]).map((state) => (
+              {(['ok', 'slow', 'degraded', 'error', 'down', 'idle'] as EndpointHealthState[]).map((state) => (
                 <span key={state}>
                   <i className={`sample-cell state-${state}`} />
                   {STATE_LABEL[state]}
@@ -254,7 +438,12 @@ export function Monitor() {
                 <div className="channel-state">状态</div>
               </div>
               {channels.map((row) => (
-                <ChannelRow key={`${row.providerId}-${row.name}`} row={row} windowDays={windowDays} />
+                <ChannelRow
+                  key={`${row.providerId}-${row.name}`}
+                  row={row}
+                  windowDays={windowDays}
+                  onOpen={setDrawerProviderId}
+                />
               ))}
             </div>
           </>
@@ -356,7 +545,15 @@ export function Monitor() {
         数据更新于 {formatDateTime(health.data?.generatedAt ?? null)}，每 {REFRESH_SECONDS} 秒自动刷新。
         全部指标由真实请求的尝试记录聚合而来，不含主动探测：「端点 PING」是窗口内成功请求首字节的最小值，
         作为端点连通延迟的近似；可用率只统计真正打到上游的调用，并行竞速落败与缓存命中都不进分母。
+        模型列表与状态按「站点通过渠道声明模型发起请求」的口径统计，渠道弹窗内可停用单个模型（路由视为无该模型）。
       </p>
+
+      <ChannelModelDrawer
+        providerId={drawerProviderId}
+        channelName={drawerProvider?.name ?? ''}
+        open={drawerProviderId !== null}
+        onClose={() => setDrawerProviderId(null)}
+      />
     </div>
   );
 }

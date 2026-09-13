@@ -12,6 +12,7 @@ import type {
   AnnouncementDTO,
   AnnouncementInput,
   AuthStateDTO,
+  ChannelModelHealthDTO,
   ContributionListItemDTO,
   ContributionSubmitInput,
   ContributionSubmitResult,
@@ -208,6 +209,15 @@ export const adminApi = {
     request<IpUsageDTO[]>(`/admin/api/usage${toQuery({ ...range, dimension: 'ip' })}`),
 
   endpointHealth: () => request<EndpointHealthDTO>('/admin/api/endpoint-health'),
+
+  providerModelHealth: (id: number) =>
+    request<ChannelModelHealthDTO>(`/admin/api/providers/${id}/model-health`),
+
+  setProviderModelEnabled: (id: number, model: string, enabled: boolean) =>
+    request<{ success: boolean }>(
+      `/admin/api/providers/${id}/models/${encodeURIComponent(model)}/enabled`,
+      { method: 'PUT', ...json({ enabled }) },
+    ),
 
   ipBlacklist: () => request<IpBlacklistDTO[]>('/admin/api/ip-blacklist'),
 

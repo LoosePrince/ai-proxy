@@ -1183,8 +1183,18 @@ svg .heat-cell {
   background: var(--success);
 }
 
+/* 黄绿：正常与降级之间的过渡带（可用率 85%–95%） */
+.sample-cell.state-slow {
+  background: color-mix(in srgb, var(--success) 55%, var(--warning));
+}
+
 .sample-cell.state-degraded {
   background: var(--warning);
+}
+
+/* 橙色：已明确异常但未到不可用（可用率 30%–60%） */
+.sample-cell.state-error {
+  background: color-mix(in srgb, var(--warning) 40%, var(--danger));
 }
 
 .sample-cell.state-down {

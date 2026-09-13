@@ -13,6 +13,7 @@ import type { LsqliteStatement } from '../lsqlite';
 import { upsert } from '../sql';
 import type {
   MaliciousBehaviorAction,
+  ModelHealthRoutingMode,
   RequestBehaviorAction,
   RoutingRule,
   SettingsDTO,
@@ -52,12 +53,21 @@ const HARD_DEFAULTS: SettingsDTO = {
   maliciousThrottleMinutes: 30,
   blockedErrorMessage: '该 IP 已被禁止访问',
   fuzzyModelMatchingEnabled: true,
+  modelHealthRoutingMode: 'random' as ModelHealthRoutingMode,
+  modelCooldownFailureThreshold: 0,
+  modelCooldownMinutes: 30,
+  modelEmptyResponseCountsAsFailure: false,
   moderationEnabled: false,
   moderationInputEnabled: true,
   moderationOutputEnabled: false,
   moderationOutputStreamEnabled: false,
   moderationAuditRetentionDays: 0,
 };
+
+export function normalizeModelHealthRoutingMode(value: unknown): ModelHealthRoutingMode {
+  if (value === 'prefer-unhealthy' || value === 'probe-unhealthy-first') return value;
+  return 'random';
+}
 
 export function normalizeRoutingRule(value: unknown): RoutingRule {
   if (value === 'random') return 'random';
@@ -172,6 +182,16 @@ function toSettings(raw: Record<string, string>): SettingsDTO {
       raw.fuzzyModelMatchingEnabled,
       HARD_DEFAULTS.fuzzyModelMatchingEnabled,
     ),
+    modelHealthRoutingMode: normalizeModelHealthRoutingMode(raw.modelHealthRoutingMode),
+    modelCooldownFailureThreshold: normalizeNonNegativeInt(
+      raw.modelCooldownFailureThreshold,
+      HARD_DEFAULTS.modelCooldownFailureThreshold,
+    ),
+    modelCooldownMinutes: normalizePositiveInt(raw.modelCooldownMinutes, HARD_DEFAULTS.modelCooldownMinutes),
+    modelEmptyResponseCountsAsFailure: normalizeBoolean(
+      raw.modelEmptyResponseCountsAsFailure,
+      HARD_DEFAULTS.modelEmptyResponseCountsAsFailure,
+    ),
     moderationEnabled: normalizeBoolean(raw.moderationEnabled, HARD_DEFAULTS.moderationEnabled),
     moderationInputEnabled: normalizeBoolean(raw.moderationInputEnabled, HARD_DEFAULTS.moderationInputEnabled),
     moderationOutputEnabled: normalizeBoolean(raw.moderationOutputEnabled, HARD_DEFAULTS.moderationOutputEnabled),
@@ -284,6 +304,10 @@ export async function seedSettingsFromEnv(): Promise<void> {
     maliciousThrottleMinutes: HARD_DEFAULTS.maliciousThrottleMinutes,
     blockedErrorMessage: HARD_DEFAULTS.blockedErrorMessage,
     fuzzyModelMatchingEnabled: HARD_DEFAULTS.fuzzyModelMatchingEnabled,
+    modelHealthRoutingMode: HARD_DEFAULTS.modelHealthRoutingMode,
+    modelCooldownFailureThreshold: HARD_DEFAULTS.modelCooldownFailureThreshold,
+    modelCooldownMinutes: HARD_DEFAULTS.modelCooldownMinutes,
+    modelEmptyResponseCountsAsFailure: HARD_DEFAULTS.modelEmptyResponseCountsAsFailure,
     moderationEnabled: HARD_DEFAULTS.moderationEnabled,
     moderationInputEnabled: HARD_DEFAULTS.moderationInputEnabled,
     moderationOutputEnabled: HARD_DEFAULTS.moderationOutputEnabled,

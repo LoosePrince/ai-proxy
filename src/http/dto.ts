@@ -50,6 +50,8 @@ export function toProviderDTO(record: ProviderRecord, effectiveRule: RoutingRule
     baseUrl: record.baseUrl,
     hasApiKey: record.apiKey.length > 0,
     models: record.models,
+    declaredModels: record.declaredModels,
+    disabledModels: record.disabledModels,
     excludeFromModelMatching: record.excludeFromModelMatching,
     modelMatchExcludeModels: record.modelMatchExcludeModels,
     kind: record.kind,

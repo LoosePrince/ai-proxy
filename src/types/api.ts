@@ -5,6 +5,14 @@
 
 export type RoutingRule = 'priority' | 'random' | 'average';
 
+/**
+ * 模型健康感知路由模式（基于渠道声明的模型，而非客户端请求名或上游自报名）。
+ *   random     默认：完全按既有规则随机/轮转/顺序，不参考健康状态
+ *   prefer-first    每次请求都优先尝试异常或无流量的模型，用于均匀刷新状态样本
+ *   probe-first     只有首个尝试用来探测异常/无流量模型，后续按正常状态优先
+ */
+export type ModelHealthRoutingMode = 'random' | 'prefer-unhealthy' | 'probe-unhealthy-first';
+
 export type RequestBehaviorAction = 'ignore' | 'error' | 'strip-system-prompt' | 'only-user-messages';
 
 /**
@@ -143,7 +151,12 @@ export interface ProviderDTO {
   baseUrl: string;
   /** apiKey 永不出站，只暴露是否已配置 */
   hasApiKey: boolean;
+  /** 启用的模型（完整声明列表见 declaredModels） */
   models: string[];
+  /** 渠道声明的全部模型（含已停用的），用于渠道弹窗展示 */
+  declaredModels: string[];
+  /** 已停用的模型，路由视为无该模型 */
+  disabledModels: string[];
   /** 该 Provider（及其全部模型）不参与模型 id 匹配，只能被正常路由命中 */
   excludeFromModelMatching: boolean;
   /** 仅这些模型名不参与模型 id 匹配，其余模型仍可被匹配 */
@@ -181,6 +194,8 @@ export interface ProviderUpsertInput {
   /** 省略或空串表示保留原值 */
   apiKey?: string;
   models: string[];
+  /** 本次保存后停用的模型；省略表示保留原值 */
+  disabledModels?: string[];
   /** Provider 级内置系统提示词 */
   systemPrompt?: string;
   requestMode?: ProviderRequestMode;
@@ -273,6 +288,14 @@ export interface SettingsDTO {
   blockedErrorMessage: string;
   /** 是否启用模型名相近匹配（例如用模型 ID 优先匹配到声明了近似模型名的 Provider） */
   fuzzyModelMatchingEnabled: boolean;
+  /** 模型健康感知路由模式（基于渠道声明的模型） */
+  modelHealthRoutingMode: ModelHealthRoutingMode;
+  /** 模型冷却：连续失败多少次后进入冷却，0 表示不启用 */
+  modelCooldownFailureThreshold: number;
+  /** 模型冷却时长（分钟） */
+  modelCooldownMinutes: number;
+  /** 上游返回空消息是否也视为失败（计入健康与冷却） */
+  modelEmptyResponseCountsAsFailure: boolean;
   /** 是否启用多层内容审核系统（与旧版恶意内容检测并存，默认关闭） */
   moderationEnabled: boolean;
   /** 审核请求侧内容（用户输入） */
@@ -455,14 +478,16 @@ export interface ModelUsageDTO {
 
 /**
  * 端点健康状态。由后端根据窗口内的真实上游尝试判定，前端只负责上色，
- * 保证「正常 / 降级 / 异常」在各处只有一个判定源。
+ * 保证「正常 / 延迟 / 降级 / 异常 / 不可用」在各处只有一个判定源。
  *
- *   ok       可用率 ≥ 95%
- *   degraded 可用率 ≥ 80%
- *   down     可用率 < 80%
- *   idle     窗口内没有打到上游的尝试（无流量，不代表故障）
+ *   ok        可用率 ≥ 95%（绿色）
+ *   slow      可用率 ≥ 85%（黄绿色）
+ *   degraded  可用率 ≥ 60%（黄色）
+ *   error     可用率 ≥ 30%（橙色）
+ *   down      可用率 < 30%（红色）
+ *   idle      窗口内没有打到上游的尝试（无流量，灰色，不代表故障）
  */
-export type EndpointHealthState = 'ok' | 'degraded' | 'down' | 'idle';
+export type EndpointHealthState = 'ok' | 'slow' | 'degraded' | 'error' | 'down' | 'idle';
 
 /** 逐日健康样本，供状态页的色条渲染；窗口内没有样本的日期由后端补 idle 占位 */
 export interface EndpointHealthSampleDTO {
@@ -501,10 +526,15 @@ export interface ChannelHealthDTO {
   samples: EndpointHealthSampleDTO[];
 }
 
-/** 模型维度的健康视图，对应后台状态监控页的模型表 */
+/** 模型维度的健康视图，对应后台状态监控页的模型表。口径见 migration 016。 */
 export interface ModelHealthDTO {
+  /** 渠道声明的模型名（attempted_model 口径），非客户端自定义名或上游自报名 */
   model: string;
   state: EndpointHealthState;
+  /** 该模型已被渠道停用，路由视为无此模型 */
+  disabled: boolean;
+  /** 声明该模型的渠道数量；仅在「全部模型」视图使用 */
+  providerCount: number;
   latestLatencyMs: number | null;
   availability7d: number | null;
   availability15d: number | null;
@@ -520,6 +550,14 @@ export interface EndpointHealthDTO {
   /** 统计窗口天数，样本数组就是这个长度 */
   windowDays: number;
   channels: ChannelHealthDTO[];
+  models: ModelHealthDTO[];
+  generatedAt: string;
+}
+
+/** 渠道弹窗：单个渠道按声明模型拆分的健康状态，模型可在此停用 */
+export interface ChannelModelHealthDTO {
+  providerId: number;
+  channelName: string;
   models: ModelHealthDTO[];
   generatedAt: string;
 }

@@ -98,6 +98,7 @@ interface FormValues {
   baseUrl: string;
   apiKey?: string;
   models: string[];
+  disabledModels: string[];
   excludeFromModelMatching: boolean;
   modelMatchExcludeModels: string[];
   systemPrompt: string;
@@ -157,6 +158,7 @@ export function Providers() {
       baseUrl: '',
       apiKey: '',
       models: [],
+      disabledModels: [],
       excludeFromModelMatching: false,
       modelMatchExcludeModels: [],
       systemPrompt: '',
@@ -183,7 +185,8 @@ export function Providers() {
         baseUrl: record.baseUrl,
         // 留空表示保持原 key，不预填任何占位字符
         apiKey: '',
-        models: record.models,
+        models: record.declaredModels,
+        disabledModels: record.disabledModels,
         excludeFromModelMatching: record.excludeFromModelMatching,
         modelMatchExcludeModels: record.modelMatchExcludeModels,
         systemPrompt: record.systemPrompt,
@@ -216,8 +219,14 @@ export function Providers() {
 
     try {
       if (editing) {
-        // apiKey 为空时不放进 patch，后端据此保持原值
-        const patch = { ...values, apiKey: values.apiKey?.trim() || undefined };
+        // apiKey 为空时不放进 patch，后端据此保持原值；
+        // models 提交的是含停用项的完整声明列表，后端按 disabledModels 拆分启用/停用
+        const patch = {
+          ...values,
+          apiKey: values.apiKey?.trim() || undefined,
+          models: values.models,
+          disabledModels: values.disabledModels.filter((model) => values.models.includes(model)),
+        };
         await adminApi.updateProvider(editing.id, patch);
         message.success('Provider 已更新');
       } else {
@@ -257,6 +266,7 @@ export function Providers() {
           baseUrl: values.baseUrl,
           apiKey: values.apiKey?.trim() || undefined,
           models: values.models,
+          disabledModels: values.disabledModels,
           excludeFromModelMatching: values.excludeFromModelMatching,
           modelMatchExcludeModels: values.modelMatchExcludeModels,
           systemPrompt: values.systemPrompt,
@@ -627,8 +637,25 @@ export function Providers() {
             />
           </Form.Item>
 
-          <Form.Item name="models" label="模型列表" extra="留空表示直接透传请求中的模型名">
+          <Form.Item
+            name="models"
+            label="模型列表"
+            extra="留空表示直接透传请求中的模型名；列表展示的是完整声明（含已停用模型）。"
+          >
             <ModelChipEditor value={modelValues} onChange={(models) => form.setFieldValue('models', models)} />
+          </Form.Item>
+
+          <Form.Item
+            name="disabledModels"
+            label="停用的模型"
+            extra="停用后路由视为无该模型（不再参与匹配与模型选择），声明记录保留，恢复后立即可用。只保留下方列表中仍然存在的模型。"
+          >
+            <Select
+              mode="multiple"
+              className="control-full"
+              placeholder="选择要停用的模型"
+              options={modelValues.map((model: string) => ({ label: model, value: model }))}
+            />
           </Form.Item>
 
           <Form.Item

@@ -330,7 +330,10 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
      *
      * 刻意与请求明细分开累加：明细会被保留策略清理，而聚合永久保留，
      * 30 天可用率才不会因为清理而突然变成「无数据」。
-     * 口径见 migrations/015_endpoint_health.ts 的注释。
+     * 口径见 migrations/015_endpoint_health.ts 与 016_model_health_routing.ts 的注释。
+     *
+     * model 列记 attempted_model（站点按渠道声明模型发请求时的名字）：
+     * 不用客户端自定义透传名，也不用上游响应自报的实际模型。
      */
     const winnerIndex = event.attempts.findIndex((item) => item.status === 'success');
 
@@ -366,7 +369,7 @@ export function buildIngestStatements(events: RequestEventInput[]): LsqliteState
         params: [
           attempt.providerId ?? 0,
           attempt.providerName,
-          attempt.actualModel ?? attempt.attemptedModel ?? UNKNOWN_MODEL,
+          attempt.attemptedModel ?? UNKNOWN_MODEL,
           day,
           succeeded ? 1 : 0,
           attempt.status === 'failed' ? 1 : 0,

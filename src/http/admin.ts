@@ -25,6 +25,7 @@ import {
   listProviders,
   pruneEmptyPriorityGroups,
   savePriorityGroup,
+  setProviderModelEnabled,
   updateProvider,
   type ProviderRecord,
 } from '../db/repo/providers';
@@ -52,7 +53,12 @@ import { getRequestDetail, getIpDetailStats, queryRequests } from '../db/repo/re
 import { listDetectorInfo, detectorById } from '../core/moderation/detectors';
 import { MODERATION_CATEGORIES, categoryMeta } from '../core/moderation/taxonomy';
 import { LsqliteError } from '../db/lsqlite';
-import { loadSettings, normalizeRoutingRule, saveSettings } from '../db/repo/settings';
+import {
+  loadSettings,
+  normalizeModelHealthRoutingMode,
+  normalizeRoutingRule,
+  saveSettings,
+} from '../db/repo/settings';
 import {
   getDailyUsage,
   getDashboardSummary,
@@ -60,7 +66,7 @@ import {
   getModelUsage,
   getProviderUsage,
 } from '../db/repo/usage';
-import { getEndpointHealth } from '../db/repo/endpoint-health';
+import { getChannelModelHealth, getEndpointHealth } from '../db/repo/endpoint-health';
 import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { getConfig, invalidateConfig, peekConfig } from '../runtime/config-cache';
 import { resolveTimeoutMs } from '../core/timeout';
@@ -391,6 +397,7 @@ router.post('/api/providers', requireAuth, async (req: Request, res: Response) =
       baseUrl: requestMode === 'openai' ? requireHttpUrl(body.baseUrl, 'baseUrl') : String(body.baseUrl ?? '').trim(),
       apiKey: requestMode === 'openai' ? requireString(body.apiKey, 'apiKey') : String(body.apiKey ?? '').trim(),
       models: toModels(body.models),
+      disabledModels: body.disabledModels === undefined ? undefined : toModels(body.disabledModels),
       systemPrompt: body.systemPrompt === undefined ? '' : String(body.systemPrompt).trim(),
       requestMode,
       requestScript: body.requestScript === undefined ? '' : String(body.requestScript),
@@ -476,6 +483,8 @@ router.post('/api/providers/test', requireAuth, async (req: Request, res: Respon
           lastRunError: null,
           variablesUpdatedAt: null,
           models: toModels(config.models),
+          declaredModels: toModels(config.models),
+          disabledModels: [],
           kind: toKind(config.kind),
           source: 'managed',
           priority: toPriority(config.priority),
@@ -575,6 +584,7 @@ router.put('/api/providers/:id', requireAuth, async (req: Request, res: Response
     // 留空表示保持原 key 不变
     if (body.apiKey) patch.apiKey = requireString(body.apiKey, 'apiKey');
     if (body.models !== undefined) patch.models = toModels(body.models);
+    if (body.disabledModels !== undefined) patch.disabledModels = toModels(body.disabledModels);
     if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt).trim();
     if (body.requestMode !== undefined) patch.requestMode = toRequestMode(body.requestMode);
     if (body.requestScript !== undefined) patch.requestScript = String(body.requestScript);
@@ -813,6 +823,18 @@ router.put('/api/settings', requireAuth, async (req: Request, res: Response) => 
     if (body.fuzzyModelMatchingEnabled !== undefined) {
       patch.fuzzyModelMatchingEnabled = !!body.fuzzyModelMatchingEnabled;
     }
+    if (body.modelHealthRoutingMode !== undefined) {
+      patch.modelHealthRoutingMode = normalizeModelHealthRoutingMode(body.modelHealthRoutingMode);
+    }
+    if (body.modelCooldownFailureThreshold !== undefined) {
+      patch.modelCooldownFailureThreshold = toNonNegativeInt(body.modelCooldownFailureThreshold, '模型冷却失败次数阈值');
+    }
+    if (body.modelCooldownMinutes !== undefined) {
+      patch.modelCooldownMinutes = toPositiveInt(body.modelCooldownMinutes, '模型冷却时长（分钟）');
+    }
+    if (body.modelEmptyResponseCountsAsFailure !== undefined) {
+      patch.modelEmptyResponseCountsAsFailure = !!body.modelEmptyResponseCountsAsFailure;
+    }
     if (body.moderationEnabled !== undefined) patch.moderationEnabled = !!body.moderationEnabled;
     if (body.moderationInputEnabled !== undefined) {
       patch.moderationInputEnabled = !!body.moderationInputEnabled;
@@ -968,6 +990,45 @@ router.get('/api/usage', requireAuth, async (req: Request, res: Response) => {
 router.get('/api/endpoint-health', requireAuth, async (_req: Request, res: Response) => {
   try {
     res.json(await getEndpointHealth());
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+/** 渠道弹窗：单个渠道按声明模型拆分的健康状态 */
+router.get('/api/providers/:id/model-health', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw new BadRequest('Provider 不存在');
+    const data = await getChannelModelHealth(id);
+    if (!data) {
+      res.status(404).json({ error: { message: 'Provider 不存在' } });
+      return;
+    }
+    res.json(data);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+/** 停用 / 恢复渠道声明的某个模型（停用 = 路由视为无该模型） */
+router.put('/api/providers/:id/models/:model/enabled', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await findProviderById(id);
+    if (!existing) {
+      res.status(404).json({ error: { message: 'Provider 不存在' } });
+      return;
+    }
+    const model = String(req.params.model ?? '').trim();
+    if (!model || !existing.declaredModels.includes(model)) {
+      throw new BadRequest('该模型不在渠道声明列表中');
+    }
+    const enabled = req.body?.enabled !== false;
+
+    await setProviderModelEnabled(id, model, enabled);
+    invalidateConfig();
+    res.json({ success: true });
   } catch (error) {
     fail(res, error);
   }

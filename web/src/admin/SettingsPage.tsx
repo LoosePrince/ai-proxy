@@ -36,6 +36,7 @@ import { adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import type {
   MaliciousBehaviorAction,
+  ModelHealthRoutingMode,
   PriorityGroupDTO,
   RequestBehaviorAction,
   RoutingRule,
@@ -46,6 +47,12 @@ const RULE_OPTIONS: Array<{ label: string; value: RoutingRule }> = [
   { label: 'priority（按顺序）', value: 'priority' },
   { label: 'random（随机）', value: 'random' },
   { label: 'average（轮转）', value: 'average' },
+];
+
+const MODEL_HEALTH_MODE_OPTIONS: Array<{ label: string; value: ModelHealthRoutingMode }> = [
+  { label: '默认（当前行为，不参考模型状态）', value: 'random' },
+  { label: '优先尝试异常或无流量的模型', value: 'prefer-unhealthy' },
+  { label: '首个尝试用于探测异常/无流量模型，后续优先正常模型', value: 'probe-unhealthy-first' },
 ];
 
 const IDE_ACTION_OPTIONS: Array<{ label: string; value: RequestBehaviorAction }> = [
@@ -279,6 +286,14 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
         </Form.Item>
 
         <Form.Item
+          name="modelHealthRoutingMode"
+          label="模型健康路由"
+          tooltip="基于渠道声明模型的实时健康（30 分钟窗口内的真实上游成败）决定同渠道内的模型尝试顺序。冷却中的模型始终跳过。"
+        >
+          <Select options={MODEL_HEALTH_MODE_OPTIONS} />
+        </Form.Item>
+
+        <Form.Item
           name="blockedErrorMessage"
           label="拦截 / 封禁提示消息"
           tooltip="黑名单封禁、违禁内容触发的拦截与限流返回给客户端的报错内容。"
@@ -286,6 +301,37 @@ function SettingsForm({ initial, onSaved }: { initial: SettingsDTO; onSaved: () 
           <Input placeholder="该 IP 已被禁止访问" />
         </Form.Item>
       </div>
+
+      <Card size="small" title="模型冷却" className="nested-settings-card">
+        <Typography.Paragraph type="secondary" className="paragraph-flush">
+          同一渠道声明的模型连续失败达到阈值后进入冷却，冷却期间不再被路由选中；
+          冷却结束后回到「无流量」状态，获得重新探测的机会。冷却与健康状态随进程重启清零。
+        </Typography.Paragraph>
+        <div className="settings-grid">
+          <Form.Item
+            name="modelCooldownFailureThreshold"
+            label="连续失败次数阈值"
+            tooltip="0 表示不启用模型冷却。仅统计真正打到上游的失败，客户端断开与并行竞速落败不计入。"
+          >
+            <InputNumber min={0} max={100} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="modelCooldownMinutes"
+            label="冷却时长（分钟）"
+            tooltip="冷却期间该模型视为不可用，路由自动跳过。"
+          >
+            <InputNumber min={1} max={1440} className="control-full" />
+          </Form.Item>
+          <Form.Item
+            name="modelEmptyResponseCountsAsFailure"
+            label="空消息也视为失败"
+            valuePropName="checked"
+            tooltip="上游返回 200 但正文为空（流式为整段无内容）时，同样计入该模型的健康窗口与冷却计数。"
+          >
+            <Switch />
+          </Form.Item>
+        </div>
+      </Card>
 
       <Card size="small" title="同 IP 请求上限（多窗口同时生效）" className="nested-settings-card">
         <Typography.Paragraph type="secondary" className="paragraph-flush">

@@ -23,6 +23,7 @@
 import { getDb } from '../lsqlite';
 import type {
   ChannelHealthDTO,
+  ChannelModelHealthDTO,
   EndpointHealthDTO,
   EndpointHealthSampleDTO,
   EndpointHealthState,
@@ -32,7 +33,9 @@ import type {
 
 /** 状态阈值（可用率百分比）。唯一的判定源，前端只按它上色。 */
 export const HEALTH_OK_THRESHOLD = 95;
-export const HEALTH_DEGRADED_THRESHOLD = 80;
+export const HEALTH_SLOW_THRESHOLD = 85;
+export const HEALTH_DEGRADED_THRESHOLD = 60;
+export const HEALTH_ERROR_THRESHOLD = 30;
 
 /** 统计窗口。状态判定固定用最近 7 天，避免短窗口把小样本噪声放大成故障。 */
 export const HEALTH_WINDOW_DAYS = 30;
@@ -59,9 +62,9 @@ function percent(part: number, total: number): number | null {
 }
 
 /**
- * 由窗口内的成败次数判定状态。
+ * 由窗口内的成败次数判定状态（阈值与配色见 types/api.ts 的 EndpointHealthState）。
  *
- * 分母为 0 时返回 idle 而不是 down：没有请求不代表渠道坏了，
+ * 分母为 0 时返回 idle 而不是故障态：没有请求不代表渠道坏了，
  * 把它标成故障会让「所有渠道」列表在低频部署上全是红色。
  */
 export function classifyHealth(success: number, failed: number): EndpointHealthState {
@@ -70,12 +73,21 @@ export function classifyHealth(success: number, failed: number): EndpointHealthS
 
   const availability = (success / total) * 100;
   if (availability >= HEALTH_OK_THRESHOLD) return 'ok';
+  if (availability >= HEALTH_SLOW_THRESHOLD) return 'slow';
   if (availability >= HEALTH_DEGRADED_THRESHOLD) return 'degraded';
+  if (availability >= HEALTH_ERROR_THRESHOLD) return 'error';
   return 'down';
 }
 
-/** 状态严重度，用于「先看坏的」排序：异常 > 降级 > 正常 > 无流量 */
-const STATE_RANK: Record<EndpointHealthState, number> = { down: 0, degraded: 1, ok: 2, idle: 3 };
+/** 状态严重度，用于「先看坏的」排序：越不可用越靠前，无流量最后 */
+const STATE_RANK: Record<EndpointHealthState, number> = {
+  down: 0,
+  error: 1,
+  degraded: 2,
+  slow: 3,
+  ok: 4,
+  idle: 5,
+};
 
 /** 窗口内的日期列表（升序），与 samples 一一对应 */
 function windowDaysList(windowDays: number): string[] {
@@ -347,21 +359,116 @@ async function getChannelHealth(days: string[]): Promise<ChannelHealthDTO[]> {
   );
 }
 
-interface ModelTrafficRow {
-  actual_model: string;
-  requests: number;
+interface ProviderModelRow {
+  provider_id: number;
+  model: string;
+  enabled: number;
+}
+
+interface ModelMeta {
+  disabled: boolean;
+  providerIds: Set<number>;
+}
+
+/** 模型条目组装：全模型视图与渠道弹窗共用同一套窗口统计，避免口径漂移 */
+function buildModelHealth(
+  name: string,
+  aggregate: HealthAggregate,
+  days: string[],
+  meta: { disabled: boolean; providerCount: number },
+): ModelHealthDTO {
+  const stats = windowStats(aggregate, days);
+  return {
+    model: name === UNKNOWN_MODEL ? UNKNOWN_MODEL_DISPLAY : name,
+    state: classifyHealth(stats.success7d, stats.failed7d),
+    disabled: meta.disabled,
+    providerCount: meta.providerCount,
+    latestLatencyMs: stats.latestLatencyMs,
+    availability7d: availabilityOf(stats.samples, 7),
+    availability15d: availabilityOf(stats.samples, 15),
+    availability30d: availabilityOf(stats.samples, HEALTH_WINDOW_DAYS),
+    avgLatency7d: stats.avgLatency7d,
+    attempts7d: stats.success7d + stats.failed7d,
+    attempts30d: stats.attempts,
+    lastSeenAt: stats.lastSeenAt,
+    samples: stats.samples,
+  };
+}
+
+function sortModels(models: ModelHealthDTO[]): ModelHealthDTO[] {
+  return models.sort(
+    (a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.model.localeCompare(b.model),
+  );
+}
+
+/** 渠道内按声明模型分组的聚合（渠道弹窗用） */
+async function getModelHealthForProvider(providerId: number, days: string[]): Promise<ModelHealthDTO[]> {
+  const db = getDb();
+  const from = days[0] ?? '';
+  const [dayRows, modelRows] = await Promise.all([
+    db.select<HealthDayRow>(
+      `select
+          model                              as label,
+          day                                as day,
+          sum(attempts)                      as attempts,
+          sum(success)                       as success,
+          sum(failed)                        as failed,
+          sum(claimed)                       as claimed,
+          sum(duration_sum_ms)               as duration_sum_ms,
+          sum(duration_count)                as duration_count,
+          min(ttfb_min_ms)                   as ttfb_min_ms,
+          max(last_seen_at)                  as last_seen_at
+        from endpoint_health_daily
+        where day >= ? and provider_id = ?
+        group by model, day
+        order by day asc`,
+      [from, providerId],
+    ),
+    db.select<ProviderModelRow>(
+      'select provider_id, model, enabled from provider_models where provider_id = ? order by sort_order, id',
+      [providerId],
+    ),
+  ]);
+
+  const aggregates = new Map<string, HealthAggregate>();
+  for (const row of dayRows) {
+    let aggregate = aggregates.get(row.label);
+    if (!aggregate) {
+      aggregate = new Map();
+      aggregates.set(row.label, aggregate);
+    }
+    foldRow(aggregate, row);
+  }
+
+  const declared = new Map(modelRows.map((row) => [row.model, Number(row.enabled) === 0]));
+  const models: ModelHealthDTO[] = [];
+
+  // 渠道声明的每个模型（含停用）都要出现；零流量以「无流量」示人
+  for (const [model, disabled] of declared) {
+    const aggregate = aggregates.get(model) ?? new Map();
+    aggregates.delete(model);
+    models.push(buildModelHealth(model, aggregate, days, { disabled, providerCount: 1 }));
+  }
+
+  // 历史遗留的模型名（已从声明列表移除或迁移前数据）保留展示，便于看旧故障
+  for (const [model, aggregate] of aggregates) {
+    models.push(buildModelHealth(model, aggregate, days, { disabled: false, providerCount: 1 }));
+  }
+
+  return sortModels(models);
 }
 
 /**
- * 模型健康。
+ * 全部模型（渠道声明模型口径）。
  *
- * 「所有模型」= 有上游尝试的模型 ∪ 窗口内有请求的模型（可能全部命中缓存，
- * 因此没有任何上游尝试）。后者以「无流量」出现，避免只用缓存时模型凭空消失。
+ * 列表 = providers 里声明的每个模型 ∪ 窗口内有上游尝试的模型。
+ * 不使用「客户端自定义填写模型」或「上游响应的实际模型」：
+ * 落库口径见 migration 016，attempted_model 就是站点按声明模型发请求时的名字。
  */
 async function getModelHealth(days: string[]): Promise<ModelHealthDTO[]> {
   const db = getDb();
   const from = days[0] ?? '';
-  const [dayRows, trafficRows] = await Promise.all([
+  const [dayRows, declaredRows] = await Promise.all([
     db.select<HealthDayRow>(
       `select
           model                              as label,
@@ -380,13 +487,7 @@ async function getModelHealth(days: string[]): Promise<ModelHealthDTO[]> {
         order by day asc`,
       [from],
     ),
-    db.select<ModelTrafficRow>(
-      `select actual_model as actual_model, sum(requests) as requests
-         from model_usage_daily
-        where day >= ?
-        group by actual_model`,
-      [from],
-    ),
+    db.select<ProviderModelRow>('select provider_id, model, enabled from provider_models order by sort_order, id'),
   ]);
 
   const aggregates = new Map<string, HealthAggregate>();
@@ -399,32 +500,60 @@ async function getModelHealth(days: string[]): Promise<ModelHealthDTO[]> {
     foldRow(aggregate, row);
   }
 
-  // 只有缓存命中的模型也出现在列表里（attempts 全 0）
-  for (const row of trafficRows) {
-    if (!aggregates.has(row.actual_model)) aggregates.set(row.actual_model, new Map());
+  // 声明元数据：每个模型出现在哪些渠道、是否在所有渠道都被停用
+  const meta = new Map<string, ModelMeta>();
+  for (const row of declaredRows) {
+    let entry = meta.get(row.model);
+    if (!entry) {
+      entry = { disabled: Number(row.enabled) === 0, providerIds: new Set() };
+      meta.set(row.model, entry);
+    }
+    entry.providerIds.add(Number(row.provider_id));
+    // 只要在任一渠道仍启用就不算整体停用
+    if (Number(row.enabled) !== 0) entry.disabled = false;
   }
 
   const models: ModelHealthDTO[] = [];
   for (const [name, aggregate] of aggregates) {
-    const stats = windowStats(aggregate, days);
-    models.push({
-      model: name === UNKNOWN_MODEL ? UNKNOWN_MODEL_DISPLAY : name,
-      state: classifyHealth(stats.success7d, stats.failed7d),
-      latestLatencyMs: stats.latestLatencyMs,
-      availability7d: availabilityOf(stats.samples, 7),
-      availability15d: availabilityOf(stats.samples, 15),
-      availability30d: availabilityOf(stats.samples, HEALTH_WINDOW_DAYS),
-      avgLatency7d: stats.avgLatency7d,
-      attempts7d: stats.success7d + stats.failed7d,
-      attempts30d: stats.attempts,
-      lastSeenAt: stats.lastSeenAt,
-      samples: stats.samples,
-    });
+    const entry = meta.get(name);
+    models.push(
+      buildModelHealth(name, aggregate, days, {
+        disabled: entry?.disabled ?? false,
+        providerCount: entry?.providerIds.size ?? 0,
+      }),
+    );
   }
 
-  return models.sort(
-    (a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.model.localeCompare(b.model),
+  // 从未被打到、声明即存在的模型也要列出（无流量）
+  for (const [name, entry] of meta) {
+    if (!aggregates.has(name)) {
+      models.push(
+        buildModelHealth(name, new Map(), days, {
+          disabled: entry.disabled,
+          providerCount: entry.providerIds.size,
+        }),
+      );
+    }
+  }
+
+  return sortModels(models);
+}
+
+/** 渠道弹窗数据：单个渠道按声明模型拆分的健康状态 */
+export async function getChannelModelHealth(providerId: number): Promise<ChannelModelHealthDTO | null> {
+  const days = windowDaysList(HEALTH_WINDOW_DAYS);
+  const provider = await getDb().selectOne<{ id: number; name: string }>(
+    'select id, name from providers where id = ?',
+    [providerId],
   );
+  if (!provider) return null;
+
+  return {
+    providerId,
+    channelName: provider.name,
+    models: await getModelHealthForProvider(providerId, days),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 /** 状态监控页的完整数据。窗口固定 30 天，7 / 15 / 30 天可用率从同一份样本切出。 */

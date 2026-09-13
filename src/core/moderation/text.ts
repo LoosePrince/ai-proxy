@@ -159,3 +159,16 @@ export function splitSseFrames(buffer: string, incoming: string): { frames: stri
 
   return { frames, rest: merged.slice(cursor) };
 }
+
+/**
+ * 响应是否为「空消息」：非流式是空正文；流式捕获体是原始 SSE 帧，
+ * 逐帧解析 delta 后再判空。返回空消息也视为失败（模型冷却）时用它判定。
+ */
+export function responseTextIsEmpty(body: unknown, contentType = 'application/json'): boolean {
+  if (typeof body !== 'string') return responseText(body).trim().length === 0;
+  if (contentType.includes('event-stream')) {
+    const { frames } = splitSseFrames('', body);
+    return frames.every((frame) => sseFrameText(frame).length === 0);
+  }
+  return responseText(body).trim().length === 0;
+}

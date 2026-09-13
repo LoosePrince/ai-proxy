@@ -12,7 +12,16 @@
  */
 
 import type { ProviderRecord, PriorityGroupRecord } from '../db/repo/providers';
-import type { RoutingRule } from '../types/api';
+import type { ModelHealthRoutingMode, RoutingRule } from '../types/api';
+
+/**
+ * 模型健康态（渠道声明模型粒度）。由 runtime/model-health 提供，core 层保持无状态。
+ * coolingDown=true 的模型在候选里被视为不可用。
+ */
+export interface ModelHealthProbe {
+  state: 'ok' | 'down' | 'idle';
+  coolingDown: boolean;
+}
 
 /** round-robin 游标读写。由 runtime/counters 提供实现，core 层保持无状态。 */
 export interface RotationCursor {
@@ -24,6 +33,17 @@ export interface PriorityGroup {
   rule: RoutingRule;
   timeoutMs: number | null;
   providers: ProviderRecord[];
+}
+
+export function byHealthPreference<T>(
+  items: T[],
+  stateOf: (item: T) => 'ok' | 'down' | 'idle',
+): T[] {
+  const rank = { down: 0, idle: 1, ok: 2 } as const;
+  return items
+    .map((item, index) => ({ item, index, rank: rank[stateOf(item)] }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.item);
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -250,6 +270,9 @@ export function buildSpecialProviderChain(
 /**
  * 单个 provider 内的模型尝试顺序。
  * 请求模型若被该 provider 支持则顶到首位，其余按组规则排序后截断。
+ *
+ * healthOf（可选）提供渠道声明模型的实时健康：冷却中的模型直接剔除；
+ * mode 按设置项决定是否把异常/无流量模型前置（默认 random 不干预排序）。
  */
 export function buildModelCandidates(
   provider: ProviderRecord,
@@ -258,8 +281,15 @@ export function buildModelCandidates(
   cursor: RotationCursor,
   maxCount: number,
   fuzzy = true,
+  options?: {
+    mode?: ModelHealthRoutingMode;
+    healthOf?: (model: string) => ModelHealthProbe;
+  },
 ): string[] {
-  const models = [...new Set(provider.models.map((m) => m.trim()).filter(Boolean))];
+  const usable = (model: string): boolean => options?.healthOf?.(model).coolingDown !== true;
+  const models = [...new Set(provider.models.map((m) => m.trim()).filter(Boolean))]
+    // 渠道弹窗里被停用的模型：路由视为无该模型，冷却中的模型同样不可选
+    .filter(usable);
 
   /*
    * fallback 是主链全部失败后的独立末级资源，不参与客户端模型定向。
@@ -285,21 +315,32 @@ export function buildModelCandidates(
   const canMatch =
     !!effectiveRequestedModel && fuzzy && !provider.excludeFromModelMatching && matchableModels.length > 0;
 
+  // 健康感知只在按组规则选出顺序之后做一次重排，不影响匹配语义
+  const applyHealthOrder = (list: string[]): string[] => {
+    const mode = options?.mode ?? 'random';
+    if (mode === 'random' || !options?.healthOf || list.length <= 1) return list;
+    return byHealthPreference(list, (model) => options.healthOf!(model).state);
+  };
+
   if (canMatch) {
-    const scored = matchableModels.map((model) => ({
+    const scored = matchableModels.filter(usable).map((model) => ({
       model,
       score: modelMatchScore(effectiveRequestedModel, model, fuzzy),
     }));
     const bestScore = Math.max(0, ...scored.map((item) => item.score));
     if (bestScore >= 72) {
       const matched = scored.filter((item) => item.score >= bestScore - 1).map((item) => item.model);
-      return applyRule(matched, rule, `models:${provider.id}:${matched.join(',')}`, cursor).slice(0, maxCount);
+      return applyHealthOrder(
+        applyRule(matched, rule, `models:${provider.id}:${matched.join(',')}`, cursor),
+      ).slice(0, maxCount);
     }
   }
 
   // 未指定模型、关闭相近匹配、Provider 被排除、或指定模型在匹配池中无命中时，
   // 走正常模型选择策略（被排除的模型仍可能在这里被随机/轮转命中）。
-  return applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor).slice(0, maxCount);
+  return applyHealthOrder(
+    applyRule(models, rule, `models:${provider.id}:${models.join(',')}`, cursor),
+  ).slice(0, maxCount);
 }
 
 export function findSpecialProvider(

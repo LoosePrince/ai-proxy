@@ -16,6 +16,7 @@ import { loadSettings } from '../db/repo/settings';
 import { loadBlacklistedIps } from '../db/repo/ip-blacklist';
 import { loadModerationSnapshot } from '../db/repo/moderation';
 import { compileModerationConfig, type ModerationConfig } from '../core/moderation/compile';
+// 模型健康/冷却是内存态：provider 配置变更后由 invalidate 一并生效，这里无额外逻辑。
 import type { SettingsDTO } from '../types/api';
 
 export interface ConfigSnapshot {

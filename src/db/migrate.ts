@@ -24,6 +24,7 @@ import { migration012Announcements } from './migrations/012_announcements';
 import { migration013ModelMatchExclusion } from './migrations/013_model_match_exclusion';
 import { migration014Moderation } from './migrations/014_moderation';
 import { migration015EndpointHealth } from './migrations/015_endpoint_health';
+import { migration016ModelHealthRouting } from './migrations/016_model_health_routing';
 
 export interface Migration {
   id: string;
@@ -48,6 +49,7 @@ const MIGRATIONS: Migration[] = [
   migration013ModelMatchExclusion,
   migration014Moderation,
   migration015EndpointHealth,
+  migration016ModelHealthRouting,
 ];
 
 const CREATE_MIGRATIONS_TABLE = `

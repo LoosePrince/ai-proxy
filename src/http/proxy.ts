@@ -27,14 +27,24 @@ import { prependBuiltInSystemPrompt } from '../core/system-prompt';
 import { evaluateText } from '../core/moderation/evaluate';
 import { resolveModerationPolicy } from '../core/moderation/compile';
 import type { CompiledModerationPolicy } from '../core/moderation/types';
-import { payloadUserText, responseText as extractResponseText } from '../core/moderation/text';
+import {
+  payloadUserText,
+  responseText as extractResponseText,
+  responseTextIsEmpty,
+} from '../core/moderation/text';
 import { createPublicContentEvent, createRequestCacheKey, parseCapturedBody } from '../core/request-content';
 import {
   buildAttemptChain,
   buildModelCandidates,
   buildSpecialProviderChain,
   findSpecialProvider,
+  type ModelHealthProbe,
 } from '../core/routing';
+import {
+  isModelCoolingDown,
+  modelHealthStatus,
+  recordModelAttempt,
+} from '../runtime/model-health';
 import { PROXY_ROUTES, registerProxyRoutes, type ProxyProtocol } from './proxy-routes';
 import { writeSyntheticSuccess } from './synthetic-response';
 import { resolveTimeoutMs } from '../core/timeout';
@@ -186,6 +196,32 @@ function failureOutcome(signal: AbortSignal, error: unknown): 'client_abort' | '
 }
 
 /**
+ * 渠道声明模型的实时健康探针（供路由排序与冷却过滤）。
+ * 全部读自内存，零 IO。
+ */
+function modelHealthProbe(config: ConfigSnapshot, providerId: number): (model: string) => ModelHealthProbe {
+  const settings = config.settings;
+  return (model: string): ModelHealthProbe => {
+    const status = modelHealthStatus(providerId, model, {
+      modelCooldownFailureThreshold: settings.modelCooldownFailureThreshold,
+      modelCooldownMinutes: settings.modelCooldownMinutes,
+    });
+    return { state: status.state, coolingDown: isModelCoolingDown(providerId, model) };
+  };
+}
+
+/**
+ * 上游调用失败后的副作用：计入模型健康窗口与冷却。
+ * 只对真实打到上游的失败生效；被抢占（claimed-by-other）与客户端中断不算。
+ */
+function recordModelFailure(config: ConfigSnapshot, providerId: number, model: string): void {
+  recordModelAttempt(providerId, model, false, {
+    modelCooldownFailureThreshold: config.settings.modelCooldownFailureThreshold,
+    modelCooldownMinutes: config.settings.modelCooldownMinutes,
+  });
+}
+
+/**
  * 对单个 provider 依次尝试其候选模型。
  *
  * trace 以不可变方式累积：每次尝试（含失败与被抢占）都记录下来。
@@ -231,6 +267,10 @@ async function attemptProvider(args: {
     rotationCursor,
     config.settings.maxModelRetryCount,
     config.settings.fuzzyModelMatchingEnabled,
+    {
+      mode: config.settings.modelHealthRoutingMode,
+      healthOf: modelHealthProbe(config, provider.id),
+    },
   );
 
   // provider 无可用模型：不发起调用，但仍留痕以便排查配置问题
@@ -326,6 +366,20 @@ async function attemptProvider(args: {
         startedAtMs,
       });
 
+      // 「返回空消息也视为失败」：响应已写出，无法再换模型；
+      // 这里只做健康/冷却记账，让该模型尽快退出候选。
+      if (
+        config.settings.modelEmptyResponseCountsAsFailure &&
+        responseTextIsEmpty(result.capturedResponse.body, result.capturedResponse.contentType)
+      ) {
+        recordModelFailure(config, provider.id, model);
+      } else {
+        recordModelAttempt(provider.id, model, true, {
+          modelCooldownFailureThreshold: config.settings.modelCooldownFailureThreshold,
+          modelCooldownMinutes: config.settings.modelCooldownMinutes,
+        });
+      }
+
       return { outcome: { ok: true, provider, role, result, responseSettled: true }, trace };
     } catch (error) {
       lastError = error;
@@ -364,6 +418,9 @@ async function attemptProvider(args: {
       if (clientSignal.aborted) {
         return { outcome: { ok: false, provider, role, error, responseSettled: true }, trace };
       }
+
+      // 真实打到上游的失败：计入模型健康窗口与冷却计数
+      recordModelFailure(config, provider.id, model);
 
       console.warn(
         `[Proxy] ${provider.name} (${model}) failed: status=${errorStatus(error)} timeout=${timeoutMs}ms ${errorMessage(error)}`,

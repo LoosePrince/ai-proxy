@@ -41,7 +41,12 @@ export interface ProviderRecord {
   lastRunOk: boolean | null;
   lastRunError: string | null;
   variablesUpdatedAt: string | null;
+  /** 启用的模型（声明列表减去停用项），路由与匹配只看它 */
   models: string[];
+  /** 渠道声明的全部模型（含停用项），弹窗展示用 */
+  declaredModels: string[];
+  /** 已停用的模型：路由视为无该模型，但仍保留声明记录 */
+  disabledModels: string[];
   /** 该 Provider（及其全部模型）不参与模型 id 匹配，只能被正常路由命中 */
   excludeFromModelMatching: boolean;
   /** 仅这些模型名不参与模型 id 匹配 */
@@ -94,8 +99,12 @@ interface ProviderRow {
   contributor_type: string | null;
   created_at: string;
   updated_at: string;
-  /** group_concat 聚合结果，按 sort_order 排序 */
+  /** group_concat 聚合结果，按 sort_order 排序（仅启用模型） */
   models: string | null;
+  /** group_concat 聚合结果（含停用模型） */
+  declared_models: string | null;
+  /** group_concat 聚合结果（仅停用模型） */
+  disabled_models: string | null;
 }
 
 const PROVIDER_COLUMNS = `
@@ -107,8 +116,16 @@ const PROVIDER_COLUMNS = `
   p.contributor, p.contributor_type, p.created_at, p.updated_at,
   (select group_concat(m.model, char(10))
      from (select model from provider_models
+            where provider_id = p.id and (enabled is null or enabled <> 0)
+            order by sort_order, id) m) as models,
+  (select group_concat(m.model, char(10))
+     from (select model from provider_models
             where provider_id = p.id
-            order by sort_order, id) m) as models`;
+            order by sort_order, id) m) as declared_models,
+  (select group_concat(m.model, char(10))
+     from (select model from provider_models
+            where provider_id = p.id and not (enabled is null or enabled <> 0)
+            order by sort_order, id) m) as disabled_models`;
 
 function normalizeKind(value: unknown): ProviderKind {
   return value === 'fallback' || value === 'parallel' ? value : 'primary';
@@ -172,6 +189,8 @@ function toProviderRecord(row: ProviderRow): ProviderRecord {
     lastRunError: row.last_run_error,
     variablesUpdatedAt: row.variables_updated_at,
     models: row.models ? row.models.split('\n').filter(Boolean) : [],
+    declaredModels: row.declared_models ? row.declared_models.split('\n').filter(Boolean) : [],
+    disabledModels: row.disabled_models ? row.disabled_models.split('\n').filter(Boolean) : [],
     excludeFromModelMatching: !!row.exclude_from_model_matching,
     modelMatchExcludeModels: normalizeStringArray(row.model_match_exclude_json),
     kind: normalizeKind(row.kind),
@@ -234,20 +253,44 @@ export async function findContributedByApiKey(apiKey: string): Promise<ProviderR
   return row ? toProviderRecord(row) : null;
 }
 
-function modelStatements(providerId: number, models: string[]): LsqliteStatement[] {
+function modelStatements(providerId: number, models: string[], keepEnabledOf?: Map<string, boolean>): LsqliteStatement[] {
   const unique = [...new Set(models.map((m) => String(m || '').trim()).filter(Boolean))];
-  // 全量替换而非增量比对：模型列表很短，替换比 diff 更简单且无中间态
+  // 全量替换而非增量比对：模型列表很短，替换比 diff 更简单且无中间态。
+  // keepEnabledOf 让「编辑模型列表」不重置已有的停用开关。
   const statements: LsqliteStatement[] = [
     remove('provider_models', whereEq({ provider_id: providerId })),
   ];
 
   unique.forEach((model, index) => {
     statements.push(
-      insert('provider_models', { provider_id: providerId, model, sort_order: index }),
+      insert('provider_models', {
+        provider_id: providerId,
+        model,
+        sort_order: index,
+        enabled: keepEnabledOf?.get(model) === false ? 0 : 1,
+      }),
     );
   });
 
   return statements;
+}
+
+/**
+ * 停用 / 恢复渠道的某个声明模型。
+ * 停用 = 路由视为无该模型；记录保留，恢复后立即可用。
+ */
+export async function setProviderModelEnabled(
+  providerId: number,
+  model: string,
+  enabled: boolean,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await getDb().execute(
+    `update provider_models set enabled = ?
+      where provider_id = ? and model = ?`,
+    [enabled ? 1 : 0, providerId, model],
+  );
+  await getDb().execute('update providers set updated_at = ? where id = ?', [now, providerId]);
 }
 
 export interface CreateProviderInput {
@@ -263,6 +306,7 @@ export interface CreateProviderInput {
   scheduleEnabled?: boolean;
   scheduleCron?: string;
   models: string[];
+  disabledModels?: string[];
   excludeFromModelMatching?: boolean;
   modelMatchExcludeModels?: string[];
   kind?: ProviderKind;
@@ -311,8 +355,13 @@ export async function createProvider(input: CreateProviderInput): Promise<Provid
   const id = Number(created.rows[0]?.id);
   if (!Number.isFinite(id)) throw new Error('createProvider: failed to obtain inserted id');
 
+  const disabledSet = new Set(input.disabledModels ?? []);
   await db.transaction([
-    ...modelStatements(id, input.models),
+    ...modelStatements(
+      id,
+      input.models,
+      new Map(input.models.map((model) => [model, !disabledSet.has(model)])),
+    ),
     ...ensureGroupStatements(input.priority ?? 0, now),
   ]);
 
@@ -335,6 +384,7 @@ export interface UpdateProviderInput {
   scheduleEnabled?: boolean;
   scheduleCron?: string;
   models?: string[];
+  disabledModels?: string[];
   excludeFromModelMatching?: boolean;
   modelMatchExcludeModels?: string[];
   kind?: ProviderKind;
@@ -346,6 +396,7 @@ export interface UpdateProviderInput {
 
 export async function updateProvider(id: number, input: UpdateProviderInput): Promise<ProviderRecord | null> {
   const now = new Date().toISOString();
+  const existing = await findProviderById(id);
   const fields: Record<string, unknown> = { updated_at: now };
 
   if (input.name !== undefined) fields.name = input.name;
@@ -372,10 +423,17 @@ export async function updateProvider(id: number, input: UpdateProviderInput): Pr
   if (input.contributorType !== undefined) fields.contributor_type = input.contributorType;
 
   const statements: LsqliteStatement[] = [update('providers', fields, whereEq({ id }))];
-  if (input.models !== undefined) statements.push(...modelStatements(id, input.models));
+  if (input.models !== undefined) {
+    // 没提 disabledModels 时保留各模型现有的停用状态
+    const keepEnabled = input.disabledModels === undefined
+      ? new Map(existing?.declaredModels.map((model) => [model, !existing.disabledModels.includes(model)]))
+      : new Map(input.models.map((model) => [model, !input.disabledModels!.includes(model)]));
+    statements.push(...modelStatements(id, input.models, keepEnabled));
+  }
   if (input.priority !== undefined) statements.push(...ensureGroupStatements(input.priority, now));
 
   await getDb().transaction(statements);
+  // 模型停用/启用属于独立动作，配置缓存由调用方失效；这里不重复处理
   return findProviderById(id);
 }
 
