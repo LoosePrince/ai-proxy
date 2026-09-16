@@ -253,6 +253,8 @@ interface ProviderMetaRow {
   name: string;
   kind: string;
   enabled: number;
+  contributor: string | null;
+  contributor_type: string | null;
 }
 
 /**
@@ -283,7 +285,7 @@ async function getChannelHealth(days: string[]): Promise<ChannelHealthDTO[]> {
         order by day asc`,
       [days[0] ?? ''],
     ),
-    db.select<ProviderMetaRow>('select id, name, kind, enabled from providers'),
+    db.select<ProviderMetaRow>('select id, name, kind, enabled, contributor, contributor_type from providers'),
   ]);
 
   const meta = new Map(providerRows.map((row) => [Number(row.id), row]));
@@ -307,13 +309,23 @@ async function getChannelHealth(days: string[]): Promise<ChannelHealthDTO[]> {
   for (const [providerId, entry] of aggregates) {
     const stats = windowStats(entry.aggregate, days);
     const provider = meta.get(providerId);
+    // 状态取最新单天而非7天均值
+    let latestState: EndpointHealthState = 'idle';
+    for (let i = stats.samples.length - 1; i >= 0; i--) {
+      if (stats.samples[i]!.attempts > 0) {
+        latestState = stats.samples[i]!.state;
+        break;
+      }
+    }
+    const displayName = provider?.contributor || entry.name || `渠道 #${providerId}`;
     channels.push({
       providerId,
       name: entry.name || `渠道 #${providerId}`,
+      displayName,
       kind: (provider?.kind as ProviderKind | undefined) ?? null,
       // provider 行已被删除时视为停用
       enabled: provider === undefined ? false : Boolean(Number(provider.enabled)),
-      state: classifyHealth(stats.success7d, stats.failed7d),
+      state: latestState,
       latestLatencyMs: stats.latestLatencyMs,
       pingMs: stats.pingMs,
       availability7d: availabilityOf(stats.samples, 7),
@@ -333,9 +345,11 @@ async function getChannelHealth(days: string[]): Promise<ChannelHealthDTO[]> {
   for (const row of providerRows) {
     const providerId = Number(row.id);
     if (aggregates.has(providerId)) continue;
+    const displayName = row.contributor || row.name;
     channels.push({
       providerId,
       name: row.name,
+      displayName,
       kind: (row.kind as ProviderKind) ?? null,
       enabled: Boolean(Number(row.enabled)),
       state: 'idle',
@@ -354,9 +368,11 @@ async function getChannelHealth(days: string[]): Promise<ChannelHealthDTO[]> {
     });
   }
 
-  return channels.sort(
-    (a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.name.localeCompare(b.name),
-  );
+  // 排序：停用置底，然后按状态严重度，最后按流量
+  return channels.sort((a, b) => {
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+    return STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.name.localeCompare(b.name);
+  });
 }
 
 interface ProviderModelRow {
@@ -378,9 +394,17 @@ function buildModelHealth(
   meta: { disabled: boolean; providerCount: number },
 ): ModelHealthDTO {
   const stats = windowStats(aggregate, days);
+  // 状态取最新单天而非7天均值
+  let latestState: EndpointHealthState = 'idle';
+  for (let i = stats.samples.length - 1; i >= 0; i--) {
+    if (stats.samples[i]!.attempts > 0) {
+      latestState = stats.samples[i]!.state;
+      break;
+    }
+  }
   return {
     model: name === UNKNOWN_MODEL ? UNKNOWN_MODEL_DISPLAY : name,
-    state: classifyHealth(stats.success7d, stats.failed7d),
+    state: latestState,
     disabled: meta.disabled,
     providerCount: meta.providerCount,
     latestLatencyMs: stats.latestLatencyMs,
@@ -396,9 +420,17 @@ function buildModelHealth(
 }
 
 function sortModels(models: ModelHealthDTO[]): ModelHealthDTO[] {
-  return models.sort(
-    (a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.model.localeCompare(b.model),
-  );
+  return models.sort((a, b) => {
+    // 无渠道（历史模型）置底
+    if ((a.providerCount === 0) !== (b.providerCount === 0)) {
+      return a.providerCount === 0 ? 1 : -1;
+    }
+    // 停用模型置底（在有渠道的情况下）
+    if (a.providerCount > 0 && a.disabled !== b.disabled) {
+      return a.disabled ? 1 : -1;
+    }
+    return STATE_RANK[a.state] - STATE_RANK[b.state] || b.attempts30d - a.attempts30d || a.model.localeCompare(b.model);
+  });
 }
 
 /** 渠道内按声明模型分组的聚合（渠道弹窗用） */

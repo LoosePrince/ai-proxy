@@ -17,69 +17,7 @@ import type { ModerationCategory } from '../../types/api';
 import { MODERATION_CATEGORIES } from './taxonomy';
 import { normalizeForms, type NormalizedForms } from './normalize';
 
-/**
- * 默认词库。拉丁词条尽量用完整拼写而不是子串，降低误伤；
- * 策略里的自定义违禁词会并入进来。
- */
-export const DEFAULT_LEXICON: Partial<Record<ModerationCategory, string[]>> = {
-  profanity: [
-    'fuck', 'fucking', 'fucker', 'shit', 'bullshit', 'bitch', 'bastard', 'asshole', 'arsehole',
-    'cunt', 'dickhead', 'motherfucker', 'whore', 'slut', 'wanker', 'twat', 'prick', 'crap',
-    'piss', 'damn', '傻逼', '傻b', '妈的', '操你', '去死', '贱人', '滚蛋', '狗东西',
-  ],
-  sexual: [
-    'porn', 'porno', 'pornography', 'pornographic', 'nsfw', 'blowjob', 'handjob', 'masturbate',
-    'masturbation', 'orgasm', 'genital', 'genitalia', 'vagina', 'penis', 'anal sex', 'hentai',
-    'cumshot', 'nude photo', 'nudes', 'sexual intercourse', '色情', '裸照', '黄片', '做爱',
-    '性交', '淫秽', '淫乱', '口交', '肛门',
-  ],
-  'sexual/minors': [
-    'child porn', 'childporn', 'child pornography', 'pedo', 'pedophile', 'paedophile', 'lolicon',
-    'loli', 'underage sex', 'minor sex', 'child sex', '儿童色情', '幼女', '萝莉', '未成年性',
-    '未成年裸照',
-  ],
-  harassment: [
-    'idiot', 'moron', 'imbecile', 'dumbass', 'loser', 'retard', 'retarded', 'worthless piece',
-    '废物', '垃圾东西', '蠢货', '弱智', '脑残', '笨蛋', '没用的东西',
-  ],
-  'harassment/threatening': [
-    'i will kill you', 'i will hurt you', 'you will regret', 'watch your back', '我要杀了你',
-    '弄死你', '打死你', '你死定了', '等着报复',
-  ],
-  hate: [
-    'nigger', 'nigga', 'kike', 'spic', 'chink', 'wetback', 'white power', 'ethnic cleansing',
-    'heil hitler', 'nazi', 'supremacist', '种族歧视', '纳粹', '支那', '东亚病夫',
-  ],
-  'hate/threatening': ['kill all', 'death to', 'gas the', 'exterminate', '杀光', '灭绝', '清洗掉'],
-  'self-harm': [
-    'suicide', 'suicidal', 'kill myself', 'killing myself', 'self harm', 'self-harm', 'self harming',
-    'cutting myself', 'suicide note', '自杀', '自残', '割腕', '轻生',
-  ],
-  'self-harm/intent': [
-    'i want to die', 'i wanna die', 'want to kill myself', 'end my life', 'better off dead',
-    '我想死', '不想活了', '想结束生命', '活着没意义',
-  ],
-  'self-harm/instructions': [
-    'how to kill myself', 'suicide method', 'ways to kill myself', 'how to commit suicide',
-    'painless suicide', '自杀方法', '怎么自杀', '如何自杀', '安乐死方法',
-  ],
-  violence: [
-    'kill him', 'kill her', 'kill them', 'murder', 'shoot', 'stab', 'bomb', 'massacre', 'assassinate',
-    '杀人', '谋杀', '爆炸', '枪击', '砍死', '袭击',
-  ],
-  'violence/graphic': [
-    'gore', 'behead', 'decapitate', 'dismember', 'mutilate', 'disembowel', 'blood splatter',
-    '血腥', '分尸', '肢解', '开膛', '碎尸',
-  ],
-  illicit: [
-    'cocaine', 'heroin', 'methamphetamine', 'fentanyl', 'money laundering', 'credit card fraud',
-    'insider trading', '毒品', '冰毒', '海洛因', '洗钱', '诈骗', '伪造证件',
-  ],
-  'illicit/violent': [
-    'human trafficking', 'kidnap', 'kidnapping', 'assassination', 'contract killing',
-    '绑架', '拐卖', '雇佣杀人', '买凶',
-  ],
-};
+
 
 const ASCII_TERM = /^[\x20-\x7e]+$/;
 
@@ -134,11 +72,7 @@ function compileTerms(rawTerms: string[]): CompiledTerms {
   };
 }
 
-const DEFAULT_COMPILED = new Map<ModerationCategory, CompiledTerms>();
-for (const category of MODERATION_CATEGORIES) {
-  const terms = DEFAULT_LEXICON[category];
-  if (terms && terms.length > 0) DEFAULT_COMPILED.set(category, compileTerms(terms));
-}
+
 
 const CUSTOM_CACHE_LIMIT = 32;
 const customCache = new Map<string, CompiledTerms>();
@@ -165,7 +99,7 @@ function collectMatches(compiled: CompiledTerms, forms: NormalizedForms): string
     if (!pattern || !text) return;
     pattern.lastIndex = 0;
     for (const match of text.matchAll(pattern)) {
-      const hit = match[0]?.toLowerCase();
+      const hit = normalizeTerm(match[0] ?? '');
       if (hit && compiled.terms.has(hit)) found.add(hit);
     }
   };
@@ -194,7 +128,7 @@ export interface LexiconScanResult {
 
 /**
  * 扫描文本，返回每个类别的命中词条。
- * 只扫描 enabledCategories，避免无关类别的正则开销。
+ * 只扫描自定义违禁词（enabledCategories 用于归类）。
  */
 export function scanLexicon(
   text: string,
@@ -203,13 +137,6 @@ export function scanLexicon(
 ): LexiconScanResult {
   const forms = normalizeForms(text);
   const categories = new Map<ModerationCategory, string[]>();
-
-  for (const category of enabledCategories) {
-    const compiled = DEFAULT_COMPILED.get(category);
-    if (!compiled) continue;
-    const matched = collectMatches(compiled, forms);
-    if (matched.length > 0) categories.set(category, matched);
-  }
 
   const customMatches =
     customKeywords.length > 0 ? collectMatches(compiledCustom(customKeywords), forms) : [];

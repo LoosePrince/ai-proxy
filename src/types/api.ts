@@ -505,6 +505,8 @@ export interface ChannelHealthDTO {
   /** 0 表示尝试没有 provider 归属 */
   providerId: number;
   name: string;
+  /** 可读显示名称（贡献渠道显示贡献者名而非 contrib-xxx） */
+  displayName: string;
   /** provider 行已被删除时为 null，历史数据仍保留 */
   kind: ProviderKind | null;
   enabled: boolean;

@@ -133,7 +133,7 @@ function ChannelRow({
     <div className="channel-row">
       <div className="channel-name">
         <Space size={6} wrap={false}>
-          <strong>{row.name}</strong>
+          <strong>{row.displayName}</strong>
           {row.kind && row.kind !== 'primary' ? <Tag color="blue">{KIND_LABEL[row.kind]}</Tag> : null}
           {row.enabled ? null : <Tag color="orange">已停用</Tag>}
           {row.providerId === 0 ? <Tag>无归属</Tag> : null}
@@ -246,10 +246,19 @@ function ChannelModelDrawer({
                 dataIndex: 'model',
                 render: (model: string, row) => (
                   <Space size={6}>
-                    <span style={row.disabled ? { textDecoration: 'line-through', opacity: 0.55 } : undefined}>
+                    <span
+                      style={
+                        row.providerCount === 0
+                          ? { color: '#8c8c8c' }
+                          : row.disabled
+                            ? { textDecoration: 'line-through', opacity: 0.55 }
+                            : undefined
+                      }
+                    >
                       {model}
                     </span>
-                    {row.disabled ? <Tag color="orange">已停用</Tag> : null}
+                    {row.providerCount === 0 ? <Tag color="default">历史模型</Tag> : null}
+                    {row.disabled && row.providerCount > 0 ? <Tag color="orange">已停用</Tag> : null}
                   </Space>
                 ),
               },
@@ -487,8 +496,9 @@ export function Monitor() {
                 dataIndex: 'model',
                 render: (model: string, row) => (
                   <Space size={6}>
-                    <span>{model}</span>
-                    {row.attempts30d === 0 ? <Tag>仅缓存命中</Tag> : null}
+                    <span style={row.providerCount === 0 ? { color: '#8c8c8c' } : undefined}>{model}</span>
+                    {row.providerCount === 0 ? <Tag color="default">历史模型</Tag> : null}
+                    {row.attempts30d === 0 && row.providerCount > 0 ? <Tag>仅缓存命中</Tag> : null}
                   </Space>
                 ),
               },
@@ -550,7 +560,7 @@ export function Monitor() {
 
       <ChannelModelDrawer
         providerId={drawerProviderId}
-        channelName={drawerProvider?.name ?? ''}
+        channelName={drawerProvider?.displayName ?? drawerProvider?.name ?? ''}
         open={drawerProviderId !== null}
         onClose={() => setDrawerProviderId(null)}
       />

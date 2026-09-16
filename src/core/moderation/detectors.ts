@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { ModerationCategory, ModerationDetectorInfoDTO } from '../../types/api';
 import { MODERATION_CATEGORIES } from './taxonomy';
-import { DEFAULT_LEXICON, scanLexicon, scoreFromMatchCount } from './lexicon';
+import { scanLexicon, scoreFromMatchCount } from './lexicon';
 import type { DetectorContext, DetectorFinding, ModerationDetector } from './types';
 
 /* ------------------------------------------------------------------ 懒加载 */
@@ -158,12 +158,6 @@ const whitzCache = new Map<string, WhitzDetector | null>();
 
 function whitzEntries(customKeywords: string[]): Array<{ word: string; category: string; severity: number }> {
   const entries: Array<{ word: string; category: string; severity: number }> = [];
-  for (const category of MODERATION_CATEGORIES) {
-    const terms = DEFAULT_LEXICON[category];
-    if (!terms) continue;
-    const severity = MODERATION_CATEGORIES.length - MODERATION_CATEGORIES.indexOf(category);
-    for (const word of terms) entries.push({ word, category, severity });
-  }
   for (const word of customKeywords) entries.push({ word, category: 'profanity', severity: 100 });
   return entries;
 }
