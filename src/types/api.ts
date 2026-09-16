@@ -474,6 +474,8 @@ export interface ModelUsageDTO {
   completionTokens: number;
   /** 请求模型 -> 上游真实模型的分布 */
   actualResolved: Array<{ model: string; requests: number }>;
+  /** 声明该模型的现存渠道数量（0 = 历史模型） */
+  providerCount: number;
 }
 
 /**

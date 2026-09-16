@@ -70,7 +70,12 @@ export function ModelStats() {
             ),
           }}
           columns={[
-            { title: '请求模型', dataIndex: 'requestedModel' },
+            {
+              title: '请求模型',
+              dataIndex: 'requestedModel',
+              render: (model: string, row) =>
+                row.providerCount === 0 ? <span style={{ color: '#999' }}>{model}</span> : model,
+            },
             {
               title: '模型数',
               align: 'right',

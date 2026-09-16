@@ -300,8 +300,9 @@ interface ModelUsageRow {
 export async function getModelUsage(range: UsageRange = {}): Promise<ModelUsageDTO[]> {
   const { sql: whereSql, params } = dayRange(range);
 
-  const rows = await getDb().select<ModelUsageRow>(
-    `select
+  const [rows, providerModels] = await Promise.all([
+    getDb().select<ModelUsageRow>(
+      `select
         requested_model,
         actual_model,
         sum(requests)           as requests,
@@ -311,9 +312,17 @@ export async function getModelUsage(range: UsageRange = {}): Promise<ModelUsageD
       ${whereSql}
       group by requested_model, actual_model
       order by requests desc`,
-    params,
-  );
+      params,
+    ),
+    getDb().select<{ model: string; provider_count: number }>(
+      `select pm.model, count(distinct p.id) as provider_count
+        from provider_models pm
+        inner join providers p on p.id = pm.provider_id
+        group by pm.model`,
+    ),
+  ]);
 
+  const providerCountMap = new Map(providerModels.map((row) => [row.model, num(row.provider_count)]));
   const grouped = new Map<string, ModelUsageDTO>();
 
   for (const row of rows) {
@@ -325,6 +334,7 @@ export async function getModelUsage(range: UsageRange = {}): Promise<ModelUsageD
         promptTokens: 0,
         completionTokens: 0,
         actualResolved: [],
+        providerCount: providerCountMap.get(row.requested_model) ?? 0,
       };
       grouped.set(row.requested_model, entry);
     }

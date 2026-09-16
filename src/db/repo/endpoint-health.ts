@@ -484,7 +484,7 @@ async function getModelHealthForProvider(providerId: number, days: string[]): Pr
 
   // 历史遗留的模型名（已从声明列表移除或迁移前数据）保留展示，便于看旧故障
   for (const [model, aggregate] of aggregates) {
-    models.push(buildModelHealth(model, aggregate, days, { disabled: false, providerCount: 1 }));
+    models.push(buildModelHealth(model, aggregate, days, { disabled: false, providerCount: 0 }));
   }
 
   return sortModels(models);
@@ -519,7 +519,12 @@ async function getModelHealth(days: string[]): Promise<ModelHealthDTO[]> {
         order by day asc`,
       [from],
     ),
-    db.select<ProviderModelRow>('select provider_id, model, enabled from provider_models order by sort_order, id'),
+    db.select<ProviderModelRow>(
+      `select pm.provider_id, pm.model, pm.enabled
+        from provider_models pm
+        inner join providers p on p.id = pm.provider_id
+        order by pm.sort_order, pm.id`,
+    ),
   ]);
 
   const aggregates = new Map<string, HealthAggregate>();
